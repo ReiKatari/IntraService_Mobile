@@ -9,7 +9,10 @@ import com.lantaservice.intra.data.network.IntraConnectionManager
 import com.lantaservice.intra.data.network.IntraResilientDns
 import com.lantaservice.intra.data.network.SessionCredentialsProvider
 import com.lantaservice.intra.data.repository.IntraRepository
+import com.lantaservice.intra.data.storage.CredentialsPayloadCodec
+import com.lantaservice.intra.data.storage.SavedCredentials
 import com.lantaservice.intra.data.update.AppUpdateManager
+import com.lantaservice.intra.ui.login.LoginViewModel
 import com.lantaservice.intra.util.DateAndTextFormatter
 import com.lantaservice.intra.util.FrameQualityAnalyzer
 import com.lantaservice.intra.util.LightStatus
@@ -342,5 +345,46 @@ class IntraLogicTest {
         assertEquals("p.stasyuk", IntraRepository.extractEmailLocalPart("p.stasyuk@lantaservice.com"))
         assertNull(IntraRepository.extractEmailLocalPart("ivanov"))
         assertNull(IntraRepository.extractEmailLocalPart("@lantaservice.com"))
+    }
+
+    @Test
+    fun credentialsPayloadCodecPreservesEmailAndSpecialPassword() {
+        val original = SavedCredentials(
+            login = "p.stasyuk@lantaservice.com",
+            password = "P@ss|word:123 Пароль",
+            rememberMe = true
+        )
+        val encoded = CredentialsPayloadCodec.encode(original)
+        val decoded = CredentialsPayloadCodec.decode(encoded)
+        assertNotNull(decoded)
+        assertEquals("p.stasyuk@lantaservice.com", decoded?.login)
+        assertEquals("P@ss|word:123 Пароль", decoded?.password)
+        assertEquals(true, decoded?.rememberMe)
+    }
+
+    @Test
+    fun credentialsPayloadCodecPreservesPartialRememberedInput() {
+        val original = SavedCredentials(
+            login = "p.stasyuk@lantaservice.com",
+            password = "",
+            rememberMe = true
+        )
+        val decoded = CredentialsPayloadCodec.decode(CredentialsPayloadCodec.encode(original))
+        assertNotNull(decoded)
+        assertEquals("p.stasyuk@lantaservice.com", decoded?.login)
+        assertEquals("", decoded?.password)
+        assertEquals(true, decoded?.rememberMe)
+    }
+
+    @Test
+    fun postLoginFieldRetentionMatchesRememberMeFlag() {
+        assertEquals(
+            "p.stasyuk@lantaservice.com" to "P@ss|1",
+            LoginViewModel.resolvePostLoginFields("p.stasyuk@lantaservice.com", "P@ss|1", true)
+        )
+        assertEquals(
+            "" to "",
+            LoginViewModel.resolvePostLoginFields("p.stasyuk@lantaservice.com", "P@ss|1", false)
+        )
     }
 }

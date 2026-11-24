@@ -101,6 +101,21 @@ class IntraRepository(
 
     fun loadPrefilledCredentials(): SavedCredentials? = sessionStorage.load()
 
+    fun saveRememberedCredentials(
+        login: String,
+        password: String,
+        rememberMe: Boolean
+    ) {
+        sessionStorage.save(
+            SavedCredentials(
+                baseUrl = SessionCredentialsProvider.FIXED_BASE_URL,
+                login = login,
+                password = password,
+                rememberMe = rememberMe
+            )
+        )
+    }
+
     fun clearInMemorySession() {
         credentialsProvider.clearSession()
         statusesById.clear()
@@ -110,11 +125,11 @@ class IntraRepository(
     }
 
     /**
-     * Clears session and saved credentials immediately before Activity finishes and closes app.
+     * Clears active in-memory session immediately before Activity finishes and closes app,
+     * while preserving encrypted login fields when "Запомнить меня" is enabled.
      */
     fun logoutImmediate() {
         credentialsProvider.clearSession()
-        sessionStorage.clear()
         statusesById.clear()
         repairedHistoryCache.clear()
         locallyRepairedTaskIds.clear()
@@ -125,7 +140,6 @@ class IntraRepository(
 
     fun handleUnauthorized() {
         credentialsProvider.clearSession()
-        sessionStorage.clear()
         statusesById.clear()
         repairedHistoryCache.clear()
         locallyRepairedTaskIds.clear()
@@ -144,6 +158,11 @@ class IntraRepository(
             }
 
             val fixedUrl = SessionCredentialsProvider.FIXED_BASE_URL
+            if (rememberMe) {
+                saveRememberedCredentials(cleanInput, password, true)
+            } else {
+                saveRememberedCredentials("", "", false)
+            }
 
             // Stage 1: Direct Basic Auth with user input
             val directHeader = SessionCredentialsProvider.buildBasicAuthHeader(cleanInput, password)

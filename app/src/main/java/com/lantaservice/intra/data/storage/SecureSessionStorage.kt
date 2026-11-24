@@ -7,6 +7,7 @@ import android.util.Base64
 import com.lantaservice.intra.data.network.SessionCredentialsProvider
 import java.nio.charset.StandardCharsets
 import java.security.KeyStore
+import java.util.Base64 as JavaBase64
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -18,6 +19,45 @@ data class SavedCredentials(
     val password: String,
     val rememberMe: Boolean
 )
+
+/**
+ * Pure JVM codec for serializing and deserializing remembered credential payloads.
+ */
+object CredentialsPayloadCodec {
+
+    fun encode(credentials: SavedCredentials): String {
+        return listOf(
+            encodeField(SessionCredentialsProvider.FIXED_BASE_URL),
+            encodeField(credentials.login),
+            encodeField(credentials.password),
+            if (credentials.rememberMe) "1" else "0"
+        ).joinToString("|")
+    }
+
+    fun decode(payload: String): SavedCredentials? {
+        val parts = payload.split("|")
+        if (parts.size < 4) return null
+        return runCatching {
+            val login = decodeField(parts[1])
+            val password = decodeField(parts[2])
+            val rememberMe = parts[3] == "1"
+            SavedCredentials(
+                baseUrl = SessionCredentialsProvider.FIXED_BASE_URL,
+                login = login,
+                password = password,
+                rememberMe = rememberMe
+            )
+        }.getOrNull()
+    }
+
+    private fun encodeField(value: String): String {
+        return JavaBase64.getEncoder().encodeToString(value.toByteArray(StandardCharsets.UTF_8))
+    }
+
+    private fun decodeField(encoded: String): String {
+        return String(JavaBase64.getDecoder().decode(encoded), StandardCharsets.UTF_8)
+    }
+}
 
 /**
  * Encrypts user credentials at rest using AndroidKeyStore AES-256-GCM.
@@ -32,49 +72,61 @@ class SecureSessionStorage(context: Context) {
             clear()
             return
         }
-        val payload = listOf(
-            encodeField(SessionCredentialsProvider.FIXED_BASE_URL),
-            encodeField(credentials.login),
-            encodeField(credentials.password),
-            "1"
-        ).joinToString("|")
-
-        val encrypted = encrypt(payload)
+        val payload = CredentialsPayloadCodec.encode(credentials)
+        val encrypted = encryptWithKeyRecovery(payload)
         prefs.edit()
             .putString(KEY_PAYLOAD, encrypted)
-            .apply()
+            .putBoolean(KEY_REMEMBER_ME, true)
+            .commit()
     }
 
     @Synchronized
     fun load(): SavedCredentials? {
+        val hasRememberFlag = prefs.contains(KEY_REMEMBER_ME)
+        val rememberFlag = prefs.getBoolean(KEY_REMEMBER_ME, true)
+        if (hasRememberFlag && !rememberFlag) {
+            if (prefs.contains(KEY_PAYLOAD)) {
+                prefs.edit().remove(KEY_PAYLOAD).commit()
+            }
+            return SavedCredentials(
+                baseUrl = SessionCredentialsProvider.FIXED_BASE_URL,
+                login = "",
+                password = "",
+                rememberMe = false
+            )
+        }
+
         val encrypted = prefs.getString(KEY_PAYLOAD, null) ?: return null
         val decrypted = runCatching { decrypt(encrypted) }.getOrElse {
-            clear()
+            prefs.edit().remove(KEY_PAYLOAD).commit()
             return null
         }
-        val parts = decrypted.split("|")
-        if (parts.size < 4) {
-            clear()
+        val decoded = CredentialsPayloadCodec.decode(decrypted)
+        if (decoded == null || !decoded.rememberMe) {
+            prefs.edit().remove(KEY_PAYLOAD).commit()
             return null
         }
-        val login = decodeField(parts[1])
-        val password = decodeField(parts[2])
-        val rememberMe = parts[3] == "1"
-        if (login.isBlank() || password.isEmpty() || !rememberMe) {
-            clear()
-            return null
-        }
-        return SavedCredentials(
-            baseUrl = SessionCredentialsProvider.FIXED_BASE_URL,
-            login = login,
-            password = password,
-            rememberMe = true
-        )
+        return decoded
     }
 
     @Synchronized
     fun clear() {
-        prefs.edit().clear().apply()
+        prefs.edit()
+            .remove(KEY_PAYLOAD)
+            .putBoolean(KEY_REMEMBER_ME, false)
+            .commit()
+    }
+
+    private fun encryptWithKeyRecovery(plainText: String): String {
+        return runCatching { encrypt(plainText) }.getOrElse {
+            runCatching {
+                val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+                if (keyStore.containsAlias(KEY_ALIAS)) {
+                    keyStore.deleteEntry(KEY_ALIAS)
+                }
+            }
+            encrypt(plainText)
+        }
     }
 
     private fun encrypt(plainText: String): String {
@@ -117,14 +169,6 @@ class SecureSessionStorage(context: Context) {
         return generator.generateKey()
     }
 
-    private fun encodeField(value: String): String {
-        return Base64.encodeToString(value.toByteArray(StandardCharsets.UTF_8), Base64.NO_WRAP)
-    }
-
-    private fun decodeField(encoded: String): String {
-        return String(Base64.decode(encoded, Base64.NO_WRAP), StandardCharsets.UTF_8)
-    }
-
     private companion object {
         const val ANDROID_KEYSTORE = "AndroidKeyStore"
         const val KEY_ALIAS = "intra_phone_session_aes_key"
@@ -132,5 +176,6 @@ class SecureSessionStorage(context: Context) {
         const val GCM_TAG_BITS = 128
         const val PREFS_NAME = "intra_secure_session"
         const val KEY_PAYLOAD = "encrypted_creds"
+        const val KEY_REMEMBER_ME = "remember_me_enabled"
     }
 }
