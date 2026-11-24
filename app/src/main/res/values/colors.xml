@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="intra_blue_deep">#1A6FB5</color>
+    <color name="intra_blue_mid">#2894D1</color>
+    <color name="intra_cyan">#38B3DF</color>
+    <color name="intra_emerald">#1FA866</color>
+    <color name="intra_bg">#F3F7FB</color>
+</resources>

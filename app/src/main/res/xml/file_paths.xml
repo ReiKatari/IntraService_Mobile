@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <cache-path name="camera_photos" path="camera/" />
+    <cache-path name="upload_photos" path="uploads/" />
+    <cache-path name="downloads" path="downloads/" />
+    <cache-path name="updates" path="updates/" />
+</paths>
