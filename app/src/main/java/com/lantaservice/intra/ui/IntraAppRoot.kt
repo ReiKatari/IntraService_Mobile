@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,8 +24,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -34,11 +38,11 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.lantaservice.intra.R
 import com.lantaservice.intra.data.repository.AuthState
 import com.lantaservice.intra.data.repository.IntraRepository
 import com.lantaservice.intra.data.update.AppUpdateManager
 import com.lantaservice.intra.data.update.UpdateUiState
-import com.lantaservice.intra.ui.components.IntraShieldBadge
 import com.lantaservice.intra.ui.components.IntraWaveBackground
 import com.lantaservice.intra.ui.components.UpdateAvailableDialog
 import com.lantaservice.intra.ui.detail.TaskDetailScreen
@@ -62,7 +66,8 @@ fun IntraAppRoot(
     repository: IntraRepository,
     appUpdateManager: AppUpdateManager,
     locationGranted: Boolean,
-    onRequestLocationAgain: () -> Unit
+    onRequestLocationAgain: () -> Unit,
+    onExitApp: () -> Unit
 ) {
     val authState by repository.authState.collectAsStateWithLifecycle()
     val updateState by appUpdateManager.state.collectAsStateWithLifecycle()
@@ -93,7 +98,13 @@ fun IntraAppRoot(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center
                         ) {
-                            IntraShieldBadge(size = 56.dp)
+                            Image(
+                                painter = painterResource(id = R.drawable.ic_app_logo_mark),
+                                contentDescription = "IntraService Mobile",
+                                modifier = Modifier
+                                    .size(72.dp)
+                                    .clip(RoundedCornerShape(18.dp))
+                            )
                             Spacer(modifier = Modifier.height(14.dp))
                             Text(
                                 text = "IntraService Mobile",
@@ -121,14 +132,10 @@ fun IntraAppRoot(
 
                 RootGate.LOCATION_REQUIRED -> {
                     val session = (authState as AuthState.Authenticated).session
-                    val taskListVmForLogout: TaskListViewModel = viewModel(
-                        key = "gate_${session.userId}",
-                        factory = TaskListViewModel.Factory(repository)
-                    )
                     LocationGateScreen(
                         session = session,
                         onRequestPermissionAgain = onRequestLocationAgain,
-                        onLogout = taskListVmForLogout::logout
+                        onLogout = onExitApp
                     )
                 }
 
@@ -165,7 +172,8 @@ fun IntraAppRoot(
                                 onOpenUpdateDialog = appUpdateManager::reopenDialog,
                                 onOpenTicket = { taskId ->
                                     navController.navigate("task/$taskId")
-                                }
+                                },
+                                onExitApp = onExitApp
                             )
                         }
 

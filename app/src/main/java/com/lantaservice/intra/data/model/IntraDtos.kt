@@ -218,6 +218,7 @@ data class UserSession(
     val baseUrl: String,
     val login: String,
     val password: String,
+    val authCookieHeader: String? = null,
     val userId: Int,
     val displayName: String,
     val email: String?,

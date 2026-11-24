@@ -74,19 +74,25 @@ object IntraNetworkFactory {
             val explicitAuth = original.header("Authorization")
             val session = credentialsProvider.currentSession()
 
-            val authHeader = when {
-                !explicitAuth.isNullOrBlank() -> explicitAuth
-                session != null -> SessionCredentialsProvider.buildBasicAuthHeader(
-                    session.login,
-                    session.password
-                )
-                else -> throw IOException("Требуется авторизация")
-            }
-
             val builder = original.newBuilder()
-                .header("Authorization", authHeader)
                 .header("Device-Name", deviceName)
                 .header("Device-Version", deviceVersion)
+
+            when {
+                !explicitAuth.isNullOrBlank() -> {
+                    builder.header("Authorization", explicitAuth)
+                }
+                session != null && !session.authCookieHeader.isNullOrBlank() -> {
+                    builder.header("Cookie", session.authCookieHeader)
+                }
+                session != null -> {
+                    builder.header(
+                        "Authorization",
+                        SessionCredentialsProvider.buildBasicAuthHeader(session.login, session.password)
+                    )
+                }
+                else -> throw IOException("Требуется авторизация")
+            }
 
             if (original.header("Accept") == null) {
                 builder.header("Accept", "application/json")

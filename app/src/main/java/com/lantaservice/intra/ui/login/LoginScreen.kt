@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -51,10 +52,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -63,8 +66,9 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lantaservice.intra.BuildConfig
+import com.lantaservice.intra.R
 import com.lantaservice.intra.data.network.IntraConnectionManager
-import com.lantaservice.intra.ui.components.IntraShieldBadge
 import com.lantaservice.intra.ui.components.IntraWaveBackground
 import com.lantaservice.intra.ui.theme.IntraColors
 
@@ -90,10 +94,18 @@ fun LoginScreen(viewModel: LoginViewModel) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                Image(
+                    painter = painterResource(id = R.drawable.ic_app_logo_mark),
+                    contentDescription = "IntraService Mobile",
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                )
+                Spacer(modifier = Modifier.height(10.dp))
                 Text(
                     text = "IntraService Mobile",
                     color = Color.White,
-                    fontSize = 31.sp,
+                    fontSize = 30.sp,
                     fontWeight = FontWeight.Light,
                     letterSpacing = (-0.4).sp
                 )
@@ -111,7 +123,7 @@ fun LoginScreen(viewModel: LoginViewModel) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(26.dp))
+            Spacer(modifier = Modifier.height(22.dp))
 
             Surface(
                 modifier = Modifier.fillMaxWidth(),
@@ -125,7 +137,13 @@ fun LoginScreen(viewModel: LoginViewModel) {
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        IntraShieldBadge(size = 28.dp)
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_app_logo_mark),
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(RoundedCornerShape(7.dp))
+                        )
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
                             text = "Авторизация",
@@ -138,7 +156,7 @@ fun LoginScreen(viewModel: LoginViewModel) {
                         value = state.login,
                         onValueChange = viewModel::onLoginChange,
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Логин, телефон или E-mail") },
+                        label = { Text("Логин или E-mail") },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Rounded.Person,
@@ -320,25 +338,42 @@ fun LoginScreen(viewModel: LoginViewModel) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Surface(
-                shape = RoundedCornerShape(50),
-                color = Color.White.copy(alpha = 0.16f)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = Color.White.copy(alpha = 0.16f)
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Https,
-                        contentDescription = null,
-                        tint = Color.White.copy(alpha = 0.9f),
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Https,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.9f),
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = state.serverHost,
+                            color = Color.White.copy(alpha = 0.92f),
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = Color.White.copy(alpha = 0.16f)
+                ) {
                     Text(
-                        text = state.serverHost,
+                        text = "Версия ${BuildConfig.VERSION_NAME}",
                         color = Color.White.copy(alpha = 0.92f),
-                        style = MaterialTheme.typography.labelMedium
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                     )
                 }
             }

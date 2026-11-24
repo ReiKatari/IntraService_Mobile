@@ -5,6 +5,7 @@ import com.lantaservice.intra.data.model.TaskStatusDto
 import com.lantaservice.intra.data.model.TaskStatusSimpleViewDto
 import com.lantaservice.intra.data.model.UpdateTaskRequestDto
 import com.lantaservice.intra.data.model.extractFileTokens
+import com.lantaservice.intra.data.network.IntraConnectionManager
 import com.lantaservice.intra.data.network.IntraResilientDns
 import com.lantaservice.intra.data.network.SessionCredentialsProvider
 import com.lantaservice.intra.data.repository.IntraRepository
@@ -320,5 +321,26 @@ class IntraLogicTest {
             "https://github.com/ReiKatari/IntraService_Mobile/releases/download/v1.2.5/IntraService-Mobile-1.2.5.apk",
             info?.downloadUrl
         )
+    }
+
+    @Test
+    fun setCookieParsingAndFormattingHandlesAspNetAuthCookies() {
+        val headers = listOf(
+            "ASP.NET_SessionId=abc123; path=/; HttpOnly; SameSite=Lax",
+            ".ASPXAUTH=TOKENXYZ987; expires=Wed, 24-Nov-2027 18:00:00 GMT; path=/; HttpOnly"
+        )
+        val parsed = IntraConnectionManager.parseSetCookiesHeader(headers)
+        assertEquals("abc123", parsed["ASP.NET_SessionId"])
+        assertEquals("TOKENXYZ987", parsed[".ASPXAUTH"])
+
+        val formatted = IntraConnectionManager.formatCookieHeader(parsed)
+        assertEquals("ASP.NET_SessionId=abc123; .ASPXAUTH=TOKENXYZ987", formatted)
+    }
+
+    @Test
+    fun extractEmailLocalPartParsesCorporateEmailsCleanly() {
+        assertEquals("p.stasyuk", IntraRepository.extractEmailLocalPart("p.stasyuk@lantaservice.com"))
+        assertNull(IntraRepository.extractEmailLocalPart("ivanov"))
+        assertNull(IntraRepository.extractEmailLocalPart("@lantaservice.com"))
     }
 }

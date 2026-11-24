@@ -185,10 +185,8 @@ class TaskListViewModel(
         loadTickets(isPullToRefresh = false)
     }
 
-    fun logout() {
-        viewModelScope.launch {
-            repository.logout()
-        }
+    fun logoutImmediate() {
+        repository.logoutImmediate()
     }
 
     class Factory(private val repository: IntraRepository) : ViewModelProvider.Factory {

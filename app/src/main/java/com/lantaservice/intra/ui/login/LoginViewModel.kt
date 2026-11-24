@@ -26,7 +26,15 @@ class LoginViewModel(
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
-        LoginUiState(serverHost = repository.serverDisplayHost())
+        run {
+            val saved = repository.loadPrefilledCredentials()
+            LoginUiState(
+                serverHost = repository.serverDisplayHost(),
+                login = saved?.login.orEmpty(),
+                password = saved?.password.orEmpty(),
+                rememberMe = saved?.rememberMe ?: true
+            )
+        }
     )
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
 
@@ -46,7 +54,7 @@ class LoginViewModel(
         val state = _uiState.value
         if (state.isLoading) return
         if (state.login.isBlank() || state.password.isEmpty()) {
-            _uiState.update { it.copy(errorMessage = "Укажите логин и пароль", showVpnSettingsHint = false) }
+            _uiState.update { it.copy(errorMessage = "Укажите логин или E-mail и пароль", showVpnSettingsHint = false) }
             return
         }
         viewModelScope.launch {

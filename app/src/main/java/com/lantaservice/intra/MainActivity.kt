@@ -63,12 +63,11 @@ class MainActivity : ComponentActivity() {
                     pendingManualRetry = false
                 }
 
-                // Request location permission, restore session, and check GitHub releases silently
+                // Request location permission and check GitHub releases silently at startup
                 LaunchedEffect(Unit) {
                     if (!LocationPermissionHelper.hasLocationPermission(this@MainActivity)) {
                         locationLauncher.launch(LocationPermissionHelper.LOCATION_PERMISSIONS)
                     }
-                    repository.restoreSavedSession()
                 }
 
                 LaunchedEffect(Unit) {
@@ -102,9 +101,21 @@ class MainActivity : ComponentActivity() {
                         shouldShowBeforeRetry = LocationPermissionHelper.shouldShowRationale(this)
                         pendingManualRetry = true
                         locationLauncher.launch(LocationPermissionHelper.LOCATION_PERMISSIONS)
+                    },
+                    onExitApp = {
+                        repository.logoutImmediate()
+                        finishAndRemoveTask()
                     }
                 )
             }
         }
+    }
+
+    override fun onDestroy() {
+        // Always require login screen again once app closes (preserving configuration changes)
+        if (isFinishing && !isChangingConfigurations) {
+            (application as IntraApplication).repository.clearInMemorySession()
+        }
+        super.onDestroy()
     }
 }

@@ -3,6 +3,7 @@ package com.lantaservice.intra.data.repository
 import android.content.Context
 import android.net.Uri
 import androidx.core.content.FileProvider
+import com.lantaservice.intra.data.model.CurrentUserDto
 import com.lantaservice.intra.data.model.IntraErrorDto
 import com.lantaservice.intra.data.model.PendingPhoto
 import com.lantaservice.intra.data.model.TaskAttachment
@@ -19,12 +20,14 @@ import com.lantaservice.intra.data.model.UpdateTaskRequestDto
 import com.lantaservice.intra.data.model.UserSession
 import com.lantaservice.intra.data.model.extractFileTokens
 import com.lantaservice.intra.data.network.IntraApiService
+import com.lantaservice.intra.data.network.IntraConnectionManager
 import com.lantaservice.intra.data.network.SessionCredentialsProvider
 import com.lantaservice.intra.data.network.VpnBlockedConnectionException
 import com.lantaservice.intra.data.storage.SavedCredentials
 import com.lantaservice.intra.data.storage.SecureSessionStorage
 import com.lantaservice.intra.util.DateAndTextFormatter
 import com.lantaservice.intra.util.ImageCompressor
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -33,6 +36,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
@@ -70,17 +74,19 @@ data class TicketListSnapshot(
 
 /**
  * Central repository enforcing authenticated-user-only API calls against the locked
- * IntraService server, open ticket filtering, and historical "Починил" classification.
+ * IntraService server, email + login authentication, and ticket status classification.
  */
 class IntraRepository(
     private val context: Context,
     private val api: IntraApiService,
     private val json: Json,
     private val credentialsProvider: SessionCredentialsProvider,
+    private val connectionManager: IntraConnectionManager,
     private val sessionStorage: SecureSessionStorage
 ) {
 
-    private val _authState = MutableStateFlow<AuthState>(AuthState.Checking)
+    // Always require explicit login screen when app process starts cleanly
+    private val _authState = MutableStateFlow<AuthState>(AuthState.Unauthenticated)
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
 
     val unauthorizedEvents: Flow<Unit> = credentialsProvider.unauthorizedEvents
@@ -93,102 +99,28 @@ class IntraRepository(
         .removePrefix("https://")
         .removePrefix("http://")
 
-    suspend fun restoreSavedSession() {
-        val saved = withContext(Dispatchers.IO) { sessionStorage.load() }
-        if (saved == null) {
-            credentialsProvider.clearSession()
-            _authState.value = AuthState.Unauthenticated
-            return
-        }
-        val result = login(
-            login = saved.login,
-            password = saved.password,
-            rememberMe = true,
-            isSilentRestore = true
-        )
-        if (result.isFailure) {
-            credentialsProvider.clearSession()
-            _authState.value = AuthState.Unauthenticated
-        }
+    fun loadPrefilledCredentials(): SavedCredentials? = sessionStorage.load()
+
+    fun clearInMemorySession() {
+        credentialsProvider.clearSession()
+        statusesById.clear()
+        repairedHistoryCache.clear()
+        locallyRepairedTaskIds.clear()
+        _authState.value = AuthState.Unauthenticated
     }
 
-    suspend fun login(
-        login: String,
-        password: String,
-        rememberMe: Boolean,
-        isSilentRestore: Boolean = false
-    ): Result<UserSession> = withContext(Dispatchers.IO) {
-        try {
-            val cleanLogin = login.trim()
-            if (cleanLogin.isEmpty() || password.isEmpty()) {
-                return@withContext Result.failure(IllegalArgumentException("Введите логин и пароль"))
-            }
-
-            val fixedUrl = SessionCredentialsProvider.FIXED_BASE_URL
-            val explicitAuth = SessionCredentialsProvider.buildBasicAuthHeader(cleanLogin, password)
-            val response = api.getCurrentUserInfo(
-                getCurrentUserInfo = true,
-                explicitAuthHeader = explicitAuth
-            )
-            if (!response.isSuccessful) {
-                val msg = when (response.code()) {
-                    401, 403 -> "Неверный логин или пароль"
-                    else -> parseErrorMessage(response)
-                }
-                return@withContext Result.failure(IllegalStateException(msg))
-            }
-
-            val user = response.body()
-                ?: return@withContext Result.failure(
-                    IllegalStateException("Сервер вернул пустой профиль пользователя")
-                )
-            if (user.isArchive == true) {
-                return@withContext Result.failure(
-                    IllegalStateException("Учетная запись находится в архиве")
-                )
-            }
-
-            val session = UserSession(
-                baseUrl = fixedUrl,
-                login = user.login?.takeIf { it.isNotBlank() } ?: cleanLogin,
-                password = password,
-                userId = user.id,
-                displayName = user.name?.takeIf { it.isNotBlank() } ?: cleanLogin,
-                email = user.email,
-                phone = user.mobilePhone?.takeIf { it.isNotBlank() } ?: user.phone,
-                position = user.position,
-                roleType = user.roleType
-            )
-
-            credentialsProvider.setSession(
-                session.copy(login = cleanLogin, password = password)
-            )
-            sessionStorage.save(
-                SavedCredentials(
-                    baseUrl = fixedUrl,
-                    login = cleanLogin,
-                    password = password,
-                    rememberMe = rememberMe
-                )
-            )
-            _authState.value = AuthState.Authenticated(session)
-            Result.success(session)
-        } catch (t: Throwable) {
-            if (!isSilentRestore && t.message?.contains("401") == true) {
-                credentialsProvider.clearSession()
-            }
-            Result.failure(toIntraException(t))
-        }
-    }
-
-    suspend fun logout() = withContext(Dispatchers.IO) {
+    /**
+     * Clears session and saved credentials immediately before Activity finishes and closes app.
+     */
+    fun logoutImmediate() {
         credentialsProvider.clearSession()
         sessionStorage.clear()
         statusesById.clear()
         repairedHistoryCache.clear()
         locallyRepairedTaskIds.clear()
-        ImageCompressor.cleanupCacheDirs(context)
-        _authState.value = AuthState.Unauthenticated
+        CoroutineScope(Dispatchers.IO).launch {
+            ImageCompressor.cleanupCacheDirs(context)
+        }
     }
 
     fun handleUnauthorized() {
@@ -198,6 +130,163 @@ class IntraRepository(
         repairedHistoryCache.clear()
         locallyRepairedTaskIds.clear()
         _authState.value = AuthState.Unauthenticated
+    }
+
+    suspend fun login(
+        login: String,
+        password: String,
+        rememberMe: Boolean
+    ): Result<UserSession> = withContext(Dispatchers.IO) {
+        try {
+            val cleanInput = login.trim()
+            if (cleanInput.isEmpty() || password.isEmpty()) {
+                return@withContext Result.failure(IllegalArgumentException("Введите логин или E-mail и пароль"))
+            }
+
+            val fixedUrl = SessionCredentialsProvider.FIXED_BASE_URL
+
+            // Stage 1: Direct Basic Auth with user input
+            val directHeader = SessionCredentialsProvider.buildBasicAuthHeader(cleanInput, password)
+            val directResp = api.getCurrentUserInfo(
+                getCurrentUserInfo = true,
+                explicitAuthHeader = directHeader
+            )
+            if (directResp.isSuccessful) {
+                val user = directResp.body()
+                    ?: return@withContext Result.failure(
+                        IllegalStateException("Сервер вернул пустой профиль пользователя")
+                    )
+                return@withContext completeLoginSession(
+                    user = user,
+                    authLogin = user.login?.takeIf { it.isNotBlank() } ?: cleanInput,
+                    storedLoginInput = cleanInput,
+                    password = password,
+                    cookieHeader = null,
+                    fixedUrl = fixedUrl,
+                    rememberMe = rememberMe
+                )
+            }
+
+            if (directResp.code() !in setOf(401, 403)) {
+                return@withContext Result.failure(IllegalStateException(parseErrorMessage(directResp)))
+            }
+
+            // Stage 2: If email entered (e.g. p.stasyuk@lantaservice.com), try Basic Auth with local-part
+            val localPart = extractEmailLocalPart(cleanInput)
+            if (!localPart.isNullOrBlank()) {
+                val localHeader = SessionCredentialsProvider.buildBasicAuthHeader(localPart, password)
+                val localResp = api.getCurrentUserInfo(
+                    getCurrentUserInfo = true,
+                    explicitAuthHeader = localHeader
+                )
+                if (localResp.isSuccessful) {
+                    val user = localResp.body()
+                    val emailMatches = user != null && (
+                        user.email.isNullOrBlank() ||
+                            user.email.trim().equals(cleanInput, ignoreCase = true)
+                        )
+                    if (user != null && emailMatches) {
+                        return@withContext completeLoginSession(
+                            user = user,
+                            authLogin = user.login?.takeIf { it.isNotBlank() } ?: localPart,
+                            storedLoginInput = cleanInput,
+                            password = password,
+                            cookieHeader = null,
+                            fixedUrl = fixedUrl,
+                            rememberMe = rememberMe
+                        )
+                    }
+                }
+            }
+
+            // Stage 3: Web-form login resolving any email / domain login on server -> fetch user profile
+            val cookieHeader = connectionManager.authenticateViaWebForm(cleanInput, password)
+            if (!cookieHeader.isNullOrBlank()) {
+                connectionManager.fetchCurrentUserWithCookie(cookieHeader).use { userResp ->
+                    if (userResp.isSuccessful) {
+                        val bodyText = userResp.body?.string().orEmpty()
+                        val user = runCatching {
+                            json.decodeFromString(CurrentUserDto.serializer(), bodyText)
+                        }.getOrNull()
+                        if (user != null) {
+                            val resolvedLogin = user.login?.trim().orEmpty()
+                            if (resolvedLogin.isNotEmpty()) {
+                                val verifyBasic = api.getCurrentUserInfo(
+                                    getCurrentUserInfo = true,
+                                    explicitAuthHeader = SessionCredentialsProvider.buildBasicAuthHeader(
+                                        resolvedLogin,
+                                        password
+                                    )
+                                )
+                                if (verifyBasic.isSuccessful) {
+                                    return@withContext completeLoginSession(
+                                        user = user,
+                                        authLogin = resolvedLogin,
+                                        storedLoginInput = cleanInput,
+                                        password = password,
+                                        cookieHeader = null,
+                                        fixedUrl = fixedUrl,
+                                        rememberMe = rememberMe
+                                    )
+                                }
+                            }
+                            return@withContext completeLoginSession(
+                                user = user,
+                                authLogin = resolvedLogin.ifBlank { cleanInput },
+                                storedLoginInput = cleanInput,
+                                password = password,
+                                cookieHeader = cookieHeader,
+                                fixedUrl = fixedUrl,
+                                rememberMe = rememberMe
+                            )
+                        }
+                    }
+                }
+            }
+
+            Result.failure(IllegalStateException("Неверный логин, E-mail или пароль"))
+        } catch (t: Throwable) {
+            Result.failure(toIntraException(t))
+        }
+    }
+
+    private fun completeLoginSession(
+        user: CurrentUserDto,
+        authLogin: String,
+        storedLoginInput: String,
+        password: String,
+        cookieHeader: String?,
+        fixedUrl: String,
+        rememberMe: Boolean
+    ): Result<UserSession> {
+        if (user.isArchive == true) {
+            return Result.failure(IllegalStateException("Учетная запись находится в архиве"))
+        }
+
+        val session = UserSession(
+            baseUrl = fixedUrl,
+            login = authLogin,
+            password = password,
+            authCookieHeader = cookieHeader,
+            userId = user.id,
+            displayName = user.name?.takeIf { it.isNotBlank() } ?: authLogin,
+            email = user.email,
+            phone = user.mobilePhone?.takeIf { it.isNotBlank() } ?: user.phone,
+            position = user.position,
+            roleType = user.roleType
+        )
+
+        credentialsProvider.setSession(session)
+        sessionStorage.save(
+            SavedCredentials(
+                baseUrl = fixedUrl,
+                login = storedLoginInput,
+                password = password,
+                rememberMe = rememberMe
+            )
+        )
+        _authState.value = AuthState.Authenticated(session)
+        return Result.success(session)
     }
 
     suspend fun loadOpenTicketsProgressive(
@@ -691,6 +780,12 @@ class IntraRepository(
     companion object {
         const val REPAIRED_STATUS_NAME = "Починил"
         const val REPAIRED_STATUS_KEYWORD = "починил"
+
+        fun extractEmailLocalPart(input: String): String? {
+            val atIdx = input.indexOf('@')
+            if (atIdx <= 0) return null
+            return input.substring(0, atIdx).trim().takeIf { it.isNotEmpty() }
+        }
 
         fun findRepairedStatusIds(statuses: Iterable<TaskStatusDto>): Set<Int> {
             val all = statuses.toList()

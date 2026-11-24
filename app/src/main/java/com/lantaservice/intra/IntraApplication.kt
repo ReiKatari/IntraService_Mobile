@@ -67,6 +67,7 @@ class IntraApplication : Application(), ImageLoaderFactory {
             api = apiService,
             json = json,
             credentialsProvider = credentialsProvider,
+            connectionManager = connectionManager,
             sessionStorage = sessionStorage
         )
     }

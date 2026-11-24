@@ -92,7 +92,8 @@ fun TaskListScreen(
     viewModel: TaskListViewModel,
     hasAvailableUpdate: Boolean = false,
     onOpenUpdateDialog: () -> Unit = {},
-    onOpenTicket: (Int) -> Unit
+    onOpenTicket: (Int) -> Unit,
+    onExitApp: () -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -112,13 +113,13 @@ fun TaskListScreen(
     if (showLogoutConfirm) {
         AlertDialog(
             onDismissRequest = { showLogoutConfirm = false },
-            title = { Text("Выйти из аккаунта?") },
-            text = { Text("Вы будете перенаправлены на экран входа IntraService Mobile.") },
+            title = { Text("Выйти из приложения?") },
+            text = { Text("Текущая сессия будет завершена, а приложение полностью закрыто.") },
             confirmButton = {
                 TextButton(
                     onClick = {
                         showLogoutConfirm = false
-                        viewModel.logout()
+                        onExitApp()
                     }
                 ) {
                     Text("Выйти", color = IntraColors.ErrorRed)
@@ -468,7 +469,7 @@ private fun TicketTabSwitcher(
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             TabSegmentItem(
-                title = "Без «Починил»",
+                title = "В работе",
                 count = countWithoutRepaired,
                 selected = selectedTab == TicketTab.WITHOUT_REPAIRED,
                 activeColor = IntraColors.BrandPrimary,
@@ -476,7 +477,7 @@ private fun TicketTabSwitcher(
                 modifier = Modifier.weight(1f)
             )
             TabSegmentItem(
-                title = "Был «Починил»",
+                title = "Выполнено",
                 count = countHadRepaired,
                 selected = selectedTab == TicketTab.HAD_REPAIRED,
                 activeColor = IntraColors.EmeraldSuccess,
@@ -764,8 +765,8 @@ private fun EmptyTicketsState(
             Text(
                 text = when {
                     hasSearchQuery -> "Ничего не найдено"
-                    selectedTab == TicketTab.WITHOUT_REPAIRED -> "Нет заявок без статуса «Починил»"
-                    else -> "Нет открытых заявок, где уже был статус «Починил»"
+                    selectedTab == TicketTab.WITHOUT_REPAIRED -> "Нет заявок в работе"
+                    else -> "Нет выполненных открытых заявок"
                 },
                 style = MaterialTheme.typography.titleMedium,
                 color = IntraColors.TextPrimary
