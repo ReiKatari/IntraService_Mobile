@@ -28,6 +28,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayOutputStream
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
 class IntraLogicTest {
 
@@ -386,5 +388,30 @@ class IntraLogicTest {
             "" to "",
             LoginViewModel.resolvePostLoginFields("p.stasyuk@lantaservice.com", "P@ss|1", false)
         )
+    }
+
+    @Test
+    fun dateFormatterFormatsDateOnlyAsDdMmYyyy() {
+        assertEquals("25.11.2026", DateAndTextFormatter.formatIntraDate("2026-11-25"))
+        assertEquals("25.11.2026", DateAndTextFormatter.formatIntraDate("25.11.2026"))
+        assertEquals("05.04.2026", DateAndTextFormatter.formatIntraDate("5.4.2026"))
+        assertEquals("25.11.2026", DateAndTextFormatter.formatDeadline("2026-11-25"))
+        assertEquals("Без срока", DateAndTextFormatter.formatDeadline(null))
+        assertEquals("25.11.2026", DateAndTextFormatter.formatDateOnly("2026-11-25T14:30:00"))
+    }
+
+    @Test
+    fun dateFormatterFormatsDateTimeAsDdMmYyyyHhMmIncludingNetFractionsAndToday() {
+        assertEquals("25.11.2026 14:30", DateAndTextFormatter.formatIntraDate("2026-11-25T14:30:00"))
+        assertEquals("25.11.2026 09:05", DateAndTextFormatter.formatIntraDate("2026-11-25T09:05:12.1234567"))
+        assertEquals("25.11.2026 18:45", DateAndTextFormatter.formatIntraDate("2026-11-25T18:45:00+03:00"))
+        assertEquals("25.11.2026 09:05", DateAndTextFormatter.formatIntraDate("25.11.2026 9:05:33"))
+        assertEquals("25.11.2026 14:30", DateAndTextFormatter.formatDeadline("2026-11-25T14:30:00"))
+
+        val nowIso = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"))
+        val formattedToday = DateAndTextFormatter.formatIntraDate(nowIso)
+        assertFalse(formattedToday.contains("Сегодня"))
+        assertFalse(formattedToday.contains("Вчера"))
+        assertTrue(Regex("^\\d{2}\\.\\d{2}\\.\\d{4} \\d{2}:\\d{2}$").matches(formattedToday))
     }
 }

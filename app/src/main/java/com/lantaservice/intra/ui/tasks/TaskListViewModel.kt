@@ -11,9 +11,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import com.lantaservice.intra.util.DateAndTextFormatter
 import kotlinx.coroutines.launch
-import java.time.LocalTime
-import java.time.format.DateTimeFormatter
+import java.time.LocalDateTime
 
 enum class TicketTab {
     WITHOUT_REPAIRED,
@@ -72,7 +72,6 @@ class TaskListViewModel(
     val uiState: StateFlow<TaskListUiState> = _uiState.asStateFlow()
 
     private var loadJob: Job? = null
-    private val timeFmt = DateTimeFormatter.ofPattern("HH:mm")
 
     init {
         loadTickets(isPullToRefresh = false)
@@ -116,7 +115,7 @@ class TaskListViewModel(
                         isRefreshing = false,
                         isResolvingHistory = snapshot.isResolvingHistory,
                         tickets = snapshot.tickets,
-                        lastUpdatedTime = LocalTime.now().format(timeFmt),
+                        lastUpdatedTime = DateAndTextFormatter.formatLocalDateTime(LocalDateTime.now()),
                         errorMessage = null,
                         showVpnSettingsHint = false
                     )
@@ -160,7 +159,7 @@ class TaskListViewModel(
                         isAutoRefreshing = false,
                         isResolvingHistory = snapshot.isResolvingHistory,
                         tickets = snapshot.tickets,
-                        lastUpdatedTime = LocalTime.now().format(timeFmt),
+                        lastUpdatedTime = DateAndTextFormatter.formatLocalDateTime(LocalDateTime.now()),
                         errorMessage = null
                     )
                 }

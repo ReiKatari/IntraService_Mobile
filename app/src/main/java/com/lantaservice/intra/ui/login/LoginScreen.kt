@@ -9,6 +9,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -61,6 +62,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -130,7 +132,8 @@ fun LoginScreen(viewModel: LoginViewModel) {
                     color = Color.White,
                     fontSize = 30.sp,
                     fontWeight = FontWeight.Light,
-                    letterSpacing = (-0.4).sp
+                    letterSpacing = (-0.4).sp,
+                    textAlign = TextAlign.Center
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Surface(
@@ -141,6 +144,7 @@ fun LoginScreen(viewModel: LoginViewModel) {
                         text = "Мобильное рабочее место инженера",
                         color = Color.White,
                         style = MaterialTheme.typography.labelMedium,
+                        textAlign = TextAlign.Center,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
                     )
                 }
@@ -361,9 +365,9 @@ fun LoginScreen(viewModel: LoginViewModel) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Surface(
                     shape = RoundedCornerShape(50),

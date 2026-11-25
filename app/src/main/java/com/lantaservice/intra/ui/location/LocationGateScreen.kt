@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,9 +41,11 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lantaservice.intra.data.model.UserSession
 import com.lantaservice.intra.ui.components.IntraHeaderBanner
+import com.lantaservice.intra.ui.components.intraHeaderInsetsPadding
 import com.lantaservice.intra.ui.theme.IntraColors
 import com.lantaservice.intra.util.DateAndTextFormatter
 
@@ -75,10 +76,10 @@ fun LocationGateScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 18.dp, vertical = 14.dp),
+                    .intraHeaderInsetsPadding()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -86,7 +87,7 @@ fun LocationGateScreen(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(40.dp)
+                            .size(42.dp)
                             .clip(CircleShape)
                             .background(Color.White.copy(alpha = 0.22f)),
                         contentAlignment = Alignment.Center
@@ -98,27 +99,39 @@ fun LocationGateScreen(
                         )
                     }
                     Spacer(modifier = Modifier.width(12.dp))
-                    Column {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
                         Text(
                             text = session.displayName,
                             color = Color.White,
-                            style = MaterialTheme.typography.titleMedium
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             text = session.position?.takeIf { it.isNotBlank() } ?: session.login,
                             color = Color.White.copy(alpha = 0.85f),
-                            style = MaterialTheme.typography.bodySmall
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
 
                 IconButton(
                     onClick = onLogout,
-                    colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White)
+                    modifier = Modifier.size(38.dp),
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = Color.White.copy(alpha = 0.16f),
+                        contentColor = Color.White
+                    )
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.Logout,
-                        contentDescription = "Выйти"
+                        contentDescription = "Выйти",
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }

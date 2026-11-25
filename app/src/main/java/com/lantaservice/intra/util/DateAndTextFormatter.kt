@@ -2,58 +2,111 @@ package com.lantaservice.intra.util
 
 import android.text.Html
 import com.lantaservice.intra.data.model.TaskAttachment
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 object DateAndTextFormatter {
 
-    private val outputTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.forLanguageTag("ru"))
-    private val outputFullFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm", Locale.forLanguageTag("ru"))
-    private val outputDateOnlyFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy", Locale.forLanguageTag("ru"))
+    private val ruLocale = Locale.forLanguageTag("ru")
+    private val outputDateOnlyFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy", ruLocale)
+    private val outputDateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm", ruLocale)
+
+    private val inputDateOnlyFormatters = listOf(
+        DateTimeFormatter.ofPattern("dd.MM.yyyy"),
+        DateTimeFormatter.ofPattern("d.M.yyyy"),
+        DateTimeFormatter.ofPattern("yyyy-MM-dd"),
+        DateTimeFormatter.ofPattern("dd/MM/yyyy"),
+        DateTimeFormatter.ofPattern("yyyy/MM/dd")
+    )
 
     private val inputDateTimeFormatters = listOf(
+        DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss.SSS"),
         DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss"),
         DateTimeFormatter.ofPattern("dd.MM.yyyy H:mm:ss"),
         DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm"),
-        DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS"),
-        DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"),
+        DateTimeFormatter.ofPattern("dd.MM.yyyy H:mm"),
+        DateTimeFormatter.ofPattern("d.M.yyyy H:mm:ss"),
+        DateTimeFormatter.ofPattern("d.M.yyyy H:mm"),
+        DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm"),
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS"),
         DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"),
-        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+        DateTimeFormatter.ofPattern("yyyy-MM-dd H:mm:ss"),
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"),
+        DateTimeFormatter.ofPattern("yyyy-MM-dd H:mm")
     )
 
+    private val aspNetDateRegex = Regex("^/Date\\((-?\\d+)([+-]\\d{4})?\\)/$")
     private val imageExtensions = setOf("jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif")
+
+    fun formatLocalDate(date: LocalDate): String = date.format(outputDateOnlyFormatter)
+
+    fun formatLocalDateTime(dateTime: LocalDateTime): String = dateTime.format(outputDateTimeFormatter)
+
+    fun formatDateOnly(raw: String?): String {
+        val text = raw?.trim().orEmpty()
+        if (text.isEmpty()) return ""
+        parseDateOnly(text)?.let { return formatLocalDate(it) }
+        parseDateTime(text)?.let { return formatLocalDate(it.toLocalDate()) }
+        return text
+    }
 
     fun formatIntraDate(raw: String?): String {
         val text = raw?.trim().orEmpty()
         if (text.isEmpty()) return ""
-        val parsed = parseDateTime(text) ?: return text
-        val today = LocalDate.now()
-        return when (parsed.toLocalDate()) {
-            today -> "Сегодня, ${parsed.format(outputTimeFormatter)}"
-            today.minusDays(1) -> "Вчера, ${parsed.format(outputTimeFormatter)}"
-            else -> parsed.format(outputFullFormatter)
-        }
+        parseDateOnly(text)?.let { return formatLocalDate(it) }
+        parseDateTime(text)?.let { return formatLocalDateTime(it) }
+        return text
     }
 
     fun formatDeadline(raw: String?): String {
         val text = raw?.trim().orEmpty()
         if (text.isEmpty()) return "Без срока"
-        val parsed = parseDateTime(text)
-        if (parsed != null) return parsed.format(outputFullFormatter)
-        val dateOnly = runCatching { LocalDate.parse(text.take(10)) }.getOrNull()
-        return dateOnly?.format(outputDateOnlyFormatter) ?: text
+        return formatIntraDate(text)
+    }
+
+    fun parseDateOnly(raw: String): LocalDate? {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty() || trimmed.contains(':') || trimmed.contains('T') || trimmed.startsWith("/Date(")) {
+            return null
+        }
+        for (formatter in inputDateOnlyFormatters) {
+            runCatching {
+                return LocalDate.parse(trimmed, formatter)
+            }
+        }
+        return null
     }
 
     fun parseDateTime(raw: String): LocalDateTime? {
-        runCatching {
-            return OffsetDateTime.parse(raw).toLocalDateTime()
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty()) return null
+
+        aspNetDateRegex.matchEntire(trimmed)?.let { match ->
+            val millis = match.groupValues[1].toLongOrNull() ?: return null
+            return Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalDateTime()
         }
+
+        runCatching {
+            val offsetDateTime = OffsetDateTime.parse(trimmed)
+            return if (trimmed.endsWith("Z", ignoreCase = true)) {
+                offsetDateTime.atZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime()
+            } else {
+                offsetDateTime.toLocalDateTime()
+            }
+        }
+
+        runCatching {
+            return LocalDateTime.parse(trimmed, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+        }
+
         for (formatter in inputDateTimeFormatters) {
             runCatching {
-                return LocalDateTime.parse(raw, formatter)
+                return LocalDateTime.parse(trimmed, formatter)
             }
         }
         return null
@@ -136,7 +189,7 @@ object DateAndTextFormatter {
     fun initialsOf(name: String): String {
         val parts = name.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
         if (parts.isEmpty()) return "ИС"
-        if (parts.size == 1) return parts[0].take(2).uppercase(Locale.forLanguageTag("ru"))
-        return "${parts[0].first()}${parts[1].first()}".uppercase(Locale.forLanguageTag("ru"))
+        if (parts.size == 1) return parts[0].take(2).uppercase(ruLocale)
+        return "${parts[0].first()}${parts[1].first()}".uppercase(ruLocale)
     }
 }

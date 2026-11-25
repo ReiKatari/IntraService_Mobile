@@ -16,7 +16,14 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -133,6 +140,16 @@ fun IntraWaveBackground(
         content()
     }
 }
+
+/**
+ * Top and horizontal safe-area insets covering both status bar and camera cutout.
+ */
+@Composable
+fun Modifier.intraHeaderInsetsPadding(): Modifier = this.windowInsetsPadding(
+    WindowInsets.statusBars
+        .union(WindowInsets.displayCutout)
+        .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
+)
 
 /**
  * Compact header backdrop matching IntraService top navigation gradient.
@@ -263,7 +280,7 @@ fun StatusPill(
 
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(50),
+        shape = RoundedCornerShape(14.dp),
         color = bgColor
     ) {
         Text(
@@ -271,7 +288,7 @@ fun StatusPill(
             color = fgColor,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
         )
@@ -424,7 +441,8 @@ fun FullscreenPhotoViewer(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.TopCenter)
-                    .padding(horizontal = 16.dp, vertical = 20.dp),
+                    .intraHeaderInsetsPadding()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {

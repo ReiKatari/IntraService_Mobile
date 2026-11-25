@@ -22,6 +22,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -32,7 +33,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -103,6 +103,7 @@ import com.lantaservice.intra.data.model.TicketSaveResult
 import com.lantaservice.intra.ui.camera.SmartCameraScreen
 import com.lantaservice.intra.ui.components.FullscreenPhotoViewer
 import com.lantaservice.intra.ui.components.IntraHeaderBanner
+import com.lantaservice.intra.ui.components.intraHeaderInsetsPadding
 import com.lantaservice.intra.ui.components.StatusPill
 import com.lantaservice.intra.ui.components.ViewerPhoto
 import com.lantaservice.intra.ui.theme.IntraColors
@@ -211,12 +212,14 @@ fun TaskDetailScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(horizontal = 8.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                        .intraHeaderInsetsPadding()
+                        .padding(horizontal = 10.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         IconButton(
                             onClick = onBack,
                             colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White)
@@ -227,22 +230,27 @@ fun TaskDetailScreen(
                             )
                         }
                         Spacer(modifier = Modifier.width(4.dp))
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "Заявка #${state.taskId}",
                                 color = Color.White,
-                                style = MaterialTheme.typography.titleLarge
+                                style = MaterialTheme.typography.titleLarge,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             state.detail?.let { d ->
                                 Text(
                                     text = d.statusName,
                                     color = Color.White.copy(alpha = 0.88f),
-                                    style = MaterialTheme.typography.bodySmall
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
                     }
 
+                    Spacer(modifier = Modifier.width(8.dp))
                     IconButton(
                         onClick = viewModel::loadDetail,
                         colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White)
@@ -414,10 +422,10 @@ private fun TicketInfoCard(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Row(
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 StatusPill(
                     text = detail.statusName,
@@ -425,10 +433,12 @@ private fun TicketInfoCard(
                     isOverdue = detail.isOverdue && !detail.isCurrentlyRepaired
                 )
                 if (detail.priorityName.isNotBlank()) {
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = detail.priorityName,
                         style = MaterialTheme.typography.labelMedium,
-                        color = IntraColors.TextSecondary
+                        color = IntraColors.TextSecondary,
+                        modifier = Modifier.align(Alignment.CenterVertically)
                     )
                 }
             }
@@ -481,6 +491,12 @@ private fun TicketInfoCard(
                     }
                 }
             }
+            if (detail.createdText.isNotBlank()) {
+                DetailMetaRow(label = "Создана", value = detail.createdText)
+            }
+            if (detail.changedText.isNotBlank()) {
+                DetailMetaRow(label = "Изменена", value = detail.changedText)
+            }
             DetailMetaRow(
                 label = "Срок",
                 value = detail.deadlineText,
@@ -506,7 +522,7 @@ private fun DetailMetaRow(
             text = label,
             style = MaterialTheme.typography.bodySmall,
             color = IntraColors.TextTertiary,
-            modifier = Modifier.width(96.dp)
+            modifier = Modifier.width(104.dp)
         )
         Text(
             text = value,
@@ -743,6 +759,7 @@ private fun AttachmentsCard(
                         modifier = Modifier
                             .weight(1f)
                             .height(48.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                         shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = IntraColors.BrandPrimary,
@@ -752,10 +769,10 @@ private fun AttachmentsCard(
                         Icon(
                             imageVector = Icons.Rounded.CameraAlt,
                             contentDescription = null,
-                            modifier = Modifier.size(19.dp)
+                            modifier = Modifier.size(18.dp)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Сделать фото", maxLines = 1)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Сделать фото", maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
 
                     OutlinedButton(
@@ -764,6 +781,7 @@ private fun AttachmentsCard(
                         modifier = Modifier
                             .weight(1f)
                             .height(48.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                         shape = RoundedCornerShape(14.dp),
                         border = BorderStroke(1.dp, IntraColors.BrandPrimary)
                     ) {
@@ -771,10 +789,10 @@ private fun AttachmentsCard(
                             imageVector = Icons.Rounded.PhotoLibrary,
                             contentDescription = null,
                             tint = IntraColors.BrandPrimary,
-                            modifier = Modifier.size(19.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Галерея", color = IntraColors.BrandPrimary, maxLines = 1)
+                        Text("Галерея", color = IntraColors.BrandPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             } else {
@@ -1024,14 +1042,19 @@ private fun HistoryCard(
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
                                         text = ev.editorName,
                                         style = MaterialTheme.typography.labelMedium,
                                         color = IntraColors.TextPrimary,
-                                        fontWeight = FontWeight.SemiBold
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
                                     )
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         text = ev.dateText,
                                         style = MaterialTheme.typography.labelSmall,

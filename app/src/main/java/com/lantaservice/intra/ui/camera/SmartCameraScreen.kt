@@ -28,6 +28,7 @@ import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -37,7 +38,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -93,6 +93,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil.compose.AsyncImage
 import com.lantaservice.intra.data.model.PendingPhoto
+import com.lantaservice.intra.ui.components.intraHeaderInsetsPadding
 import com.lantaservice.intra.ui.theme.IntraColors
 import com.lantaservice.intra.util.CameraReviewPair
 import com.lantaservice.intra.util.DateAndTextFormatter
@@ -310,14 +311,14 @@ fun SmartCameraScreen(
                             drawLine(frameColor, Offset(w, h), Offset(w, h - corner), strokeW, StrokeCap.Round)
                         }
 
-                        // Top HUD: Close, 3 live condition pills, Torch
+                        // Top HUD: Close, title & Torch on first row, 3 live condition pills wrapped cleanly below
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .align(Alignment.TopCenter)
-                                .statusBarsPadding()
-                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                                .intraHeaderInsetsPadding()
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -334,33 +335,17 @@ fun SmartCameraScreen(
                                     Icon(Icons.Rounded.Close, contentDescription = "Закрыть")
                                 }
 
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    ConditionPill(
-                                        icon = Icons.Rounded.WbSunny,
-                                        label = "Свет",
-                                        state = when (quality.light) {
-                                            LightStatus.OK -> PillState.GOOD
-                                            LightStatus.GLARE -> PillState.WARN
-                                            LightStatus.TOO_DARK -> PillState.BAD
-                                        }
-                                    )
-                                    ConditionPill(
-                                        icon = Icons.Rounded.CenterFocusStrong,
-                                        label = "Чёткость",
-                                        state = if (quality.sharpness == SharpnessStatus.OK) {
-                                            PillState.GOOD
-                                        } else {
-                                            PillState.WARN
-                                        }
-                                    )
-                                    ConditionPill(
-                                        icon = Icons.Rounded.Vibration,
-                                        label = "Стабильно",
-                                        state = if (quality.stability == StabilityStatus.STEADY) {
-                                            PillState.GOOD
-                                        } else {
-                                            PillState.BAD
-                                        }
+                                Surface(
+                                    shape = RoundedCornerShape(50),
+                                    color = Color.Black.copy(alpha = 0.55f),
+                                    modifier = Modifier.weight(1f, fill = false)
+                                ) {
+                                    Text(
+                                        text = "Фото для заявки #$taskId",
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                                     )
                                 }
 
@@ -388,6 +373,40 @@ fun SmartCameraScreen(
                                 } else {
                                     Spacer(modifier = Modifier.size(48.dp))
                                 }
+                            }
+
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                ConditionPill(
+                                    icon = Icons.Rounded.WbSunny,
+                                    label = "Свет",
+                                    state = when (quality.light) {
+                                        LightStatus.OK -> PillState.GOOD
+                                        LightStatus.GLARE -> PillState.WARN
+                                        LightStatus.TOO_DARK -> PillState.BAD
+                                    }
+                                )
+                                ConditionPill(
+                                    icon = Icons.Rounded.CenterFocusStrong,
+                                    label = "Чёткость",
+                                    state = if (quality.sharpness == SharpnessStatus.OK) {
+                                        PillState.GOOD
+                                    } else {
+                                        PillState.WARN
+                                    }
+                                )
+                                ConditionPill(
+                                    icon = Icons.Rounded.Vibration,
+                                    label = "Стабильно",
+                                    state = if (quality.stability == StabilityStatus.STEADY) {
+                                        PillState.GOOD
+                                    } else {
+                                        PillState.BAD
+                                    }
+                                )
                             }
 
                             // Primary live hint pill ("когда лучше фоткать")
@@ -543,13 +562,14 @@ fun SmartCameraScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .align(Alignment.TopCenter)
-                                .statusBarsPadding()
-                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                                .intraHeaderInsetsPadding()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Surface(
-                                shape = RoundedCornerShape(50),
+                                shape = RoundedCornerShape(18.dp),
+                                modifier = Modifier.weight(1f, fill = false),
                                 color = if (activePhoto.isBlurryWarning) {
                                     IntraColors.WarningAmber.copy(alpha = 0.9f)
                                 } else {
@@ -583,6 +603,7 @@ fun SmartCameraScreen(
                                 }
                             }
 
+                            Spacer(modifier = Modifier.width(8.dp))
                             IconButton(
                                 onClick = onDismiss,
                                 colors = IconButtonDefaults.iconButtonColors(

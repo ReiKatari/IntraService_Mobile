@@ -14,6 +14,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,7 +24,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -78,6 +78,7 @@ import com.lantaservice.intra.data.model.TicketItem
 import com.lantaservice.intra.data.model.UserSession
 import com.lantaservice.intra.data.network.IntraConnectionManager
 import com.lantaservice.intra.ui.components.IntraHeaderBanner
+import com.lantaservice.intra.ui.components.intraHeaderInsetsPadding
 import com.lantaservice.intra.ui.components.PriorityDotAndLabel
 import com.lantaservice.intra.ui.components.ShimmerTicketCard
 import com.lantaservice.intra.ui.components.StatusPill
@@ -143,13 +144,13 @@ fun TaskListScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .statusBarsPadding()
+                    .intraHeaderInsetsPadding()
                     .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -158,7 +159,7 @@ fun TaskListScreen(
                         Box(contentAlignment = Alignment.BottomEnd) {
                             Box(
                                 modifier = Modifier
-                                    .size(44.dp)
+                                    .size(42.dp)
                                     .clip(CircleShape)
                                     .background(Color.White.copy(alpha = 0.24f)),
                                 contentAlignment = Alignment.Center
@@ -172,79 +173,103 @@ fun TaskListScreen(
                             }
                             Box(
                                 modifier = Modifier
-                                    .size(14.dp)
+                                    .size(13.dp)
                                     .clip(CircleShape)
                                     .background(IntraColors.EmeraldSuccess)
                                     .padding(2.dp)
                             )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
                             Text(
                                 text = session.displayName,
                                 color = Color.White,
                                 style = MaterialTheme.typography.titleMedium,
-                                maxLines = 1,
+                                maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            Text(
+                                text = session.position?.takeIf { it.isNotBlank() } ?: session.login,
+                                color = Color.White.copy(alpha = 0.88f),
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = Color.White.copy(alpha = 0.18f)
                             ) {
-                                Text(
-                                    text = session.position?.takeIf { it.isNotBlank() } ?: session.login,
-                                    color = Color.White.copy(alpha = 0.88f),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f, fill = false)
-                                )
-                                Surface(
-                                    shape = RoundedCornerShape(50),
-                                    color = Color.White.copy(alpha = 0.18f)
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.LocationOn,
-                                            contentDescription = null,
-                                            tint = Color(0xFF9AF5C6),
-                                            modifier = Modifier.size(11.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(2.dp))
-                                        Text(
-                                            text = "GPS",
-                                            color = Color.White,
-                                            style = MaterialTheme.typography.labelSmall
-                                        )
-                                    }
+                                    Icon(
+                                        imageVector = Icons.Rounded.LocationOn,
+                                        contentDescription = null,
+                                        tint = Color(0xFF9AF5C6),
+                                        modifier = Modifier.size(11.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(
+                                        text = "GPS",
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
                                 }
                             }
                         }
                     }
 
-                    Row {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         if (hasAvailableUpdate) {
                             IconButton(
                                 onClick = onOpenUpdateDialog,
-                                colors = IconButtonDefaults.iconButtonColors(contentColor = Color(0xFF9AF5C6))
+                                modifier = Modifier.size(38.dp),
+                                colors = IconButtonDefaults.iconButtonColors(
+                                    containerColor = Color.White.copy(alpha = 0.16f),
+                                    contentColor = Color(0xFF9AF5C6)
+                                )
                             ) {
-                                Icon(Icons.Rounded.SystemUpdate, contentDescription = "Обновление")
+                                Icon(
+                                    Icons.Rounded.SystemUpdate,
+                                    contentDescription = "Обновление",
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
                         }
                         IconButton(
                             onClick = { viewModel.loadTickets(isPullToRefresh = true) },
-                            colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White)
+                            modifier = Modifier.size(38.dp),
+                            colors = IconButtonDefaults.iconButtonColors(
+                                containerColor = Color.White.copy(alpha = 0.16f),
+                                contentColor = Color.White
+                            )
                         ) {
-                            Icon(Icons.Rounded.Refresh, contentDescription = "Обновить")
+                            Icon(
+                                Icons.Rounded.Refresh,
+                                contentDescription = "Обновить",
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                         IconButton(
                             onClick = { showLogoutConfirm = true },
-                            colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White)
+                            modifier = Modifier.size(38.dp),
+                            colors = IconButtonDefaults.iconButtonColors(
+                                containerColor = Color.White.copy(alpha = 0.16f),
+                                contentColor = Color.White
+                            )
                         ) {
-                            Icon(Icons.AutoMirrored.Rounded.Logout, contentDescription = "Выйти")
+                            Icon(
+                                Icons.AutoMirrored.Rounded.Logout,
+                                contentDescription = "Выйти",
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                     }
                 }
@@ -294,10 +319,10 @@ fun TaskListScreen(
                 onSelectTab = viewModel::selectTab
             )
 
-            Row(
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
@@ -313,10 +338,11 @@ fun TaskListScreen(
                         color = IntraColors.TextTertiary
                     )
                 }
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = when {
                         state.isAutoRefreshing -> "Синхронизация..."
-                        state.lastUpdatedTime.isNotBlank() -> "Обновлено в ${state.lastUpdatedTime}"
+                        state.lastUpdatedTime.isNotBlank() -> "Обновлено: ${state.lastUpdatedTime}"
                         else -> ""
                     },
                     style = MaterialTheme.typography.labelSmall,
@@ -521,7 +547,7 @@ private fun TabSegmentItem(
         color = bgColor
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -530,9 +556,10 @@ private fun TabSegmentItem(
                 color = textColor,
                 style = MaterialTheme.typography.labelLarge,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
             )
-            Spacer(modifier = Modifier.width(6.dp))
+            Spacer(modifier = Modifier.width(5.dp))
             Surface(
                 shape = RoundedCornerShape(50),
                 color = badgeBg
@@ -579,6 +606,7 @@ private fun TicketCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
+                    modifier = Modifier.weight(1f),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -590,7 +618,7 @@ private fun TicketCard(
                     )
                     PriorityDotAndLabel(ticket.priorityName)
                 }
-
+                Spacer(modifier = Modifier.width(8.dp))
                 StatusPill(
                     text = ticket.statusName,
                     isRepaired = isCurrentlyRepaired,
@@ -697,10 +725,10 @@ private fun TicketCard(
                 }
             }
 
-            Row(
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
@@ -721,6 +749,7 @@ private fun TicketCard(
                     )
                 }
                 if (ticket.changedText.isNotBlank()) {
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = ticket.changedText,
                         style = MaterialTheme.typography.labelSmall,
