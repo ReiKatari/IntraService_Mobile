@@ -330,7 +330,7 @@ class IntraRepository(
                 return@withContext Result.failure(IllegalStateException(parseErrorMessage(directResp)))
             }
 
-            // Stage 2: If email entered (e.g. p.stasyuk@lantaservice.com), try Basic Auth with local-part
+            // Stage 2: If email entered (e.g. engineer@lantaservice.com), try Basic Auth with local-part
             val localPart = extractEmailLocalPart(cleanInput)
             if (!localPart.isNullOrBlank()) {
                 val localHeader = SessionCredentialsProvider.buildBasicAuthHeader(localPart, password)

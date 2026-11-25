@@ -1,4 +1,22 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
+
+val localProps = Properties().apply {
+    val propsFile = rootProject.file("local.properties")
+    if (propsFile.exists()) {
+        propsFile.inputStream().use { load(it) }
+    }
+}
+val releaseStorePassword = localProps.getProperty("intra.store.password")
+    ?: System.getenv("INTRA_STORE_PASSWORD").orEmpty()
+val releaseKeyAlias = localProps.getProperty("intra.key.alias")
+    ?: System.getenv("INTRA_KEY_ALIAS")
+    ?: "intra_release"
+val releaseKeyPassword = localProps.getProperty("intra.key.password")
+    ?: System.getenv("INTRA_KEY_PASSWORD").orEmpty()
+val hasReleaseSigning = file("intra-release.jks").exists() &&
+    releaseStorePassword.isNotBlank() &&
+    releaseKeyPassword.isNotBlank()
 
 plugins {
     id("com.android.application")
@@ -28,11 +46,13 @@ android {
     }
 
     signingConfigs {
-        create("release") {
-            storeFile = file("intra-release.jks")
-            storePassword = "IntraLanta2026!"
-            keyAlias = "intra_release"
-            keyPassword = "IntraLanta2026!"
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file("intra-release.jks")
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
         }
     }
 
@@ -40,7 +60,7 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = if (file("intra-release.jks").exists()) {
+            signingConfig = if (hasReleaseSigning) {
                 signingConfigs.getByName("release")
             } else {
                 signingConfigs.getByName("debug")

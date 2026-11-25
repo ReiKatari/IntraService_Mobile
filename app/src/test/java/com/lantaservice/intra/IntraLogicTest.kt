@@ -351,7 +351,7 @@ class IntraLogicTest {
 
     @Test
     fun extractEmailLocalPartParsesCorporateEmailsCleanly() {
-        assertEquals("p.stasyuk", IntraRepository.extractEmailLocalPart("p.stasyuk@lantaservice.com"))
+        assertEquals("engineer", IntraRepository.extractEmailLocalPart("engineer@lantaservice.com"))
         assertNull(IntraRepository.extractEmailLocalPart("ivanov"))
         assertNull(IntraRepository.extractEmailLocalPart("@lantaservice.com"))
     }
@@ -359,14 +359,14 @@ class IntraLogicTest {
     @Test
     fun credentialsPayloadCodecPreservesEmailAndSpecialPassword() {
         val original = SavedCredentials(
-            login = "p.stasyuk@lantaservice.com",
+            login = "engineer@lantaservice.com",
             password = "P@ss|word:123 Пароль",
             rememberMe = true
         )
         val encoded = CredentialsPayloadCodec.encode(original)
         val decoded = CredentialsPayloadCodec.decode(encoded)
         assertNotNull(decoded)
-        assertEquals("p.stasyuk@lantaservice.com", decoded?.login)
+        assertEquals("engineer@lantaservice.com", decoded?.login)
         assertEquals("P@ss|word:123 Пароль", decoded?.password)
         assertEquals(true, decoded?.rememberMe)
     }
@@ -374,13 +374,13 @@ class IntraLogicTest {
     @Test
     fun credentialsPayloadCodecPreservesPartialRememberedInput() {
         val original = SavedCredentials(
-            login = "p.stasyuk@lantaservice.com",
+            login = "engineer@lantaservice.com",
             password = "",
             rememberMe = true
         )
         val decoded = CredentialsPayloadCodec.decode(CredentialsPayloadCodec.encode(original))
         assertNotNull(decoded)
-        assertEquals("p.stasyuk@lantaservice.com", decoded?.login)
+        assertEquals("engineer@lantaservice.com", decoded?.login)
         assertEquals("", decoded?.password)
         assertEquals(true, decoded?.rememberMe)
     }
@@ -388,12 +388,12 @@ class IntraLogicTest {
     @Test
     fun postLoginFieldRetentionMatchesRememberMeFlag() {
         assertEquals(
-            "p.stasyuk@lantaservice.com" to "P@ss|1",
-            LoginViewModel.resolvePostLoginFields("p.stasyuk@lantaservice.com", "P@ss|1", true)
+            "engineer@lantaservice.com" to "P@ss|1",
+            LoginViewModel.resolvePostLoginFields("engineer@lantaservice.com", "P@ss|1", true)
         )
         assertEquals(
             "" to "",
-            LoginViewModel.resolvePostLoginFields("p.stasyuk@lantaservice.com", "P@ss|1", false)
+            LoginViewModel.resolvePostLoginFields("engineer@lantaservice.com", "P@ss|1", false)
         )
     }
 
@@ -528,7 +528,7 @@ class IntraLogicTest {
               "IsPublic": true,
               "AddedFiles": "101|photo_rack.jpg",
               "RemovedFiles": "99|old.jpg",
-              "Executors": "Стасюк П.А.",
+              "Executors": "Иванов И.И.",
               "ExecutorsGroup": "Выездная бригада",
               "PriorityId": 3,
               "ServiceId": 7,
@@ -552,7 +552,7 @@ class IntraLogicTest {
         assertEquals(true, ev.isPublic)
         assertEquals(listOf("photo_rack.jpg"), ev.addedFiles)
         assertEquals(listOf("old.jpg"), ev.removedFiles)
-        assertTrue(ev.changes.contains("Исполнители: Стасюк П.А."))
+        assertTrue(ev.changes.contains("Исполнители: Иванов И.И."))
         assertTrue(ev.changes.contains("Группа исполнителей: Выездная бригада"))
         assertTrue(ev.changes.contains("Приоритет: Высокий"))
         assertTrue(ev.changes.contains("Сервис: Интернет"))
