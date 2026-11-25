@@ -196,8 +196,10 @@ data class TaskLifetimeDto(
 
 @Serializable
 data class TaskLifetimeResponseDto(
-    @SerialName("TaskLifetimes") val taskLifetimes: List<TaskLifetimeDto> = emptyList(),
+    @SerialName("TaskLifetimes") val taskLifetimes: List<JsonObject> = emptyList(),
     @SerialName("Statuses") val statuses: List<TaskStatusDto> = emptyList(),
+    @SerialName("Priorities") val priorities: List<TaskPriorityDto> = emptyList(),
+    @SerialName("Services") val services: List<ServiceDto> = emptyList(),
     @SerialName("Paginator")
     @Serializable(with = PaginatorSerializer::class)
     val paginator: PaginatorDto? = null
@@ -265,7 +267,11 @@ data class TicketLifetimeEvent(
     val editorName: String,
     val statusId: Int?,
     val statusName: String,
-    val comment: String
+    val comment: String,
+    val isPublic: Boolean? = null,
+    val addedFiles: List<String> = emptyList(),
+    val removedFiles: List<String> = emptyList(),
+    val changes: List<String> = emptyList()
 )
 
 @Immutable

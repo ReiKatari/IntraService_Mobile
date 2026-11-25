@@ -24,6 +24,7 @@ import com.lantaservice.intra.util.PhotoEnhancerEngine
 import com.lantaservice.intra.util.SharpnessStatus
 import com.lantaservice.intra.util.StabilityStatus
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -497,5 +498,69 @@ class IntraLogicTest {
         val afterRemove = PendingOutboxLogic.remove(list, 101, 1)
         assertEquals(0, PendingOutboxLogic.filterForUser(afterRemove, 1).size)
         assertEquals(1, PendingOutboxLogic.filterForUser(afterRemove, 2).size)
+    }
+
+    @Test
+    fun parseLifetimeFileNamesExtractsNamesFromIdPipePairs() {
+        assertEquals(
+            listOf("photo_1.jpg", "act.pdf"),
+            DateAndTextFormatter.parseLifetimeFileNames("101|photo_1.jpg, 102|act.pdf")
+        )
+        assertEquals(
+            listOf("file.png", "doc.docx"),
+            DateAndTextFormatter.parseLifetimeFileNames("55|file.png||56|doc.docx")
+        )
+        assertEquals(
+            listOf("plain.jpg"),
+            DateAndTextFormatter.parseLifetimeFileNames("plain.jpg")
+        )
+    }
+
+    @Test
+    fun parseLifetimeEventRendersAllChangeTypesAndNeverShowsEmptyBody() {
+        val rawObj = json.parseToJsonElement(
+            """
+            {
+              "Date": "2026-11-25T17:01:00",
+              "Editor": "Петров П.П.",
+              "StatusId": 29,
+              "Comments": "<p>Кабель заменен</p>",
+              "IsPublic": true,
+              "AddedFiles": "101|photo_rack.jpg",
+              "RemovedFiles": "99|old.jpg",
+              "Executors": "Стасюк П.А.",
+              "ExecutorsGroup": "Выездная бригада",
+              "PriorityId": 3,
+              "ServiceId": 7,
+              "Deadline": "2026-11-26T18:00:00",
+              "Field47": "Щиток #2"
+            }
+            """.trimIndent()
+        ).jsonObject
+
+        val ev = IntraRepository.parseLifetimeEvent(
+            obj = rawObj,
+            statusesById = mapOf(29 to TaskStatusDto(id = 29, name = "Починил")),
+            prioritiesById = mapOf(3 to com.lantaservice.intra.data.model.TaskPriorityDto(id = 3, name = "Высокий")),
+            servicesById = mapOf(7 to "Интернет")
+        )
+
+        assertEquals("25.11.2026 17:01", ev.dateText)
+        assertEquals("Петров П.П.", ev.editorName)
+        assertEquals("Починил", ev.statusName)
+        assertEquals("Кабель заменен", ev.comment)
+        assertEquals(true, ev.isPublic)
+        assertEquals(listOf("photo_rack.jpg"), ev.addedFiles)
+        assertEquals(listOf("old.jpg"), ev.removedFiles)
+        assertTrue(ev.changes.contains("Исполнители: Стасюк П.А."))
+        assertTrue(ev.changes.contains("Группа исполнителей: Выездная бригада"))
+        assertTrue(ev.changes.contains("Приоритет: Высокий"))
+        assertTrue(ev.changes.contains("Сервис: Интернет"))
+        assertTrue(ev.changes.contains("Срок: 26.11.2026 18:00"))
+        assertTrue(ev.changes.contains("Field47: Щиток #2"))
+
+        val emptyObj = json.parseToJsonElement("""{"Date":"2026-11-25T17:02:00","Editor":"Иванов И.И."}""").jsonObject
+        val emptyEv = IntraRepository.parseLifetimeEvent(emptyObj)
+        assertEquals(listOf("Обновление заявки"), emptyEv.changes)
     }
 }

@@ -32,6 +32,7 @@ import com.lantaservice.intra.data.storage.SecureSessionStorage
 import com.lantaservice.intra.util.DateAndTextFormatter
 import com.lantaservice.intra.util.ImageCompressor
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
@@ -51,9 +52,15 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.intOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
@@ -122,8 +129,12 @@ class IntraRepository(
     private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val outboxSyncMutex = Mutex()
     private val statusesById = ConcurrentHashMap<Int, TaskStatusDto>()
+    private val prioritiesById = ConcurrentHashMap<Int, TaskPriorityDto>()
+    private val servicesById = ConcurrentHashMap<Int, String>()
     @Volatile
     private var statusesLastLoadedAtMs: Long = 0L
+    @Volatile
+    private var activePrefetchJob: Pair<Int, Deferred<Result<TicketListSnapshot>>>? = null
     private val repairedHistoryCache = ConcurrentHashMap<String, Boolean>()
     private val locallyRepairedTaskIds = ConcurrentHashMap.newKeySet<Int>()
     private val ticketItemCache = ConcurrentHashMap<Int, TicketItem>()
@@ -150,15 +161,23 @@ class IntraRepository(
         )
     }
 
-    fun clearInMemorySession() {
-        credentialsProvider.clearSession()
+    private fun resetInMemoryCaches() {
+        activePrefetchJob?.second?.cancel()
+        activePrefetchJob = null
         statusesById.clear()
+        prioritiesById.clear()
+        servicesById.clear()
         statusesLastLoadedAtMs = 0L
         repairedHistoryCache.clear()
         locallyRepairedTaskIds.clear()
         ticketItemCache.clear()
         detailCache.clear()
         _outboxEntries.value = emptyList()
+    }
+
+    fun clearInMemorySession() {
+        credentialsProvider.clearSession()
+        resetInMemoryCaches()
         _authState.value = AuthState.Unauthenticated
     }
 
@@ -168,13 +187,7 @@ class IntraRepository(
      */
     fun logoutImmediate() {
         credentialsProvider.clearSession()
-        statusesById.clear()
-        statusesLastLoadedAtMs = 0L
-        repairedHistoryCache.clear()
-        locallyRepairedTaskIds.clear()
-        ticketItemCache.clear()
-        detailCache.clear()
-        _outboxEntries.value = emptyList()
+        resetInMemoryCaches()
         repoScope.launch {
             ImageCompressor.cleanupCacheDirs(context)
         }
@@ -182,13 +195,7 @@ class IntraRepository(
 
     fun handleUnauthorized() {
         credentialsProvider.clearSession()
-        statusesById.clear()
-        statusesLastLoadedAtMs = 0L
-        repairedHistoryCache.clear()
-        locallyRepairedTaskIds.clear()
-        ticketItemCache.clear()
-        detailCache.clear()
-        _outboxEntries.value = emptyList()
+        resetInMemoryCaches()
         _authState.value = AuthState.Unauthenticated
     }
 
@@ -437,20 +444,72 @@ class IntraRepository(
                 rememberMe = rememberMe
             )
         )
+        warmCachesFromDisk(session.userId)
         refreshOutboxFlowForUser(session.userId)
         _authState.value = AuthState.Authenticated(session)
+        startPrefetchOpenTickets(session.userId)
         if (_outboxEntries.value.isNotEmpty()) {
             repoScope.launch { syncPendingOutboxNow() }
         }
         return Result.success(session)
     }
 
+    private fun warmCachesFromDisk(userId: Int) {
+        if (statusesById.isEmpty()) {
+            loadDiskStatusCatalog().forEach { statusesById[it.id] = it }
+        }
+        if (repairedHistoryCache.isEmpty()) {
+            loadRepairedHistoryDiskCache(userId).forEach { (k, v) -> repairedHistoryCache[k] = v }
+        }
+        if (ticketItemCache.isEmpty()) {
+            loadTicketListCacheFromDisk(userId).forEach { ticketItemCache[it.id] = it }
+        }
+    }
+
+    private fun startPrefetchOpenTickets(userId: Int) {
+        val current = activePrefetchJob
+        if (current != null && current.first == userId && current.second.isActive) return
+        val deferred = repoScope.async {
+            executeOpenTicketsFetch {}
+        }
+        activePrefetchJob = userId to deferred
+    }
+
     suspend fun loadOpenTicketsProgressive(
+        onProgress: suspend (TicketListSnapshot) -> Unit
+    ): Result<TicketListSnapshot> = withContext(Dispatchers.IO) {
+        val session = try {
+            requireAuthenticatedSession()
+        } catch (t: Throwable) {
+            return@withContext Result.failure(toIntraException(t))
+        }
+        val inFlight = activePrefetchJob
+        if (inFlight != null && inFlight.first == session.userId) {
+            activePrefetchJob = null
+            val prefetched = inFlight.second.await()
+            if (prefetched.isSuccess) {
+                prefetched.getOrNull()?.let { onProgress(it) }
+                return@withContext prefetched
+            }
+        }
+        executeOpenTicketsFetch(onProgress)
+    }
+
+    private suspend fun executeOpenTicketsFetch(
         onProgress: suspend (TicketListSnapshot) -> Unit
     ): Result<TicketListSnapshot> = withContext(Dispatchers.IO) {
         try {
             val session = requireAuthenticatedSession()
-            val statuses = refreshStatusCatalog()
+            warmCachesFromDisk(session.userId)
+
+            val statuses = if (statusesById.isNotEmpty()) {
+                if ((System.currentTimeMillis() - statusesLastLoadedAtMs) >= STATUS_CACHE_TTL_MS) {
+                    repoScope.launch { runCatching { refreshStatusCatalog(forceRefresh = true) } }
+                }
+                statusesById.values.toList()
+            } else {
+                refreshStatusCatalog()
+            }
             val repairedIds = findRepairedStatusIds(statuses)
             val openStatusIdsCsv = statuses
                 .filter { !it.isFinal }
@@ -461,80 +520,76 @@ class IntraRepository(
             val mergedStatuses = LinkedHashMap<Int, TaskStatusDto>().apply {
                 statuses.forEach { put(it.id, it) }
             }
-            val mergedPriorities = LinkedHashMap<Int, TaskPriorityDto>()
-            val mergedServices = LinkedHashMap<Int, String>()
+            val mergedPriorities = LinkedHashMap<Int, TaskPriorityDto>(prioritiesById)
+            val mergedServices = LinkedHashMap<Int, String>(servicesById)
 
-            var page = 1
-            var totalPages = 1
-            while (page <= totalPages && page <= 10) {
-                val resp = api.getTasks(
-                    executorIds = session.userId.toString(),
-                    statusIds = openStatusIdsCsv,
-                    pageSize = 200,
-                    page = page
-                )
-                if (!resp.isSuccessful) {
-                    throw IllegalStateException(parseErrorMessage(resp))
+            val page1Resp = api.getTasks(
+                executorIds = session.userId.toString(),
+                statusIds = openStatusIdsCsv,
+                pageSize = 200,
+                page = 1
+            )
+            if (!page1Resp.isSuccessful) {
+                throw IllegalStateException(parseErrorMessage(page1Resp))
+            }
+            val page1Body = page1Resp.body()
+            if (page1Body != null) {
+                collectedTasks += page1Body.tasks
+                page1Body.statuses.forEach { mergedStatuses[it.id] = it }
+                page1Body.priorities.forEach { mergedPriorities[it.id] = it }
+                page1Body.services.forEach { mergedServices[it.id] = it.name }
+
+                val totalPages = (page1Body.paginator?.pageCount ?: 1).coerceIn(1, 10)
+                if (totalPages > 1 && page1Body.tasks.isNotEmpty()) {
+                    val page1Preview = buildTicketItems(
+                        collectedTasks = collectedTasks,
+                        mergedStatuses = mergedStatuses,
+                        mergedPriorities = mergedPriorities,
+                        mergedServices = mergedServices,
+                        allRepairedIds = findRepairedStatusIds(mergedStatuses.values) + repairedIds
+                    )
+                    if (page1Preview.isNotEmpty()) {
+                        onProgress(TicketListSnapshot(page1Preview, isResolvingHistory = true))
+                    }
+
+                    val extraResponses = coroutineScope {
+                        (2..totalPages).map { p ->
+                            async {
+                                api.getTasks(
+                                    executorIds = session.userId.toString(),
+                                    statusIds = openStatusIdsCsv,
+                                    pageSize = 200,
+                                    page = p
+                                )
+                            }
+                        }.awaitAll()
+                    }
+                    extraResponses.forEach { resp ->
+                        if (resp.isSuccessful) {
+                            val b = resp.body()
+                            if (b != null) {
+                                collectedTasks += b.tasks
+                                b.statuses.forEach { mergedStatuses[it.id] = it }
+                                b.priorities.forEach { mergedPriorities[it.id] = it }
+                                b.services.forEach { mergedServices[it.id] = it.name }
+                            }
+                        }
+                    }
                 }
-                val body = resp.body() ?: break
-                collectedTasks += body.tasks
-                body.statuses.forEach { mergedStatuses[it.id] = it }
-                body.priorities.forEach { mergedPriorities[it.id] = it }
-                body.services.forEach { mergedServices[it.id] = it.name }
-                totalPages = body.paginator?.pageCount?.coerceAtLeast(1) ?: 1
-                if (body.tasks.isEmpty()) break
-                page++
             }
 
             statusesById.putAll(mergedStatuses)
+            prioritiesById.putAll(mergedPriorities)
+            servicesById.putAll(mergedServices)
             val allRepairedIds = findRepairedStatusIds(mergedStatuses.values) + repairedIds
 
-            val openTasks = collectedTasks.distinctBy { it.id }.filter { task ->
-                val status = task.statusId?.let { mergedStatuses[it] }
-                val isFinal = (status?.isFinal == true) || (task.statusIsFinal == true)
-                val isClosed = !task.closed.isNullOrBlank()
-                !isFinal && !isClosed
-            }
-
-            val initialItems = openTasks.map { task ->
-                val status = task.statusId?.let { mergedStatuses[it] }
-                val statusName = task.statusName?.takeIf { it.isNotBlank() }
-                    ?: status?.name
-                    ?: "Без статуса"
-                val currentlyRepaired = isRepairedStatus(task.statusId, statusName, allRepairedIds)
-                val cacheKey = lifetimeCacheKey(task.id, task.changed)
-                val cachedHadRepaired = repairedHistoryCache[cacheKey]
-                val hadRepaired = currentlyRepaired ||
-                    (cachedHadRepaired == true) ||
-                    locallyRepairedTaskIds.contains(task.id)
-
-                val fileCount = DateAndTextFormatter.splitIds(task.fileIds).size
-
-                TicketItem(
-                    id = task.id,
-                    name = task.name?.takeIf { it.isNotBlank() } ?: "Заявка #${task.id}",
-                    descriptionPreview = DateAndTextFormatter.cleanHtmlText(task.description),
-                    statusId = task.statusId,
-                    statusName = statusName,
-                    priorityId = task.priorityId,
-                    priorityName = task.priorityName?.takeIf { it.isNotBlank() }
-                        ?: task.priorityId?.let { mergedPriorities[it]?.name }
-                        ?: "",
-                    serviceName = task.serviceName?.takeIf { it.isNotBlank() }
-                        ?: task.serviceId?.let { mergedServices[it] }
-                        ?: "",
-                    creatorName = task.creator?.takeIf { it.isNotBlank() } ?: "",
-                    createdText = DateAndTextFormatter.formatIntraDate(task.created),
-                    changedText = DateAndTextFormatter.formatIntraDate(task.changed),
-                    changedRaw = task.changed.orEmpty(),
-                    deadlineText = DateAndTextFormatter.formatDeadline(task.deadline),
-                    isOverdue = (task.resolutionOverdue == true),
-                    attachmentCount = fileCount,
-                    hasHadRepairedStatus = hadRepaired,
-                    isLifetimeChecked = currentlyRepaired || cachedHadRepaired != null
-                )
-            }
-
+            val initialItems = buildTicketItems(
+                collectedTasks = collectedTasks,
+                mergedStatuses = mergedStatuses,
+                mergedPriorities = mergedPriorities,
+                mergedServices = mergedServices,
+                allRepairedIds = allRepairedIds
+            )
             saveTicketListCache(session.userId, initialItems)
 
             val needHistoryCheck = initialItems.filter { !it.isLifetimeChecked }
@@ -575,11 +630,68 @@ class IntraRepository(
                 }
             }
             saveTicketListCache(session.userId, updatedItems)
+            if (resolvedMap.isNotEmpty()) {
+                saveRepairedHistoryDiskCache(session.userId)
+            }
             val finalSnap = TicketListSnapshot(updatedItems, isResolvingHistory = false)
             onProgress(finalSnap)
             Result.success(finalSnap)
         } catch (t: Throwable) {
             Result.failure(toIntraException(t))
+        }
+    }
+
+    private fun buildTicketItems(
+        collectedTasks: List<TaskSummaryDto>,
+        mergedStatuses: Map<Int, TaskStatusDto>,
+        mergedPriorities: Map<Int, TaskPriorityDto>,
+        mergedServices: Map<Int, String>,
+        allRepairedIds: Set<Int>
+    ): List<TicketItem> {
+        val openTasks = collectedTasks.distinctBy { it.id }.filter { task ->
+            val status = task.statusId?.let { mergedStatuses[it] }
+            val isFinal = (status?.isFinal == true) || (task.statusIsFinal == true)
+            val isClosed = !task.closed.isNullOrBlank()
+            !isFinal && !isClosed
+        }
+
+        return openTasks.map { task ->
+            val status = task.statusId?.let { mergedStatuses[it] }
+            val statusName = task.statusName?.takeIf { it.isNotBlank() }
+                ?: status?.name
+                ?: "Без статуса"
+            val currentlyRepaired = isRepairedStatus(task.statusId, statusName, allRepairedIds)
+            val cacheKey = lifetimeCacheKey(task.id, task.changed)
+            val cachedHadRepaired = repairedHistoryCache[cacheKey]
+            val hadRepaired = currentlyRepaired ||
+                (cachedHadRepaired == true) ||
+                locallyRepairedTaskIds.contains(task.id)
+
+            val fileCount = DateAndTextFormatter.splitIds(task.fileIds).size
+
+            TicketItem(
+                id = task.id,
+                name = task.name?.takeIf { it.isNotBlank() } ?: "Заявка #${task.id}",
+                descriptionPreview = DateAndTextFormatter.cleanHtmlText(task.description),
+                statusId = task.statusId,
+                statusName = statusName,
+                priorityId = task.priorityId,
+                priorityName = task.priorityName?.takeIf { it.isNotBlank() }
+                    ?: task.priorityId?.let { mergedPriorities[it]?.name }
+                    ?: "",
+                serviceName = task.serviceName?.takeIf { it.isNotBlank() }
+                    ?: task.serviceId?.let { mergedServices[it] }
+                    ?: "",
+                creatorName = task.creator?.takeIf { it.isNotBlank() } ?: "",
+                createdText = DateAndTextFormatter.formatIntraDate(task.created),
+                changedText = DateAndTextFormatter.formatIntraDate(task.changed),
+                changedRaw = task.changed.orEmpty(),
+                deadlineText = DateAndTextFormatter.formatDeadline(task.deadline),
+                isOverdue = (task.resolutionOverdue == true),
+                attachmentCount = fileCount,
+                hasHadRepairedStatus = hadRepaired,
+                isLifetimeChecked = currentlyRepaired || cachedHadRepaired != null
+            )
         }
     }
 
@@ -596,9 +708,9 @@ class IntraRepository(
                     runCatching {
                         api.getTaskLifetime(
                             taskId = taskId,
-                            include = "status",
+                            include = "status,priority,service",
                             lastCommentsOnTop = true,
-                            pageSize = 50,
+                            pageSize = 100,
                             page = 1
                         )
                     }.getOrNull()
@@ -617,7 +729,13 @@ class IntraRepository(
                 ?: throw IllegalStateException("Заявка #$taskId не найдена")
 
             form.statuses.forEach { statusesById[it.id] = it }
-            lifetimeResp?.body()?.statuses?.forEach { statusesById[it.id] = it }
+            form.priorities.forEach { prioritiesById[it.id] = it }
+            form.services.forEach { servicesById[it.id] = it.name }
+
+            val lifetimeBody = lifetimeResp?.body()
+            lifetimeBody?.statuses?.forEach { statusesById[it.id] = it }
+            lifetimeBody?.priorities?.forEach { prioritiesById[it.id] = it }
+            lifetimeBody?.services?.forEach { servicesById[it.id] = it.name }
 
             val allStatuses = statusesById.values.toList()
             val allRepairedIds = findRepairedStatusIds(allStatuses)
@@ -630,10 +748,11 @@ class IntraRepository(
 
             val isCurrentlyRepaired = isRepairedStatus(task.statusId, currentStatusName, allRepairedIds)
 
-            val lifetimes = lifetimeResp?.body()?.taskLifetimes.orEmpty()
+            val lifetimes = lifetimeBody?.taskLifetimes.orEmpty()
             val hadRepairedInHistory = lifetimes.any { ev ->
-                val evName = ev.statusId?.let { statusesById[it]?.name }
-                isRepairedStatus(ev.statusId, evName, allRepairedIds)
+                val evStatusId = extractLifetimeStatusId(ev)
+                val evName = evStatusId?.let { statusesById[it]?.name }
+                isRepairedStatus(evStatusId, evName, allRepairedIds)
             }
 
             val hasHadRepaired = isCurrentlyRepaired ||
@@ -678,13 +797,11 @@ class IntraRepository(
             )
 
             val historyEvents = lifetimes.map { ev ->
-                val stName = ev.statusId?.let { statusesById[it]?.name }.orEmpty()
-                TicketLifetimeEvent(
-                    dateText = DateAndTextFormatter.formatIntraDate(ev.date),
-                    editorName = ev.editor?.takeIf { it.isNotBlank() } ?: "Система",
-                    statusId = ev.statusId,
-                    statusName = stName,
-                    comment = DateAndTextFormatter.cleanHtmlText(ev.comments)
+                parseLifetimeEvent(
+                    obj = ev,
+                    statusesById = statusesById,
+                    prioritiesById = prioritiesById,
+                    servicesById = servicesById
                 )
             }
 
@@ -989,12 +1106,49 @@ class IntraRepository(
         return statusChangedToRepaired
     }
 
+    private fun loadTicketListCacheFromDisk(userId: Int): List<TicketItem> {
+        val file = File(context.filesDir, "cache_tickets_$userId.json")
+        if (!file.exists()) return emptyList()
+        return runCatching {
+            json.decodeFromString(ListSerializer(TicketItem.serializer()), file.readText(Charsets.UTF_8))
+        }.getOrElse { emptyList() }
+    }
+
     private fun saveTicketListCache(userId: Int, items: List<TicketItem>) {
         items.forEach { ticketItemCache[it.id] = it }
-        runCatching {
-            val file = File(context.filesDir, "cache_tickets_$userId.json")
-            val encoded = json.encodeToString(ListSerializer(TicketItem.serializer()), items)
-            file.writeText(encoded, Charsets.UTF_8)
+        repoScope.launch {
+            runCatching {
+                val file = File(context.filesDir, "cache_tickets_$userId.json")
+                val encoded = json.encodeToString(ListSerializer(TicketItem.serializer()), items)
+                file.writeText(encoded, Charsets.UTF_8)
+            }
+        }
+    }
+
+    private fun loadRepairedHistoryDiskCache(userId: Int): Map<String, Boolean> {
+        val file = File(context.filesDir, "cache_repaired_history_$userId.json")
+        if (!file.exists()) return emptyMap()
+        return runCatching {
+            json.decodeFromString(
+                MapSerializer(String.serializer(), Boolean.serializer()),
+                file.readText(Charsets.UTF_8)
+            )
+        }.getOrElse { emptyMap() }
+    }
+
+    private fun saveRepairedHistoryDiskCache(userId: Int) {
+        val snapshot = repairedHistoryCache.entries
+            .take(2000)
+            .associate { it.key to it.value }
+        repoScope.launch {
+            runCatching {
+                val file = File(context.filesDir, "cache_repaired_history_$userId.json")
+                val encoded = json.encodeToString(
+                    MapSerializer(String.serializer(), Boolean.serializer()),
+                    snapshot
+                )
+                file.writeText(encoded, Charsets.UTF_8)
+            }
         }
     }
 
@@ -1090,8 +1244,9 @@ class IntraRepository(
                 body.statuses.forEach { statusesById[it.id] = it }
                 val updatedRepairedIds = repairedIds + findRepairedStatusIds(body.statuses)
                 val hit = body.taskLifetimes.any { ev ->
-                    val stName = ev.statusId?.let { statusesById[it]?.name }
-                    isRepairedStatus(ev.statusId, stName, updatedRepairedIds)
+                    val evStatusId = extractLifetimeStatusId(ev)
+                    val stName = evStatusId?.let { statusesById[it]?.name }
+                    isRepairedStatus(evStatusId, stName, updatedRepairedIds)
                 }
                 if (hit) return true
                 pageCount = body.paginator?.pageCount?.coerceAtLeast(1) ?: 1
@@ -1216,6 +1371,176 @@ class IntraRepository(
                 val singleTask = json.decodeFromJsonElement(TaskSummaryDto.serializer(), raw)
                 TaskFormDto(task = singleTask)
             }
+        }
+
+        private val skippedLifetimeKeys = setOf(
+            "id", "taskid", "editorid", "date", "ispublic", "issystem", "sendnotification",
+            "mailid", "workflowid", "tasktypeid", "parentid", "fileids", "filenames",
+            "addedfileids", "removedfileids", "addedfiles", "removedfiles", "files",
+            "editor", "editorname", "statusid", "status", "statusname", "comments", "comment"
+        )
+
+        fun extractLifetimeStatusId(obj: JsonObject): Int? {
+            return obj.intField("StatusId")
+        }
+
+        fun parseLifetimeEvent(
+            obj: JsonObject,
+            statusesById: Map<Int, TaskStatusDto> = emptyMap(),
+            prioritiesById: Map<Int, TaskPriorityDto> = emptyMap(),
+            servicesById: Map<Int, String> = emptyMap()
+        ): TicketLifetimeEvent {
+            val statusId = obj.intField("StatusId")
+            val explicitStatus = obj.stringField("StatusName") ?: obj.stringField("Status")
+            val statusName = explicitStatus?.takeIf { it.isNotBlank() }
+                ?: statusId?.let { statusesById[it]?.name }
+                ?: statusId?.let { "ID $it" }
+                ?: ""
+
+            val dateText = DateAndTextFormatter.formatIntraDate(obj.stringField("Date"))
+            val editorName = obj.stringField("Editor")
+                ?: obj.stringField("EditorName")
+                ?: "Система"
+            val comment = DateAndTextFormatter.cleanHtmlText(
+                obj.stringField("Comments") ?: obj.stringField("Comment")
+            )
+            val isPublic = obj.boolField("IsPublic")
+
+            val addedFiles = DateAndTextFormatter.parseLifetimeFileNames(obj.stringField("AddedFiles"))
+            val removedFiles = DateAndTextFormatter.parseLifetimeFileNames(obj.stringField("RemovedFiles"))
+            val allFiles = DateAndTextFormatter.parseLifetimeFileNames(obj.stringField("Files"))
+
+            val changes = mutableListOf<String>()
+            val executors = obj.stringField("Executors")
+            if (!executors.isNullOrBlank()) {
+                changes += "Исполнители: $executors"
+            }
+            val execGroup = obj.stringField("ExecutorsGroup") ?: obj.stringField("ExecutorGroup")
+            if (!execGroup.isNullOrBlank()) {
+                changes += "Группа исполнителей: $execGroup"
+            }
+            val creator = obj.stringField("Creator")
+            if (!creator.isNullOrBlank()) {
+                changes += "Заявитель: $creator"
+            }
+            val participants = obj.stringField("Participants") ?: obj.stringField("Observers")
+            if (!participants.isNullOrBlank()) {
+                changes += "Наблюдатели: $participants"
+            }
+            val priorityId = obj.intField("PriorityId")
+            val priorityText = obj.stringField("Priority")
+                ?: priorityId?.let { prioritiesById[it]?.name ?: "ID $it" }
+            if (!priorityText.isNullOrBlank()) {
+                changes += "Приоритет: $priorityText"
+            }
+            val serviceId = obj.intField("ServiceId")
+            val serviceText = obj.stringField("Service")
+                ?: serviceId?.let { servicesById[it] ?: "ID $it" }
+            if (!serviceText.isNullOrBlank()) {
+                changes += "Сервис: $serviceText"
+            }
+            val stage = obj.stringField("ServiceStage")
+            if (!stage.isNullOrBlank()) {
+                changes += "Этап сервиса: $stage"
+            }
+            val categories = obj.stringField("Categories")
+            if (!categories.isNullOrBlank()) {
+                changes += "Категории: $categories"
+            }
+            val assets = obj.stringField("Assets")
+            if (!assets.isNullOrBlank()) {
+                changes += "Активы: $assets"
+            }
+            val coordinators = obj.stringField("Coordinators")
+            if (!coordinators.isNullOrBlank()) {
+                changes += "Согласующие: $coordinators"
+            }
+            val title = obj.stringField("Name")
+            if (!title.isNullOrBlank()) {
+                changes += "Название: $title"
+            }
+            val desc = DateAndTextFormatter.cleanHtmlText(obj.stringField("Description"))
+            if (desc.isNotBlank()) {
+                changes += "Описание: $desc"
+            }
+            val deadlineRaw = obj.stringField("Deadline")
+            if (!deadlineRaw.isNullOrBlank()) {
+                changes += "Срок: ${DateAndTextFormatter.formatIntraDate(deadlineRaw)}"
+            }
+            val reactionRaw = obj.stringField("ReactionDate") ?: obj.stringField("ReactionDateFact")
+            if (!reactionRaw.isNullOrBlank()) {
+                changes += "Срок реакции: ${DateAndTextFormatter.formatIntraDate(reactionRaw)}"
+            }
+            val resolutionRaw = obj.stringField("ResolutionDateFact")
+            if (!resolutionRaw.isNullOrBlank()) {
+                changes += "Факт. выполнение: ${DateAndTextFormatter.formatIntraDate(resolutionRaw)}"
+            }
+            val completion = obj.stringField("CompletionStatus")
+            if (!completion.isNullOrBlank()) {
+                changes += "Итог выполнения: $completion"
+            }
+            val eval = obj.stringField("Evaluation") ?: obj.intField("EvaluationId")?.let { "ID $it" }
+            if (!eval.isNullOrBlank()) {
+                changes += "Оценка: $eval"
+            }
+
+            if (addedFiles.isEmpty() && removedFiles.isEmpty() && allFiles.isNotEmpty()) {
+                changes += "Файлы в заявке: ${allFiles.joinToString(", ")}"
+            }
+
+            val handledKeys = setOf(
+                "executors", "executorsgroup", "executorgroup", "creator", "participants", "observers",
+                "priorityid", "priority", "serviceid", "service", "servicestage", "categories",
+                "assets", "coordinators", "name", "description", "deadline", "reactiondate",
+                "reactiondatefact", "resolutiondatefact", "completionstatus", "evaluation", "evaluationid"
+            )
+            obj.entries.forEach { (key, value) ->
+                val lowerKey = key.lowercase()
+                if (lowerKey in skippedLifetimeKeys || lowerKey in handledKeys) return@forEach
+                val prim = value as? JsonPrimitive ?: return@forEach
+                if (prim is JsonNull) return@forEach
+                val text = DateAndTextFormatter.cleanHtmlText(prim.content)
+                if (text.isNotBlank()) {
+                    changes += "$key: $text"
+                }
+            }
+
+            if (statusName.isBlank() && comment.isBlank() && addedFiles.isEmpty() && removedFiles.isEmpty() && changes.isEmpty()) {
+                changes += "Обновление заявки"
+            }
+
+            return TicketLifetimeEvent(
+                dateText = dateText,
+                editorName = editorName,
+                statusId = statusId,
+                statusName = statusName,
+                comment = comment,
+                isPublic = isPublic,
+                addedFiles = addedFiles,
+                removedFiles = removedFiles,
+                changes = changes
+            )
+        }
+
+        private fun JsonObject.stringField(key: String): String? {
+            val el = this[key] ?: entries.firstOrNull { it.key.equals(key, ignoreCase = true) }?.value
+            val prim = el as? JsonPrimitive ?: return null
+            if (prim is JsonNull) return null
+            return prim.content.trim().takeIf { it.isNotEmpty() }
+        }
+
+        private fun JsonObject.intField(key: String): Int? {
+            val el = this[key] ?: entries.firstOrNull { it.key.equals(key, ignoreCase = true) }?.value
+            val prim = el as? JsonPrimitive ?: return null
+            if (prim is JsonNull) return null
+            return prim.intOrNull ?: prim.content.trim().toIntOrNull()
+        }
+
+        private fun JsonObject.boolField(key: String): Boolean? {
+            val el = this[key] ?: entries.firstOrNull { it.key.equals(key, ignoreCase = true) }?.value
+            val prim = el as? JsonPrimitive ?: return null
+            if (prim is JsonNull) return null
+            return prim.booleanOrNull
         }
 
         private fun lifetimeCacheKey(taskId: Int, changed: String?): String {

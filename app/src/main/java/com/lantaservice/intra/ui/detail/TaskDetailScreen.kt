@@ -42,6 +42,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.AttachFile
+import androidx.compose.material.icons.rounded.AddCircleOutline
 import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.CameraAlt
@@ -54,6 +55,7 @@ import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Phone
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Save
@@ -1037,6 +1039,9 @@ private fun HistoryCard(
                 )
             }
 
+            var showAllHistory by remember(detail.id) { mutableStateOf(false) }
+            val visibleEvents = if (showAllHistory) detail.history else detail.history.take(25)
+
             AnimatedVisibility(
                 visible = expanded,
                 enter = fadeIn() + expandVertically(),
@@ -1046,7 +1051,7 @@ private fun HistoryCard(
                     modifier = Modifier.padding(top = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    detail.history.take(15).forEach { ev ->
+                    visibleEvents.forEach { ev ->
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp),
@@ -1054,7 +1059,7 @@ private fun HistoryCard(
                         ) {
                             Column(
                                 modifier = Modifier.padding(10.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                                verticalArrangement = Arrangement.spacedBy(5.dp)
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -1077,10 +1082,12 @@ private fun HistoryCard(
                                         color = IntraColors.TextTertiary
                                     )
                                 }
+
                                 if (ev.statusName.isNotBlank()) {
                                     Text(
                                         text = "Статус: ${ev.statusName}",
                                         style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold,
                                         color = if (ev.statusName.contains("починил", ignoreCase = true)) {
                                             IntraColors.EmeraldDeep
                                         } else {
@@ -1088,14 +1095,88 @@ private fun HistoryCard(
                                         }
                                     )
                                 }
-                                if (ev.comment.isNotBlank()) {
+
+                                if (ev.addedFiles.isNotEmpty()) {
+                                    Row(verticalAlignment = Alignment.Top) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.AddCircleOutline,
+                                            contentDescription = null,
+                                            tint = IntraColors.EmeraldDeep,
+                                            modifier = Modifier
+                                                .padding(top = 1.dp)
+                                                .size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(5.dp))
+                                        Text(
+                                            text = "Добавлены файлы: ${ev.addedFiles.joinToString(", ")}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = IntraColors.EmeraldDeep
+                                        )
+                                    }
+                                }
+
+                                if (ev.removedFiles.isNotEmpty()) {
+                                    Row(verticalAlignment = Alignment.Top) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.DeleteOutline,
+                                            contentDescription = null,
+                                            tint = IntraColors.ErrorRed,
+                                            modifier = Modifier
+                                                .padding(top = 1.dp)
+                                                .size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(5.dp))
+                                        Text(
+                                            text = "Удалены файлы: ${ev.removedFiles.joinToString(", ")}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = IntraColors.ErrorRed
+                                        )
+                                    }
+                                }
+
+                                ev.changes.forEach { changeLine ->
                                     Text(
-                                        text = ev.comment,
+                                        text = changeLine,
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = IntraColors.TextSecondary
+                                        color = IntraColors.TextPrimary
                                     )
                                 }
+
+                                if (ev.comment.isNotBlank()) {
+                                    Surface(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = IntraColors.SurfaceWhite
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                                        ) {
+                                            if (ev.isPublic != null) {
+                                                Text(
+                                                    text = if (ev.isPublic) "Комментарий (публичный)" else "Комментарий (внутренний)",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = IntraColors.TextTertiary
+                                                )
+                                            }
+                                            Text(
+                                                text = ev.comment,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = IntraColors.TextSecondary
+                                            )
+                                        }
+                                    }
+                                }
                             }
+                        }
+                    }
+
+                    if (!showAllHistory && detail.history.size > 25) {
+                        TextButton(
+                            onClick = { showAllHistory = true },
+                            modifier = Modifier.align(Alignment.CenterHorizontally)
+                        ) {
+                            Text("Показать всю историю (${detail.history.size})")
                         }
                     }
                 }

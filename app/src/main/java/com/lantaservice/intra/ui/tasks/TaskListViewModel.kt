@@ -159,7 +159,7 @@ class TaskListViewModel(
                 )
             }
             if (_uiState.value.outboxCount > 0) {
-                repository.syncPendingOutboxNow()
+                repository.triggerOutboxSyncAsync()
             }
             val result = repository.loadOpenTicketsProgressive { snapshot ->
                 _uiState.update { state ->
@@ -214,7 +214,7 @@ class TaskListViewModel(
         loadJob = viewModelScope.launch {
             _uiState.update { it.copy(isAutoRefreshing = true) }
             if (_uiState.value.outboxCount > 0) {
-                repository.syncPendingOutboxNow()
+                repository.triggerOutboxSyncAsync()
             }
             val result = repository.loadOpenTicketsProgressive { snapshot ->
                 _uiState.update { state ->

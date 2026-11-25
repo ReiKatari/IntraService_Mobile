@@ -13,6 +13,10 @@ import com.lantaservice.intra.data.repository.IntraRepository
 import com.lantaservice.intra.data.storage.PendingOutboxStorage
 import com.lantaservice.intra.data.storage.SecureSessionStorage
 import com.lantaservice.intra.data.update.AppUpdateManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 
 /**
@@ -85,6 +89,16 @@ class IntraApplication : Application(), ImageLoaderFactory {
             context = applicationContext,
             resilientDns = resilientDns
         )
+    }
+
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    override fun onCreate() {
+        super.onCreate()
+        // Pre-warm DNS resolution for intra.lantaservice.com in background
+        appScope.launch {
+            runCatching { resilientDns.lookup(IntraResilientDns.FIXED_HOST) }
+        }
     }
 
     override fun newImageLoader(): ImageLoader {

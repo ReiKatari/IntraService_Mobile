@@ -117,7 +117,20 @@ object DateAndTextFormatter {
         if (source.isEmpty()) return ""
         val looksLikeHtml = source.contains('<') && source.contains('>')
         val decoded = if (looksLikeHtml) {
-            Html.fromHtml(source, Html.FROM_HTML_MODE_COMPACT).toString()
+            runCatching {
+                Html.fromHtml(source, Html.FROM_HTML_MODE_COMPACT).toString()
+            }.getOrElse {
+                source
+                    .replace(Regex("(?i)<br\\s*/?>"), "\n")
+                    .replace(Regex("(?i)</(p|div|li|tr)>"), "\n")
+                    .replace(Regex("<[^>]+>"), "")
+                    .replace("&nbsp;", " ")
+                    .replace("&amp;", "&")
+                    .replace("&lt;", "<")
+                    .replace("&gt;", ">")
+                    .replace("&quot;", "\"")
+                    .replace("&#39;", "'")
+            }
         } else {
             source
         }
@@ -158,6 +171,31 @@ object DateAndTextFormatter {
         return text.split(sep)
             .map { it.trim() }
             .filter { it.isNotEmpty() }
+    }
+
+    fun parseLifetimeFileNames(raw: String?): List<String> {
+        val text = raw?.trim().orEmpty()
+        if (text.isEmpty()) return emptyList()
+        val rawTokens = if (text.contains("||")) {
+            text.split("||")
+        } else {
+            text.split(",")
+        }
+        val result = LinkedHashSet<String>()
+        rawTokens.forEach { token ->
+            val cleanToken = token.trim()
+            if (cleanToken.isEmpty()) return@forEach
+            val pipeIdx = cleanToken.indexOf('|')
+            val fileName = if (pipeIdx > 0 && cleanToken.substring(0, pipeIdx).trim().all { it.isDigit() }) {
+                cleanToken.substring(pipeIdx + 1).trim()
+            } else {
+                cleanToken
+            }
+            if (fileName.isNotEmpty()) {
+                result.add(fileName)
+            }
+        }
+        return result.toList()
     }
 
     fun splitNames(raw: String?, expectedCount: Int): List<String> {
