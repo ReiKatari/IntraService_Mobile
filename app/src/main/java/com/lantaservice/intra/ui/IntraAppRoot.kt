@@ -245,7 +245,7 @@ fun IntraAppRoot(
                         else -> null
                     }
                     if (info != null) {
-                        scope.launch { appUpdateManager.downloadUpdate(info) }
+                        appUpdateManager.startDownloadInBackground(info)
                     }
                 },
                 onInstallNow = {
@@ -254,7 +254,9 @@ fun IntraAppRoot(
                         appUpdateManager.launchInstaller(ready.apkFile)
                     }
                 },
-                onDismiss = appUpdateManager::dismissDialog
+                onRemindLater = appUpdateManager::dismissDialog,
+                onSkipVersion = appUpdateManager::skipVersion,
+                onMoveToBackground = appUpdateManager::dismissDialog
             )
         }
     }

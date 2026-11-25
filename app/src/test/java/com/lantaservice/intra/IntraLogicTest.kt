@@ -16,6 +16,8 @@ import com.lantaservice.intra.data.storage.PendingOutboxLogic
 import com.lantaservice.intra.data.storage.PendingOutboxPhoto
 import com.lantaservice.intra.data.storage.SavedCredentials
 import com.lantaservice.intra.data.update.AppUpdateManager
+import com.lantaservice.intra.ui.components.ReleaseNoteBlock
+import com.lantaservice.intra.ui.components.parseReleaseNotes
 import com.lantaservice.intra.ui.login.LoginViewModel
 import com.lantaservice.intra.util.DateAndTextFormatter
 import com.lantaservice.intra.util.FrameQualityAnalyzer
@@ -292,6 +294,8 @@ class IntraLogicTest {
             {
               "tag_name": "v1.3.0",
               "name": "IntraService Mobile 1.3.0",
+              "html_url": "https://github.com/ReiKatari/IntraService_Mobile/releases/tag/v1.3.0",
+              "published_at": "2026-11-25T14:18:41Z",
               "draft": false,
               "body": "Улучшена стабильность",
               "assets": [
@@ -310,7 +314,30 @@ class IntraLogicTest {
         assertEquals("IntraService Mobile 1.3.0", info?.title)
         assertEquals("Улучшена стабильность", info?.changelog)
         assertEquals(3145728L, info?.sizeBytes)
+        assertEquals("25.11.2026", info?.publishedDateText)
+        assertEquals("https://github.com/ReiKatari/IntraService_Mobile/releases/tag/v1.3.0", info?.releasePageUrl)
         assertTrue(info?.downloadUrl?.endsWith(".apk") == true)
+    }
+
+    @Test
+    fun releaseNotesMarkdownParserExtractsHeadingsBulletsTablesAndDividers() {
+        val md = """
+            ## Что нового
+            - **Ускорение**: быстрый запуск
+            ---
+            | Версия | Статус |
+            | --- | --- |
+            | 1.8.0 | Готово |
+            Обычный текст
+        """.trimIndent()
+        val blocks = parseReleaseNotes(md)
+        assertEquals(6, blocks.size)
+        assertEquals(ReleaseNoteBlock.Heading("Что нового", 2), blocks[0])
+        assertEquals(ReleaseNoteBlock.Bullet("**Ускорение**: быстрый запуск"), blocks[1])
+        assertEquals(ReleaseNoteBlock.Divider, blocks[2])
+        assertEquals(ReleaseNoteBlock.TableRow(listOf("Версия", "Статус")), blocks[3])
+        assertEquals(ReleaseNoteBlock.TableRow(listOf("1.8.0", "Готово")), blocks[4])
+        assertEquals(ReleaseNoteBlock.Paragraph("Обычный текст"), blocks[5])
     }
 
     @Test

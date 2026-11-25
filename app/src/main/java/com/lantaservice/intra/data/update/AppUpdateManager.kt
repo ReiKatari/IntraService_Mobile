@@ -7,10 +7,15 @@ import android.provider.Settings
 import androidx.core.content.FileProvider
 import com.lantaservice.intra.BuildConfig
 import com.lantaservice.intra.data.network.IntraResilientDns
+import com.lantaservice.intra.util.DateAndTextFormatter
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -31,7 +36,9 @@ data class AppUpdateInfo(
     val title: String,
     val changelog: String,
     val downloadUrl: String,
-    val sizeBytes: Long = 0L
+    val sizeBytes: Long = 0L,
+    val publishedDateText: String = "",
+    val releasePageUrl: String = ""
 )
 
 sealed interface UpdateUiState {
@@ -57,6 +64,10 @@ class AppUpdateManager(
     resilientDns: IntraResilientDns
 ) {
 
+    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val updateScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var downloadJob: Job? = null
+
     private val githubClient: OkHttpClient = OkHttpClient.Builder()
         .dns(resilientDns)
         .followRedirects(true)
@@ -77,8 +88,12 @@ class AppUpdateManager(
         currentVersion: String = BuildConfig.VERSION_NAME,
         repo: String = BuildConfig.GITHUB_REPO
     ) = withContext(Dispatchers.IO) {
-        val found = runCatching { fetchLatestRelease(repo, currentVersion) }.getOrNull()
-        if (found != null && compareVersions(found.versionName, currentVersion) > 0) {
+        val found = runCatching { fetchLatestRelease(repo, currentVersion) }.getOrNull() ?: return@withContext
+        val skippedVersion = prefs.getString(KEY_SKIPPED_VERSION, null).orEmpty()
+        if (skippedVersion.isNotBlank() && compareVersions(found.versionName, skippedVersion) == 0) {
+            return@withContext
+        }
+        if (compareVersions(found.versionName, currentVersion) > 0) {
             _isDialogDismissed.value = false
             _state.value = UpdateUiState.Available(found)
         }
@@ -90,6 +105,26 @@ class AppUpdateManager(
 
     fun reopenDialog() {
         _isDialogDismissed.value = false
+    }
+
+    fun skipVersion(versionName: String) {
+        val clean = normalizeVersion(versionName)
+        if (clean.isNotBlank()) {
+            prefs.edit().putString(KEY_SKIPPED_VERSION, clean).apply()
+        }
+        _isDialogDismissed.value = true
+        _state.value = UpdateUiState.Idle
+    }
+
+    fun startDownloadInBackground(info: AppUpdateInfo) {
+        if (downloadJob?.isActive == true) {
+            _isDialogDismissed.value = false
+            return
+        }
+        _isDialogDismissed.value = false
+        downloadJob = updateScope.launch {
+            downloadUpdate(info)
+        }
     }
 
     suspend fun downloadUpdate(info: AppUpdateInfo) = withContext(Dispatchers.IO) {
@@ -149,11 +184,13 @@ class AppUpdateManager(
             }
 
             _state.value = UpdateUiState.ReadyToInstall(info, targetFile)
+            _isDialogDismissed.value = false
         } catch (t: Throwable) {
             _state.value = UpdateUiState.Error(
                 info = info,
                 message = t.message?.takeIf { it.isNotBlank() } ?: "Не удалось загрузить обновление"
             )
+            _isDialogDismissed.value = false
         }
     }
 
@@ -205,7 +242,7 @@ class AppUpdateManager(
             githubClient.newCall(apiReq).execute().use { resp ->
                 if (resp.isSuccessful) {
                     val body = resp.body?.string().orEmpty()
-                    parseReleaseApiJson(body)
+                    parseReleaseApiJson(body, repo)
                 } else {
                     null
                 }
@@ -267,6 +304,8 @@ class AppUpdateManager(
     }
 
     companion object {
+        private const val PREFS_NAME = "intra_update_prefs"
+        private const val KEY_SKIPPED_VERSION = "skipped_update_version"
         private val updateJson = Json { ignoreUnknownKeys = true }
 
         fun normalizeVersion(raw: String): String {
@@ -285,7 +324,10 @@ class AppUpdateManager(
             return 0
         }
 
-        fun parseReleaseApiJson(jsonText: String): AppUpdateInfo? {
+        fun parseReleaseApiJson(
+            jsonText: String,
+            repo: String = BuildConfig.GITHUB_REPO
+        ): AppUpdateInfo? {
             if (jsonText.isBlank()) return null
             return runCatching {
                 val root = updateJson.parseToJsonElement(jsonText).jsonObject
@@ -296,6 +338,10 @@ class AppUpdateManager(
                 val title = root["name"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                     ?: "IntraService Mobile $version"
                 val changelog = root["body"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+                val publishedRaw = root["published_at"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+                val publishedDateText = DateAndTextFormatter.formatDateOnly(publishedRaw)
+                val htmlUrl = root["html_url"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                    ?: "https://github.com/$repo/releases/tag/$tag"
 
                 val assets = root["assets"]?.jsonArray.orEmpty()
                 val apkAsset = assets.mapNotNull { it as? JsonObject }.firstOrNull { asset ->
@@ -313,7 +359,9 @@ class AppUpdateManager(
                     title = title,
                     changelog = changelog,
                     downloadUrl = downloadUrl,
-                    sizeBytes = size
+                    sizeBytes = size,
+                    publishedDateText = publishedDateText,
+                    releasePageUrl = htmlUrl
                 )
             }.getOrNull()
         }
@@ -335,7 +383,9 @@ class AppUpdateManager(
                 title = "IntraService Mobile $version",
                 changelog = "Доступна новая версия приложения для скачивания и установки.",
                 downloadUrl = downloadUrl,
-                sizeBytes = 0L
+                sizeBytes = 0L,
+                publishedDateText = "",
+                releasePageUrl = "https://github.com/$repo/releases/tag/$cleanTag"
             )
         }
     }
