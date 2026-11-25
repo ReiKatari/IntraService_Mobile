@@ -2,6 +2,7 @@ package com.lantaservice.intra.ui.detail
 
 import android.content.Context
 import android.net.Uri
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -10,6 +11,7 @@ import com.lantaservice.intra.data.model.TaskAttachment
 import com.lantaservice.intra.data.model.TicketDetail
 import com.lantaservice.intra.data.model.TicketSaveResult
 import com.lantaservice.intra.data.repository.IntraRepository
+import com.lantaservice.intra.data.storage.PendingOutboxEntry
 import com.lantaservice.intra.ui.components.ViewerPhoto
 import com.lantaservice.intra.util.EnhanceMode
 import com.lantaservice.intra.util.ImageCompressor
@@ -18,7 +20,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
 
+@Immutable
 data class TaskDetailUiState(
     val taskId: Int,
     val isLoading: Boolean = true,
@@ -27,6 +31,7 @@ data class TaskDetailUiState(
     val markAsRepaired: Boolean = false,
     val commentText: String = "",
     val pendingPhotos: List<PendingPhoto> = emptyList(),
+    val queuedOutbox: PendingOutboxEntry? = null,
     val isProcessingPhoto: Boolean = false,
     val isSaving: Boolean = false,
     val savingStage: String = "",
@@ -43,12 +48,47 @@ class TaskDetailViewModel(
     private val repository: IntraRepository
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(TaskDetailUiState(taskId = taskId))
+    private val initialDetail = repository.getCachedDetailPreview(taskId)
+    private val initialOutbox = repository.getOutboxEntry(taskId)
+    private val initialQueuedPhotos = initialOutbox?.let(::outboxEntryToPendingPhotos).orEmpty()
+
+    private val _uiState = MutableStateFlow(
+        TaskDetailUiState(
+            taskId = taskId,
+            isLoading = initialDetail == null,
+            detail = initialDetail,
+            markAsRepaired = initialOutbox?.newStatusId != null,
+            commentText = initialOutbox?.comment.orEmpty(),
+            pendingPhotos = initialQueuedPhotos,
+            queuedOutbox = initialOutbox
+        )
+    )
     val uiState: StateFlow<TaskDetailUiState> = _uiState.asStateFlow()
 
-    private var photoCounter = 0
+    private var photoCounter = initialQueuedPhotos.size
 
     init {
+        viewModelScope.launch {
+            repository.outboxEntries.collect { entries ->
+                val currentOutbox = entries.firstOrNull { it.taskId == taskId }
+                val prevOutbox = _uiState.value.queuedOutbox
+                if (prevOutbox != null && currentOutbox == null) {
+                    // Background outbox sync succeeded while detail screen was open
+                    _uiState.update { state ->
+                        state.copy(
+                            queuedOutbox = null,
+                            markAsRepaired = false,
+                            commentText = "",
+                            pendingPhotos = emptyList(),
+                            actionMessage = null
+                        )
+                    }
+                    loadDetail()
+                } else if (currentOutbox != prevOutbox) {
+                    _uiState.update { it.copy(queuedOutbox = currentOutbox) }
+                }
+            }
+        }
         loadDetail()
     }
 
@@ -88,7 +128,7 @@ class TaskDetailViewModel(
                 _uiState.update { cur ->
                     cur.copy(
                         detail = fresh,
-                        markAsRepaired = if (fresh.canSetRepaired) cur.markAsRepaired else false
+                        markAsRepaired = if (fresh.canSetRepaired || cur.queuedOutbox != null) cur.markAsRepaired else false
                     )
                 }
             }
@@ -176,12 +216,34 @@ class TaskDetailViewModel(
     fun removePendingPhoto(photoId: String) {
         val current = _uiState.value.pendingPhotos
         val target = current.firstOrNull { it.id == photoId }
-        if (target != null) {
+        if (target != null && repository.isTemporaryPhotoFile(target.file)) {
             runCatching { target.file.delete() }
         }
         _uiState.update { state ->
             state.copy(pendingPhotos = state.pendingPhotos.filterNot { it.id == photoId })
         }
+    }
+
+    fun cancelDeferredSend() {
+        repository.cancelOutboxEntry(taskId)
+        repository.cleanupTemporaryPhotos(_uiState.value.pendingPhotos)
+        _uiState.update {
+            it.copy(
+                queuedOutbox = null,
+                markAsRepaired = false,
+                commentText = "",
+                pendingPhotos = emptyList(),
+                actionMessage = null
+            )
+        }
+    }
+
+    fun retryDeferredSendNow(onSuccess: (TicketSaveResult) -> Unit) {
+        val entry = _uiState.value.queuedOutbox ?: return
+        submitInternal(
+            forcedRecordedAtText = entry.recordedAtText,
+            onSuccess = onSuccess
+        )
     }
 
     fun downloadAndOpenAttachment(
@@ -202,11 +264,22 @@ class TaskDetailViewModel(
     }
 
     fun saveChanges(onSuccess: (TicketSaveResult) -> Unit) {
+        submitInternal(forcedRecordedAtText = null, onSuccess = onSuccess)
+    }
+
+    private fun submitInternal(
+        forcedRecordedAtText: String?,
+        onSuccess: (TicketSaveResult) -> Unit
+    ) {
         val state = _uiState.value
         val detail = state.detail ?: return
         if (state.isSaving || !state.hasChangesToSave) return
 
-        val targetStatusId = if (state.markAsRepaired) detail.repairedStatusId else null
+        val targetStatusId = if (state.markAsRepaired) {
+            detail.repairedStatusId ?: state.queuedOutbox?.newStatusId
+        } else {
+            null
+        }
         if (state.markAsRepaired && targetStatusId == null) {
             _uiState.update { it.copy(actionMessage = "Не найден целевой статус «Починил»") }
             return
@@ -228,22 +301,40 @@ class TaskDetailViewModel(
             }
             val result = repository.saveTicketChanges(
                 taskId = taskId,
+                taskName = detail.name,
                 newStatusId = targetStatusId,
+                newStatusName = if (state.markAsRepaired) detail.repairedStatusName else null,
                 pendingPhotos = state.pendingPhotos,
                 comment = state.commentText,
+                allowOfflineQueue = true,
+                forcedRecordedAtText = forcedRecordedAtText,
                 onStageChange = { stage ->
                     _uiState.update { it.copy(savingStage = stage) }
                 }
             )
             result.onSuccess { saveResult ->
-                _uiState.update {
-                    it.copy(
-                        isSaving = false,
-                        savingStage = "",
-                        pendingPhotos = emptyList(),
-                        markAsRepaired = false,
-                        commentText = ""
-                    )
+                if (saveResult.deferred) {
+                    val freshOutbox = repository.getOutboxEntry(taskId)
+                    val refreshedPhotos = freshOutbox?.let(::outboxEntryToPendingPhotos).orEmpty()
+                    _uiState.update {
+                        it.copy(
+                            isSaving = false,
+                            savingStage = "",
+                            queuedOutbox = freshOutbox,
+                            pendingPhotos = refreshedPhotos
+                        )
+                    }
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            isSaving = false,
+                            savingStage = "",
+                            queuedOutbox = null,
+                            pendingPhotos = emptyList(),
+                            markAsRepaired = false,
+                            commentText = ""
+                        )
+                    }
                 }
                 onSuccess(saveResult)
             }.onFailure { err ->
@@ -260,7 +351,23 @@ class TaskDetailViewModel(
 
     override fun onCleared() {
         super.onCleared()
-        ImageCompressor.cleanupUploadFiles(_uiState.value.pendingPhotos)
+        repository.cleanupTemporaryPhotos(_uiState.value.pendingPhotos)
+    }
+
+    private fun outboxEntryToPendingPhotos(entry: PendingOutboxEntry): List<PendingPhoto> {
+        return entry.photos.mapNotNull { staged ->
+            val file = File(staged.filePath)
+            if (!file.exists()) null
+            else PendingPhoto(
+                id = staged.id,
+                file = file,
+                nameWithoutExt = staged.nameWithoutExt,
+                sizeBytes = file.length(),
+                isEnhanced = staged.isEnhanced,
+                isBlurryWarning = staged.isBlurryWarning,
+                sharpnessScore = staged.sharpnessScore
+            )
+        }
     }
 
     class Factory(

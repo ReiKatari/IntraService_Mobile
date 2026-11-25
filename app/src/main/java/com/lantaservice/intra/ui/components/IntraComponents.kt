@@ -100,6 +100,7 @@ fun IntraWaveBackground(
             )
         )
     ) {
+        val wavePath = remember { Path() }
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
@@ -109,7 +110,8 @@ fun IntraWaveBackground(
             for (strand in 0..7) {
                 val offset = strand * 11f
                 val alpha = 0.09f + (strand % 3) * 0.03f
-                val path = Path()
+                val path = wavePath
+                path.reset()
                 val steps = 28
                 for (i in 0..steps) {
                     val t = i.toFloat() / steps.toFloat()
@@ -172,11 +174,13 @@ fun IntraHeaderBanner(
             )
         )
     ) {
+        val bannerPath = remember { Path() }
         Canvas(modifier = Modifier.matchParentSize()) {
             val w = size.width
             val h = size.height
             for (strand in 0..4) {
-                val path = Path()
+                val path = bannerPath
+                path.reset()
                 val steps = 20
                 for (i in 0..steps) {
                     val t = i.toFloat() / steps.toFloat()

@@ -9,6 +9,8 @@ import android.net.Uri
 import androidx.core.content.FileProvider
 import com.lantaservice.intra.data.model.PendingPhoto
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
@@ -29,8 +31,8 @@ data class CameraReviewPair(
  */
 object ImageCompressor {
 
-    private const val MAX_DIMENSION_PX = 2400
-    private const val JPEG_QUALITY = 90
+    private const val MAX_DIMENSION_PX = 2200
+    private const val JPEG_QUALITY = 88
 
     fun createTempCameraFile(context: Context, taskId: Int): Pair<File, Uri> {
         val cameraDir = File(context.cacheDir, "camera").apply { mkdirs() }
@@ -88,24 +90,35 @@ object ImageCompressor {
         val oriented = decodeAndOrientUri(context, uri)
         val uploadsDir = File(context.cacheDir, "uploads").apply { mkdirs() }
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-
-        val naturalRes = PhotoEnhancerEngine.enhance(oriented, EnhanceMode.NATURAL)
         val origName = "orig_task${taskId}_${stamp}_$index"
-        val origFile = File(uploadsDir, "$origName.jpg")
-        FileOutputStream(origFile).use { out ->
-            naturalRes.bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
-        }
-        naturalRes.bitmap.recycle()
-
-        val enhancedRes = PhotoEnhancerEngine.enhance(oriented, EnhanceMode.TEXT_CLARITY)
         val enhName = "photo_task${taskId}_${stamp}_$index"
+        val origFile = File(uploadsDir, "$origName.jpg")
         val enhFile = File(uploadsDir, "$enhName.jpg")
-        FileOutputStream(enhFile).use { out ->
-            enhancedRes.bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
-        }
-        enhancedRes.bitmap.recycle()
-        oriented.recycle()
 
+        val (naturalResultPair, enhancedResultPair) = coroutineScope {
+            val origDeferred = async(Dispatchers.Default) {
+                val res = PhotoEnhancerEngine.enhance(oriented, EnhanceMode.NATURAL)
+                FileOutputStream(origFile).use { out ->
+                    res.bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
+                }
+                if (res.bitmap !== oriented) {
+                    res.bitmap.recycle()
+                }
+                res
+            }
+            val enhDeferred = async(Dispatchers.Default) {
+                val res = PhotoEnhancerEngine.enhance(oriented, EnhanceMode.TEXT_CLARITY)
+                FileOutputStream(enhFile).use { out ->
+                    res.bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
+                }
+                if (res.bitmap !== oriented) {
+                    res.bitmap.recycle()
+                }
+                res
+            }
+            origDeferred.await() to enhDeferred.await()
+        }
+        oriented.recycle()
         runCatching { rawFile.delete() }
 
         CameraReviewPair(
@@ -115,8 +128,8 @@ object ImageCompressor {
                 nameWithoutExt = enhName,
                 sizeBytes = enhFile.length(),
                 isEnhanced = true,
-                isBlurryWarning = enhancedRes.isBlurryWarning,
-                sharpnessScore = enhancedRes.sharpnessScore
+                isBlurryWarning = enhancedResultPair.isBlurryWarning,
+                sharpnessScore = enhancedResultPair.sharpnessScore
             ),
             originalPhoto = PendingPhoto(
                 id = UUID.randomUUID().toString(),
@@ -124,10 +137,24 @@ object ImageCompressor {
                 nameWithoutExt = enhName,
                 sizeBytes = origFile.length(),
                 isEnhanced = false,
-                isBlurryWarning = naturalRes.isBlurryWarning,
-                sharpnessScore = naturalRes.sharpnessScore
+                isBlurryWarning = naturalResultPair.isBlurryWarning,
+                sharpnessScore = naturalResultPair.sharpnessScore
             )
         )
+    }
+
+    fun isInCacheUploads(context: Context, file: File): Boolean {
+        val cachePath = runCatching { context.cacheDir.canonicalPath }.getOrDefault(context.cacheDir.absolutePath)
+        val filePath = runCatching { file.canonicalPath }.getOrDefault(file.absolutePath)
+        return filePath.startsWith(cachePath + File.separator)
+    }
+
+    fun cleanupTemporaryUploadFiles(context: Context, photos: List<PendingPhoto>) {
+        photos.forEach { photo ->
+            if (isInCacheUploads(context, photo.file)) {
+                runCatching { photo.file.delete() }
+            }
+        }
     }
 
     fun cleanupUploadFiles(photos: List<PendingPhoto>) {

@@ -1,6 +1,10 @@
 package com.lantaservice.intra
 
+import android.content.Context
 import android.graphics.Color
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -85,11 +89,39 @@ class MainActivity : ComponentActivity() {
                         if (event == Lifecycle.Event.ON_RESUME) {
                             locationGranted = LocationPermissionHelper.hasLocationPermission(this@MainActivity)
                             appUpdateManager.resumePendingInstallIfPermitted()
+                            repository.triggerOutboxSyncAsync()
                         }
                     }
                     lifecycleOwner.lifecycle.addObserver(observer)
                     onDispose {
                         lifecycleOwner.lifecycle.removeObserver(observer)
+                    }
+                }
+
+                DisposableEffect(Unit) {
+                    val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+                    val networkCallback = object : ConnectivityManager.NetworkCallback() {
+                        override fun onAvailable(network: Network) {
+                            repository.triggerOutboxSyncAsync()
+                        }
+
+                        override fun onCapabilitiesChanged(
+                            network: Network,
+                            capabilities: NetworkCapabilities
+                        ) {
+                            if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
+                                repository.triggerOutboxSyncAsync()
+                            }
+                        }
+                    }
+                    val registered = runCatching {
+                        cm.registerDefaultNetworkCallback(networkCallback)
+                        true
+                    }.getOrDefault(false)
+                    onDispose {
+                        if (registered) {
+                            runCatching { cm.unregisterNetworkCallback(networkCallback) }
+                        }
                     }
                 }
 

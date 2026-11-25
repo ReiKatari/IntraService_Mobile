@@ -62,13 +62,13 @@ interface IntraApiService {
     @POST("api/TaskFile")
     suspend fun uploadTaskFiles(
         @Part parts: List<MultipartBody.Part>
-    ): Response<JsonElement>
+    ): Response<ResponseBody>
 
     @PUT("api/task/{taskId}")
     suspend fun updateTask(
         @Path("taskId") taskId: Int,
         @Body body: UpdateTaskRequestDto
-    ): Response<JsonElement>
+    ): Response<ResponseBody>
 
     @GET("api/taskfile/{fileId}")
     suspend fun downloadTaskFile(

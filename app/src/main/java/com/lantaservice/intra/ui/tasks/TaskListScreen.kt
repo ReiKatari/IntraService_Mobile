@@ -40,10 +40,12 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -77,6 +79,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.lantaservice.intra.data.model.TicketItem
 import com.lantaservice.intra.data.model.UserSession
 import com.lantaservice.intra.data.network.IntraConnectionManager
+import com.lantaservice.intra.data.storage.PendingOutboxEntry
 import com.lantaservice.intra.ui.components.IntraHeaderBanner
 import com.lantaservice.intra.ui.components.intraHeaderInsetsPadding
 import com.lantaservice.intra.ui.components.PriorityDotAndLabel
@@ -351,6 +354,61 @@ fun TaskListScreen(
             }
         }
 
+        AnimatedVisibility(visible = state.outboxCount > 0) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                shape = RoundedCornerShape(14.dp),
+                color = IntraColors.WarningTint,
+                border = BorderStroke(1.dp, IntraColors.WarningAmber.copy(alpha = 0.45f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (state.isSyncingOutbox) {
+                            CircularProgressIndicator(
+                                color = IntraColors.WarningAmber,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Rounded.CloudUpload,
+                                contentDescription = null,
+                                tint = IntraColors.WarningAmber,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (state.isSyncingOutbox) {
+                                "Отправка отложенных заявок (${state.outboxCount})..."
+                            } else {
+                                "Ожидают отправки в Интру: ${state.outboxCount}"
+                            },
+                            color = IntraColors.TextPrimary,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                    if (!state.isSyncingOutbox) {
+                        TextButton(onClick = viewModel::syncOutboxNow) {
+                            Text("Отправить", color = IntraColors.WarningAmber, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
         AnimatedVisibility(visible = state.isResolvingHistory || state.isAutoRefreshing) {
             LinearProgressIndicator(
                 modifier = Modifier
@@ -453,10 +511,12 @@ fun TaskListScreen(
                             ) {
                                 items(
                                     items = itemsForTab,
-                                    key = { it.id }
+                                    key = { it.id },
+                                    contentType = { "ticket_card" }
                                 ) { ticket ->
                                     TicketCard(
                                         ticket = ticket,
+                                        queuedEntry = state.outboxByTaskId[ticket.id],
                                         onClick = { onOpenTicket(ticket.id) },
                                         modifier = Modifier.animateItem()
                                     )
@@ -578,6 +638,7 @@ private fun TabSegmentItem(
 @Composable
 private fun TicketCard(
     ticket: TicketItem,
+    queuedEntry: PendingOutboxEntry? = null,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -693,6 +754,31 @@ private fun TicketCard(
                                     text = ticket.attachmentCount.toString(),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = IntraColors.TextSecondary
+                                )
+                            }
+                        }
+                    }
+
+                    if (queuedEntry != null) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = IntraColors.WarningTint
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.CloudUpload,
+                                    contentDescription = null,
+                                    tint = IntraColors.WarningAmber,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = "В очереди: ${queuedEntry.recordedAtText}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = IntraColors.WarningAmber
                                 )
                             }
                         }

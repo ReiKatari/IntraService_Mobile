@@ -3,11 +3,14 @@ package com.lantaservice.intra
 import android.app.Application
 import coil.ImageLoader
 import coil.ImageLoaderFactory
+import coil.disk.DiskCache
+import coil.memory.MemoryCache
 import com.lantaservice.intra.data.network.IntraConnectionManager
 import com.lantaservice.intra.data.network.IntraNetworkFactory
 import com.lantaservice.intra.data.network.IntraResilientDns
 import com.lantaservice.intra.data.network.SessionCredentialsProvider
 import com.lantaservice.intra.data.repository.IntraRepository
+import com.lantaservice.intra.data.storage.PendingOutboxStorage
 import com.lantaservice.intra.data.storage.SecureSessionStorage
 import com.lantaservice.intra.data.update.AppUpdateManager
 import kotlinx.serialization.json.Json
@@ -29,6 +32,10 @@ class IntraApplication : Application(), ImageLoaderFactory {
 
     val sessionStorage: SecureSessionStorage by lazy {
         SecureSessionStorage(applicationContext)
+    }
+
+    val pendingOutboxStorage: PendingOutboxStorage by lazy {
+        PendingOutboxStorage(applicationContext, json)
     }
 
     val credentialsProvider: SessionCredentialsProvider by lazy {
@@ -68,7 +75,8 @@ class IntraApplication : Application(), ImageLoaderFactory {
             json = json,
             credentialsProvider = credentialsProvider,
             connectionManager = connectionManager,
-            sessionStorage = sessionStorage
+            sessionStorage = sessionStorage,
+            outboxStorage = pendingOutboxStorage
         )
     }
 
@@ -82,7 +90,19 @@ class IntraApplication : Application(), ImageLoaderFactory {
     override fun newImageLoader(): ImageLoader {
         return ImageLoader.Builder(this)
             .okHttpClient(okHttpClient)
-            .crossfade(true)
+            .memoryCache {
+                MemoryCache.Builder(this)
+                    .maxSizePercent(0.20)
+                    .build()
+            }
+            .diskCache {
+                DiskCache.Builder()
+                    .directory(cacheDir.resolve("image_cache"))
+                    .maxSizeBytes(50L * 1024L * 1024L)
+                    .build()
+            }
+            .respectCacheHeaders(false)
+            .crossfade(180)
             .build()
     }
 }

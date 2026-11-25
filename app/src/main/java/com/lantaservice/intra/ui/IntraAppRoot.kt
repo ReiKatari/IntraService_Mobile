@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -52,6 +53,7 @@ import com.lantaservice.intra.ui.login.LoginScreen
 import com.lantaservice.intra.ui.login.LoginViewModel
 import com.lantaservice.intra.ui.tasks.TaskListScreen
 import com.lantaservice.intra.ui.tasks.TaskListViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private enum class RootGate {
@@ -73,6 +75,27 @@ fun IntraAppRoot(
     val updateState by appUpdateManager.state.collectAsStateWithLifecycle()
     val isUpdateDialogDismissed by appUpdateManager.isDialogDismissed.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
+    val rootContext = LocalContext.current
+    val outboxEntries by repository.outboxEntries.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) {
+        repository.outboxSyncedEvents.collect { notice ->
+            Toast.makeText(
+                rootContext,
+                "Заявка #${notice.taskId} отправлена в Интру (${notice.recordedAtText})",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    LaunchedEffect(authState, outboxEntries.size) {
+        if (authState is AuthState.Authenticated && outboxEntries.isNotEmpty()) {
+            while (true) {
+                delay(20_000L)
+                repository.syncPendingOutboxNow()
+            }
+        }
+    }
 
     val gate = when (authState) {
         is AuthState.Checking -> RootGate.CHECKING
@@ -192,6 +215,8 @@ fun IntraAppRoot(
                                 onSavedSuccess = { saveResult ->
                                     taskListViewModel.onTicketSaved(saveResult.movedToRepairedTab)
                                     val toastText = when {
+                                        saveResult.deferred ->
+                                            "Интра недоступна. Сохранено в очередь (${saveResult.deferredRecordedAt})"
                                         saveResult.movedToRepairedTab && saveResult.attachedCount > 0 ->
                                             "Статус «Починил» и фото (${saveResult.attachedCount}) сохранены"
                                         saveResult.movedToRepairedTab ->
@@ -200,7 +225,7 @@ fun IntraAppRoot(
                                             "Прикреплено фото: ${saveResult.attachedCount}"
                                         else -> "Изменения сохранены"
                                     }
-                                    Toast.makeText(context, toastText, Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, toastText, Toast.LENGTH_LONG).show()
                                     navController.popBackStack()
                                 }
                             )

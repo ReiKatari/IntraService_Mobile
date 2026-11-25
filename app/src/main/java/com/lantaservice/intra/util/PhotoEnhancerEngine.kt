@@ -43,18 +43,9 @@ object PhotoEnhancerEngine {
         source.getPixels(pixels, 0, w, 0, 0, w, h)
 
         if (mode == EnhanceMode.NATURAL) {
-            val lumaOnly = IntArray(n)
-            for (i in 0 until n) {
-                val c = pixels[i]
-                val r = (c ushr 16) and 0xFF
-                val g = (c ushr 8) and 0xFF
-                val b = c and 0xFF
-                lumaOnly[i] = (77 * r + 150 * g + 29 * b) ushr 8
-            }
-            val score = computeSharpnessScore(lumaOnly, w, h)
-            val copy = source.copy(Bitmap.Config.ARGB_8888, false)
+            val score = computeSharpnessFromArgb(pixels, w, h)
             return@withContext EnhancedPhotoResult(
-                bitmap = copy,
+                bitmap = source,
                 sharpnessScore = score,
                 isBlurryWarning = score < BLURRY_THRESHOLD,
                 enhanced = false
@@ -181,6 +172,49 @@ object PhotoEnhancerEngine {
     /**
      * Computes center-weighted Laplacian sharpness variance score.
      */
+    private fun computeSharpnessFromArgb(pixels: IntArray, width: Int, height: Int): Double {
+        if (width < 8 || height < 8 || pixels.size < width * height) return 0.0
+        val xStart = (width / 5).coerceAtLeast(1)
+        val xEnd = ((width * 4) / 5).coerceAtMost(width - 2)
+        val yStart = (height / 5).coerceAtLeast(1)
+        val yEnd = ((height * 4) / 5).coerceAtMost(height - 2)
+        val step = max(1, min(width, height) / 360)
+
+        var sum = 0.0
+        var sumSq = 0.0
+        var count = 0L
+
+        var y = yStart
+        while (y <= yEnd) {
+            val row = y * width
+            var x = xStart
+            while (x <= xEnd) {
+                val idx = row + x
+                val c = argbLuma(pixels[idx])
+                val lap = (4 * c -
+                    argbLuma(pixels[idx - 1]) -
+                    argbLuma(pixels[idx + 1]) -
+                    argbLuma(pixels[idx - width]) -
+                    argbLuma(pixels[idx + width])).toDouble()
+                sum += lap
+                sumSq += lap * lap
+                count++
+                x += step
+            }
+            y += step
+        }
+        if (count == 0L) return 0.0
+        val mean = sum / count
+        return (sumSq / count) - (mean * mean)
+    }
+
+    private fun argbLuma(c: Int): Int {
+        val r = (c ushr 16) and 0xFF
+        val g = (c ushr 8) and 0xFF
+        val b = c and 0xFF
+        return (77 * r + 150 * g + 29 * b) ushr 8
+    }
+
     fun computeSharpnessScore(luma: IntArray, width: Int, height: Int): Double {
         if (width < 8 || height < 8 || luma.size < width * height) return 0.0
         val xStart = (width / 5).coerceAtLeast(1)

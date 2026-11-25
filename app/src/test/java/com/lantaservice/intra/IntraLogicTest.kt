@@ -5,11 +5,15 @@ import com.lantaservice.intra.data.model.TaskStatusDto
 import com.lantaservice.intra.data.model.TaskStatusSimpleViewDto
 import com.lantaservice.intra.data.model.UpdateTaskRequestDto
 import com.lantaservice.intra.data.model.extractFileTokens
+import com.lantaservice.intra.data.model.extractFileTokensFromRaw
 import com.lantaservice.intra.data.network.IntraConnectionManager
 import com.lantaservice.intra.data.network.IntraResilientDns
 import com.lantaservice.intra.data.network.SessionCredentialsProvider
 import com.lantaservice.intra.data.repository.IntraRepository
 import com.lantaservice.intra.data.storage.CredentialsPayloadCodec
+import com.lantaservice.intra.data.storage.PendingOutboxEntry
+import com.lantaservice.intra.data.storage.PendingOutboxLogic
+import com.lantaservice.intra.data.storage.PendingOutboxPhoto
 import com.lantaservice.intra.data.storage.SavedCredentials
 import com.lantaservice.intra.data.update.AppUpdateManager
 import com.lantaservice.intra.ui.login.LoginViewModel
@@ -28,6 +32,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayOutputStream
+import java.io.IOException
+import java.net.SocketTimeoutException
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -413,5 +419,83 @@ class IntraLogicTest {
         assertFalse(formattedToday.contains("Сегодня"))
         assertFalse(formattedToday.contains("Вчера"))
         assertTrue(Regex("^\\d{2}\\.\\d{2}\\.\\d{4} \\d{2}:\\d{2}$").matches(formattedToday))
+    }
+
+    @Test
+    fun extractFileTokensFromRawHandlesJsonStringArrayAndXml() {
+        assertEquals("1,23", extractFileTokensFromRaw("""{"FileTokens":"1,23"}""", json))
+        assertEquals("45", extractFileTokensFromRaw("""{"fileTokens":"45"}""", json))
+        assertEquals("77,88", extractFileTokensFromRaw("[77, 88]", json))
+        assertEquals("99", extractFileTokensFromRaw("\"99\"", json))
+        assertEquals("11,22", extractFileTokensFromRaw("<Response><FileTokens>11,22</FileTokens></Response>", json))
+    }
+
+    @Test
+    fun recoverableOutboxFailureClassifierDistinguishesOfflineFromValidationErrors() {
+        assertTrue(IntraRepository.isRecoverableOutboxFailure(SocketTimeoutException("timeout")))
+        assertTrue(IntraRepository.isRecoverableOutboxFailure(IOException("network down")))
+        assertTrue(IntraRepository.isRecoverableOutboxFailure(IllegalStateException("503"), httpCode = 503))
+        assertTrue(IntraRepository.isRecoverableOutboxFailure(IllegalStateException("429"), httpCode = 429))
+        assertFalse(IntraRepository.isRecoverableOutboxFailure(IllegalStateException("400"), httpCode = 400))
+        assertFalse(IntraRepository.isRecoverableOutboxFailure(IllegalStateException("403"), httpCode = 403))
+        assertFalse(IntraRepository.isRecoverableOutboxFailure(IllegalStateException("409"), httpCode = 409))
+    }
+
+    @Test
+    fun deferredCommentAndPhotoNameEmbedFixedTimestamp() {
+        assertEquals(
+            "[Отложенная отправка: попытка от 25.11.2026 16:40]",
+            IntraRepository.buildDeferredComment("", "25.11.2026 16:40")
+        )
+        assertEquals(
+            "Заменил блок питания\n\n[Отложенная отправка: попытка от 25.11.2026 16:40]",
+            IntraRepository.buildDeferredComment("Заменил блок питания", "25.11.2026 16:40")
+        )
+        assertEquals(
+            "task159_25112026_1640_1",
+            IntraRepository.buildDeferredPhotoName(159, "25.11.2026 16:40", 0)
+        )
+    }
+
+    @Test
+    fun pendingOutboxLogicUpsertsUpdatesSameTaskAndIsolatesUsers() {
+        val e1 = PendingOutboxEntry(
+            taskId = 101,
+            userId = 1,
+            newStatusId = 29,
+            comment = "Первая попытка",
+            photos = listOf(PendingOutboxPhoto("p1", "/tmp/p1.jpg", "p1", 100L)),
+            recordedAtEpochMs = 1000L,
+            recordedAtText = "25.11.2026 16:30"
+        )
+        val e2OtherUser = PendingOutboxEntry(
+            taskId = 101,
+            userId = 2,
+            newStatusId = 29,
+            comment = "Другой инженер",
+            recordedAtEpochMs = 1500L,
+            recordedAtText = "25.11.2026 16:35"
+        )
+        val e1Updated = e1.copy(
+            comment = "Новые данные и статус",
+            photos = listOf(PendingOutboxPhoto("p2", "/tmp/p2.jpg", "p2", 200L)),
+            recordedAtEpochMs = 2000L,
+            recordedAtText = "25.11.2026 16:45"
+        )
+
+        var list = PendingOutboxLogic.upsert(emptyList(), e1)
+        list = PendingOutboxLogic.upsert(list, e2OtherUser)
+        list = PendingOutboxLogic.upsert(list, e1Updated)
+
+        assertEquals(2, list.size)
+        val user1 = PendingOutboxLogic.filterForUser(list, 1)
+        assertEquals(1, user1.size)
+        assertEquals("Новые данные и статус", user1[0].comment)
+        assertEquals("25.11.2026 16:45", user1[0].recordedAtText)
+        assertEquals("p2", user1[0].photos[0].id)
+
+        val afterRemove = PendingOutboxLogic.remove(list, 101, 1)
+        assertEquals(0, PendingOutboxLogic.filterForUser(afterRemove, 1).size)
+        assertEquals(1, PendingOutboxLogic.filterForUser(afterRemove, 2).size)
     }
 }

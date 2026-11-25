@@ -1,5 +1,6 @@
 package com.lantaservice.intra.data.model
 
+import androidx.compose.runtime.Immutable
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
@@ -9,12 +10,13 @@ import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.buildClassSerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.JsonPrimitive
 import java.io.File
 
 @Serializable
@@ -227,6 +229,7 @@ data class UserSession(
     val roleType: Int?
 )
 
+@Immutable
 data class TaskAttachment(
     val id: String,
     val name: String,
@@ -234,6 +237,8 @@ data class TaskAttachment(
     val url: String
 )
 
+@Immutable
+@Serializable
 data class TicketItem(
     val id: Int,
     val name: String,
@@ -254,6 +259,7 @@ data class TicketItem(
     val isLifetimeChecked: Boolean
 )
 
+@Immutable
 data class TicketLifetimeEvent(
     val dateText: String,
     val editorName: String,
@@ -262,6 +268,7 @@ data class TicketLifetimeEvent(
     val comment: String
 )
 
+@Immutable
 data class TicketDetail(
     val id: Int,
     val name: String,
@@ -290,6 +297,7 @@ data class TicketDetail(
     val history: List<TicketLifetimeEvent>
 )
 
+@Immutable
 data class PendingPhoto(
     val id: String,
     val file: File,
@@ -300,23 +308,60 @@ data class PendingPhoto(
     val sharpnessScore: Double = 0.0
 )
 
+@Immutable
 data class TicketSaveResult(
     val movedToRepairedTab: Boolean,
     val attachedCount: Int,
-    val statusChanged: Boolean
+    val statusChanged: Boolean,
+    val deferred: Boolean = false,
+    val deferredRecordedAt: String? = null
 )
 
 /**
- * Extracts FileTokens robustly from IntraService TaskFile JSON response.
+ * Extracts FileTokens robustly from IntraService TaskFile JSON element.
  */
 fun extractFileTokens(element: JsonElement): String {
-    if (element is JsonObject) {
-        val tokenValue = element["FileTokens"]
-            ?: element["fileTokens"]
-            ?: element.entries.firstOrNull { it.key.equals("filetokens", ignoreCase = true) }?.value
-        if (tokenValue != null && tokenValue !is JsonNull) {
-            return tokenValue.jsonPrimitive.content.trim()
+    return when (element) {
+        is JsonObject -> {
+            val tokenValue = element["FileTokens"]
+                ?: element["fileTokens"]
+                ?: element.entries.firstOrNull { it.key.equals("filetokens", ignoreCase = true) }?.value
+            if (tokenValue != null && tokenValue !is JsonNull) {
+                if (tokenValue is JsonPrimitive) {
+                    tokenValue.content.trim()
+                } else {
+                    extractFileTokens(tokenValue)
+                }
+            } else {
+                ""
+            }
         }
+        is kotlinx.serialization.json.JsonArray -> {
+            element.mapNotNull { item ->
+                (item as? JsonPrimitive)?.content?.trim()?.takeIf { it.isNotEmpty() }
+            }.joinToString(",")
+        }
+        is JsonPrimitive -> element.content.trim()
+        else -> ""
+    }
+}
+
+private val xmlFileTokensRegex = Regex("<FileTokens>(.*?)</FileTokens>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+
+/**
+ * Extracts FileTokens from raw HTTP response body (JSON object, primitive string, array, or XML).
+ */
+fun extractFileTokensFromRaw(rawBody: String, json: Json): String {
+    val trimmed = rawBody.trim()
+    if (trimmed.isEmpty()) return ""
+    val parsed = runCatching { json.parseToJsonElement(trimmed) }.getOrNull()
+    if (parsed != null) {
+        val fromJson = extractFileTokens(parsed)
+        if (fromJson.isNotEmpty()) return fromJson
+    }
+    val xmlMatch = xmlFileTokensRegex.find(trimmed)
+    if (xmlMatch != null) {
+        return xmlMatch.groupValues[1].trim()
     }
     return ""
 }

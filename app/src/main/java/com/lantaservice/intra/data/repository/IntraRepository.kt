@@ -18,28 +18,39 @@ import com.lantaservice.intra.data.model.TicketLifetimeEvent
 import com.lantaservice.intra.data.model.TicketSaveResult
 import com.lantaservice.intra.data.model.UpdateTaskRequestDto
 import com.lantaservice.intra.data.model.UserSession
-import com.lantaservice.intra.data.model.extractFileTokens
+import com.lantaservice.intra.data.model.extractFileTokensFromRaw
 import com.lantaservice.intra.data.network.IntraApiService
 import com.lantaservice.intra.data.network.IntraConnectionManager
 import com.lantaservice.intra.data.network.SessionCredentialsProvider
 import com.lantaservice.intra.data.network.VpnBlockedConnectionException
+import com.lantaservice.intra.data.storage.OutboxSyncNotice
+import com.lantaservice.intra.data.storage.PendingOutboxEntry
+import com.lantaservice.intra.data.storage.PendingOutboxLogic
+import com.lantaservice.intra.data.storage.PendingOutboxStorage
 import com.lantaservice.intra.data.storage.SavedCredentials
 import com.lantaservice.intra.data.storage.SecureSessionStorage
 import com.lantaservice.intra.util.DateAndTextFormatter
 import com.lantaservice.intra.util.ImageCompressor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -49,11 +60,18 @@ import okhttp3.RequestBody.Companion.asRequestBody
 import retrofit2.Response
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import java.time.LocalDateTime
 import java.util.concurrent.ConcurrentHashMap
 import javax.net.ssl.SSLException
+
+class IntraHttpException(
+    val httpCode: Int,
+    message: String
+) : IllegalStateException(message)
 
 class IntraNetworkException(
     message: String,
@@ -82,7 +100,8 @@ class IntraRepository(
     private val json: Json,
     private val credentialsProvider: SessionCredentialsProvider,
     private val connectionManager: IntraConnectionManager,
-    private val sessionStorage: SecureSessionStorage
+    private val sessionStorage: SecureSessionStorage,
+    private val outboxStorage: PendingOutboxStorage
 ) {
 
     // Always require explicit login screen when app process starts cleanly
@@ -91,9 +110,24 @@ class IntraRepository(
 
     val unauthorizedEvents: Flow<Unit> = credentialsProvider.unauthorizedEvents
 
+    private val _outboxEntries = MutableStateFlow<List<PendingOutboxEntry>>(emptyList())
+    val outboxEntries: StateFlow<List<PendingOutboxEntry>> = _outboxEntries.asStateFlow()
+
+    private val _isSyncingOutbox = MutableStateFlow(false)
+    val isSyncingOutbox: StateFlow<Boolean> = _isSyncingOutbox.asStateFlow()
+
+    private val _outboxSyncedEvents = MutableSharedFlow<OutboxSyncNotice>(extraBufferCapacity = 16)
+    val outboxSyncedEvents: SharedFlow<OutboxSyncNotice> = _outboxSyncedEvents.asSharedFlow()
+
+    private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val outboxSyncMutex = Mutex()
     private val statusesById = ConcurrentHashMap<Int, TaskStatusDto>()
+    @Volatile
+    private var statusesLastLoadedAtMs: Long = 0L
     private val repairedHistoryCache = ConcurrentHashMap<String, Boolean>()
     private val locallyRepairedTaskIds = ConcurrentHashMap.newKeySet<Int>()
+    private val ticketItemCache = ConcurrentHashMap<Int, TicketItem>()
+    private val detailCache = ConcurrentHashMap<Int, TicketDetail>()
 
     fun serverDisplayHost(): String = SessionCredentialsProvider.FIXED_BASE_URL
         .removePrefix("https://")
@@ -119,21 +153,29 @@ class IntraRepository(
     fun clearInMemorySession() {
         credentialsProvider.clearSession()
         statusesById.clear()
+        statusesLastLoadedAtMs = 0L
         repairedHistoryCache.clear()
         locallyRepairedTaskIds.clear()
+        ticketItemCache.clear()
+        detailCache.clear()
+        _outboxEntries.value = emptyList()
         _authState.value = AuthState.Unauthenticated
     }
 
     /**
      * Clears active in-memory session immediately before Activity finishes and closes app,
-     * while preserving encrypted login fields when "Запомнить меня" is enabled.
+     * while preserving encrypted login fields and durable offline outbox files on disk.
      */
     fun logoutImmediate() {
         credentialsProvider.clearSession()
         statusesById.clear()
+        statusesLastLoadedAtMs = 0L
         repairedHistoryCache.clear()
         locallyRepairedTaskIds.clear()
-        CoroutineScope(Dispatchers.IO).launch {
+        ticketItemCache.clear()
+        detailCache.clear()
+        _outboxEntries.value = emptyList()
+        repoScope.launch {
             ImageCompressor.cleanupCacheDirs(context)
         }
     }
@@ -141,9 +183,100 @@ class IntraRepository(
     fun handleUnauthorized() {
         credentialsProvider.clearSession()
         statusesById.clear()
+        statusesLastLoadedAtMs = 0L
         repairedHistoryCache.clear()
         locallyRepairedTaskIds.clear()
+        ticketItemCache.clear()
+        detailCache.clear()
+        _outboxEntries.value = emptyList()
         _authState.value = AuthState.Unauthenticated
+    }
+
+    fun getCachedTicketsForCurrentUser(): List<TicketItem> {
+        val session = credentialsProvider.currentSession() ?: return emptyList()
+        if (ticketItemCache.isNotEmpty()) {
+            return ticketItemCache.values.sortedByDescending { it.id }
+        }
+        val file = File(context.filesDir, "cache_tickets_${session.userId}.json")
+        if (!file.exists()) return emptyList()
+        val loaded = runCatching {
+            val raw = file.readText(Charsets.UTF_8)
+            json.decodeFromString(ListSerializer(TicketItem.serializer()), raw)
+        }.getOrNull().orEmpty()
+        loaded.forEach { ticketItemCache[it.id] = it }
+        return loaded
+    }
+
+    fun getCachedDetailPreview(taskId: Int): TicketDetail? {
+        detailCache[taskId]?.let { return it }
+        val item = ticketItemCache[taskId] ?: return null
+        val statuses = statusesById.values.toList()
+        val repairedStatus = statuses.firstOrNull {
+            it.name.trim().equals(REPAIRED_STATUS_NAME, ignoreCase = true)
+        } ?: statuses.firstOrNull {
+            it.name.contains(REPAIRED_STATUS_KEYWORD, ignoreCase = true)
+        }
+        val isCurrRepaired = isRepairedStatus(item.statusId, item.statusName, findRepairedStatusIds(statuses))
+        return TicketDetail(
+            id = item.id,
+            name = item.name,
+            description = item.descriptionPreview.ifBlank { "Загрузка подробного описания..." },
+            statusId = item.statusId,
+            statusName = item.statusName,
+            priorityName = item.priorityName,
+            serviceName = item.serviceName,
+            creatorName = item.creatorName.ifBlank { "Не указан" },
+            creatorPhone = null,
+            executors = credentialsProvider.currentSession()?.displayName.orEmpty().ifBlank { "Текущий исполнитель" },
+            createdText = item.createdText,
+            changedText = item.changedText,
+            deadlineText = item.deadlineText,
+            isOverdue = item.isOverdue,
+            isCurrentlyRepaired = isCurrRepaired,
+            hasHadRepairedStatus = item.hasHadRepairedStatus,
+            canSetRepaired = !isCurrRepaired,
+            repairedStatusId = repairedStatus?.id,
+            repairedStatusName = repairedStatus?.name ?: REPAIRED_STATUS_NAME,
+            isCommentRequiredForRepaired = repairedStatus?.isCommentRequired ?: false,
+            repairedUnavailableReason = null,
+            canAttachFiles = true,
+            canComment = true,
+            attachments = emptyList(),
+            history = emptyList()
+        )
+    }
+
+    fun getOutboxEntry(taskId: Int): PendingOutboxEntry? {
+        val userId = credentialsProvider.currentSession()?.userId ?: return null
+        return _outboxEntries.value.firstOrNull { it.taskId == taskId && it.userId == userId }
+    }
+
+    fun isTemporaryPhotoFile(file: File): Boolean = ImageCompressor.isInCacheUploads(context, file)
+
+    fun cleanupTemporaryPhotos(photos: List<PendingPhoto>) =
+        ImageCompressor.cleanupTemporaryUploadFiles(context, photos)
+
+    fun cancelOutboxEntry(taskId: Int) {
+        val userId = credentialsProvider.currentSession()?.userId ?: return
+        val updated = PendingOutboxLogic.remove(outboxStorage.loadAll(), taskId, userId)
+        outboxStorage.saveAll(updated)
+        outboxStorage.deleteTaskPhotos(taskId)
+        refreshOutboxFlowForUser(userId)
+    }
+
+    fun triggerOutboxSyncAsync() {
+        val session = credentialsProvider.currentSession() ?: return
+        if (_outboxEntries.value.isEmpty()) {
+            refreshOutboxFlowForUser(session.userId)
+            if (_outboxEntries.value.isEmpty()) return
+        }
+        repoScope.launch {
+            syncPendingOutboxNow()
+        }
+    }
+
+    private fun refreshOutboxFlowForUser(userId: Int) {
+        _outboxEntries.value = PendingOutboxLogic.filterForUser(outboxStorage.loadAll(), userId)
     }
 
     suspend fun login(
@@ -304,7 +437,11 @@ class IntraRepository(
                 rememberMe = rememberMe
             )
         )
+        refreshOutboxFlowForUser(session.userId)
         _authState.value = AuthState.Authenticated(session)
+        if (_outboxEntries.value.isNotEmpty()) {
+            repoScope.launch { syncPendingOutboxNow() }
+        }
         return Result.success(session)
     }
 
@@ -398,6 +535,8 @@ class IntraRepository(
                 )
             }
 
+            saveTicketListCache(session.userId, initialItems)
+
             val needHistoryCheck = initialItems.filter { !it.isLifetimeChecked }
             if (needHistoryCheck.isEmpty()) {
                 val finalSnap = TicketListSnapshot(initialItems, isResolvingHistory = false)
@@ -407,7 +546,7 @@ class IntraRepository(
 
             onProgress(TicketListSnapshot(initialItems, isResolvingHistory = true))
 
-            val semaphore = Semaphore(6)
+            val semaphore = Semaphore(8)
             val resolvedMap = ConcurrentHashMap<Int, Boolean>()
 
             coroutineScope {
@@ -435,6 +574,7 @@ class IntraRepository(
                     )
                 }
             }
+            saveTicketListCache(session.userId, updatedItems)
             val finalSnap = TicketListSnapshot(updatedItems, isResolvingHistory = false)
             onProgress(finalSnap)
             Result.success(finalSnap)
@@ -555,126 +695,306 @@ class IntraRepository(
                 ?: form.services.firstOrNull { it.id == task.serviceId }?.name
                 ?: ""
 
-            Result.success(
-                TicketDetail(
-                    id = task.id,
-                    name = task.name?.takeIf { it.isNotBlank() } ?: "Заявка #${task.id}",
-                    description = DateAndTextFormatter.cleanHtmlText(task.description)
-                        .ifBlank { "Описание не указано" },
-                    statusId = task.statusId,
-                    statusName = currentStatusName,
-                    priorityName = priorityName,
-                    serviceName = serviceName,
-                    creatorName = task.creator?.takeIf { it.isNotBlank() } ?: "Не указан",
-                    creatorPhone = task.creatorMobilePhone?.takeIf { it.isNotBlank() }
-                        ?: task.creatorPhone?.takeIf { it.isNotBlank() },
-                    executors = task.executors?.takeIf { it.isNotBlank() } ?: session.displayName,
-                    createdText = DateAndTextFormatter.formatIntraDate(task.created),
-                    changedText = DateAndTextFormatter.formatIntraDate(task.changed),
-                    deadlineText = DateAndTextFormatter.formatDeadline(task.deadline),
-                    isOverdue = (task.resolutionOverdue == true),
-                    isCurrentlyRepaired = isCurrentlyRepaired,
-                    hasHadRepairedStatus = hasHadRepaired,
-                    canSetRepaired = canSetRepaired,
-                    repairedStatusId = repairedTargetId,
-                    repairedStatusName = repairedTargetName,
-                    isCommentRequiredForRepaired = isCommentRequired,
-                    repairedUnavailableReason = unavailableReason,
-                    canAttachFiles = canAttachFiles,
-                    canComment = canComment,
-                    attachments = attachments,
-                    history = historyEvents
-                )
+            val detail = TicketDetail(
+                id = task.id,
+                name = task.name?.takeIf { it.isNotBlank() } ?: "Заявка #${task.id}",
+                description = DateAndTextFormatter.cleanHtmlText(task.description)
+                    .ifBlank { "Описание не указано" },
+                statusId = task.statusId,
+                statusName = currentStatusName,
+                priorityName = priorityName,
+                serviceName = serviceName,
+                creatorName = task.creator?.takeIf { it.isNotBlank() } ?: "Не указан",
+                creatorPhone = task.creatorMobilePhone?.takeIf { it.isNotBlank() }
+                    ?: task.creatorPhone?.takeIf { it.isNotBlank() },
+                executors = task.executors?.takeIf { it.isNotBlank() } ?: session.displayName,
+                createdText = DateAndTextFormatter.formatIntraDate(task.created),
+                changedText = DateAndTextFormatter.formatIntraDate(task.changed),
+                deadlineText = DateAndTextFormatter.formatDeadline(task.deadline),
+                isOverdue = (task.resolutionOverdue == true),
+                isCurrentlyRepaired = isCurrentlyRepaired,
+                hasHadRepairedStatus = hasHadRepaired,
+                canSetRepaired = canSetRepaired,
+                repairedStatusId = repairedTargetId,
+                repairedStatusName = repairedTargetName,
+                isCommentRequiredForRepaired = isCommentRequired,
+                repairedUnavailableReason = unavailableReason,
+                canAttachFiles = canAttachFiles,
+                canComment = canComment,
+                attachments = attachments,
+                history = historyEvents
             )
+            detailCache[task.id] = detail
+            Result.success(detail)
         } catch (t: Throwable) {
+            if (isRecoverableOutboxFailure(t)) {
+                val cached = getCachedDetailPreview(taskId)
+                if (cached != null) {
+                    return@withContext Result.success(cached)
+                }
+            }
             Result.failure(toIntraException(t))
         }
     }
 
     suspend fun saveTicketChanges(
         taskId: Int,
+        taskName: String = "",
         newStatusId: Int?,
+        newStatusName: String? = null,
         pendingPhotos: List<PendingPhoto>,
         comment: String,
+        allowOfflineQueue: Boolean = true,
+        forcedRecordedAtText: String? = null,
         onStageChange: (String) -> Unit
     ): Result<TicketSaveResult> = withContext(Dispatchers.IO) {
-        try {
+        val session = try {
             requireAuthenticatedSession()
+        } catch (t: Throwable) {
+            return@withContext Result.failure(toIntraException(t))
+        }
 
-            var fileTokens: String? = null
-            if (pendingPhotos.isNotEmpty()) {
-                onStageChange("Загрузка фото (${pendingPhotos.size})...")
-                val parts = mutableListOf<MultipartBody.Part>()
-                val jpegMediaType = "image/jpeg".toMediaType()
+        val nowEpochMs = System.currentTimeMillis()
+        val recordedAtText = DateAndTextFormatter.formatLocalDateTime(LocalDateTime.now())
+        val trimmedComment = comment.trim()
+        if (newStatusId == null && pendingPhotos.isEmpty() && trimmedComment.isEmpty()) {
+            return@withContext Result.failure(IllegalArgumentException("Нет изменений для сохранения"))
+        }
 
-                pendingPhotos.forEachIndexed { index, photo ->
-                    val fieldKey = "file$index"
-                    val requestBody = photo.file.asRequestBody(jpegMediaType)
-                    parts += MultipartBody.Part.createFormData(
-                        fieldKey,
-                        "${photo.nameWithoutExt}.jpg",
-                        requestBody
-                    )
-                    parts += MultipartBody.Part.createFormData(
-                        "${fieldKey}Name",
-                        photo.nameWithoutExt
-                    )
-                }
-
-                val uploadResp = api.uploadTaskFiles(parts)
-                if (!uploadResp.isSuccessful) {
-                    throw IllegalStateException("Ошибка загрузки фото: ${parseErrorMessage(uploadResp)}")
-                }
-                val uploadBody = uploadResp.body()
-                    ?: throw IllegalStateException("Сервер не вернул токены загруженных файлов")
-                val tokens = extractFileTokens(uploadBody)
-                if (tokens.isBlank()) {
-                    throw IllegalStateException("Сервер вернул пустой список FileTokens")
-                }
-                fileTokens = tokens
+        val effectivePhotos = if (!forcedRecordedAtText.isNullOrBlank()) {
+            pendingPhotos.mapIndexed { idx, p ->
+                p.copy(nameWithoutExt = buildDeferredPhotoName(taskId, forcedRecordedAtText, idx))
             }
+        } else {
+            pendingPhotos
+        }
+        val effectiveComment = if (!forcedRecordedAtText.isNullOrBlank()) {
+            buildDeferredComment(trimmedComment, forcedRecordedAtText)
+        } else {
+            trimmedComment
+        }
 
-            val trimmedComment = comment.trim().takeIf { it.isNotEmpty() }
-            if (newStatusId == null && fileTokens == null && trimmedComment == null) {
-                throw IllegalArgumentException("Нет изменений для сохранения")
-            }
-
-            onStageChange("Сохранение заявки...")
-            val updateDto = UpdateTaskRequestDto(
-                statusId = newStatusId,
-                fileTokens = fileTokens,
-                comment = trimmedComment
+        try {
+            uploadPhotosAndPutTask(
+                taskId = taskId,
+                newStatusId = newStatusId,
+                photos = effectivePhotos,
+                comment = effectiveComment,
+                onStageChange = onStageChange
             )
 
-            val putResp = api.updateTask(taskId = taskId, body = updateDto)
-            if (!putResp.isSuccessful) {
-                throw IllegalStateException(parseErrorMessage(putResp))
-            }
+            // Clean up temporary uploads & remove any superseded outbox item
+            cancelOutboxEntry(taskId)
+            ImageCompressor.cleanupTemporaryUploadFiles(context, pendingPhotos)
+            detailCache.remove(taskId)
 
-            ImageCompressor.cleanupUploadFiles(pendingPhotos)
-
-            val statusChangedToRepaired = newStatusId != null &&
-                isRepairedStatus(
-                    statusId = newStatusId,
-                    statusName = statusesById[newStatusId]?.name,
-                    repairedIds = findRepairedStatusIds(statusesById.values)
-                )
-            if (statusChangedToRepaired) {
-                locallyRepairedTaskIds.add(taskId)
-                repairedHistoryCache.keys
-                    .filter { it.startsWith("$taskId|") }
-                    .forEach { repairedHistoryCache[it] = true }
-            }
+            val statusChangedToRepaired = markLocalRepairedIfNeeded(taskId, newStatusId)
 
             Result.success(
                 TicketSaveResult(
                     movedToRepairedTab = statusChangedToRepaired,
                     attachedCount = pendingPhotos.size,
-                    statusChanged = newStatusId != null
+                    statusChanged = newStatusId != null,
+                    deferred = false
                 )
             )
         } catch (t: Throwable) {
+            val httpCode = (t as? IntraHttpException)?.httpCode
+            if (allowOfflineQueue && isRecoverableOutboxFailure(t, httpCode)) {
+                val stagedPhotos = outboxStorage.stagePhotosForTask(taskId, pendingPhotos)
+                ImageCompressor.cleanupTemporaryUploadFiles(context, pendingPhotos)
+
+                val entry = PendingOutboxEntry(
+                    taskId = taskId,
+                    userId = session.userId,
+                    taskName = taskName.ifBlank { ticketItemCache[taskId]?.name ?: "Заявка #$taskId" },
+                    newStatusId = newStatusId,
+                    newStatusName = newStatusName ?: newStatusId?.let { statusesById[it]?.name },
+                    comment = trimmedComment,
+                    photos = stagedPhotos,
+                    recordedAtEpochMs = nowEpochMs,
+                    recordedAtText = recordedAtText,
+                    lastError = toIntraException(t).message,
+                    attemptCount = (getOutboxEntry(taskId)?.attemptCount ?: 0) + 1
+                )
+                val allUpdated = PendingOutboxLogic.upsert(outboxStorage.loadAll(), entry)
+                outboxStorage.saveAll(allUpdated)
+                refreshOutboxFlowForUser(session.userId)
+
+                return@withContext Result.success(
+                    TicketSaveResult(
+                        movedToRepairedTab = false,
+                        attachedCount = stagedPhotos.size,
+                        statusChanged = newStatusId != null,
+                        deferred = true,
+                        deferredRecordedAt = recordedAtText
+                    )
+                )
+            }
             Result.failure(toIntraException(t))
+        }
+    }
+
+    suspend fun syncPendingOutboxNow(): Int = withContext(Dispatchers.IO) {
+        val session = credentialsProvider.currentSession() ?: return@withContext 0
+        outboxSyncMutex.withLock {
+            val userEntries = PendingOutboxLogic.filterForUser(outboxStorage.loadAll(), session.userId)
+            if (userEntries.isEmpty()) {
+                refreshOutboxFlowForUser(session.userId)
+                return@withLock 0
+            }
+
+            _isSyncingOutbox.value = true
+            var syncedCount = 0
+            try {
+                for (entry in userEntries) {
+                    val livePhotos = entry.photos.mapIndexedNotNull { idx, p ->
+                        val f = File(p.filePath)
+                        if (!f.exists()) null
+                        else PendingPhoto(
+                            id = p.id,
+                            file = f,
+                            nameWithoutExt = buildDeferredPhotoName(entry.taskId, entry.recordedAtText, idx),
+                            sizeBytes = f.length(),
+                            isEnhanced = p.isEnhanced,
+                            isBlurryWarning = p.isBlurryWarning,
+                            sharpnessScore = p.sharpnessScore
+                        )
+                    }
+                    val deferredComment = buildDeferredComment(entry.comment, entry.recordedAtText)
+
+                    try {
+                        uploadPhotosAndPutTask(
+                            taskId = entry.taskId,
+                            newStatusId = entry.newStatusId,
+                            photos = livePhotos,
+                            comment = deferredComment,
+                            onStageChange = {}
+                        )
+
+                        val remaining = PendingOutboxLogic.remove(outboxStorage.loadAll(), entry.taskId, session.userId)
+                        outboxStorage.saveAll(remaining)
+                        outboxStorage.deleteTaskPhotos(entry.taskId)
+                        refreshOutboxFlowForUser(session.userId)
+                        detailCache.remove(entry.taskId)
+
+                        val movedToRepaired = markLocalRepairedIfNeeded(entry.taskId, entry.newStatusId)
+                        syncedCount++
+                        _outboxSyncedEvents.tryEmit(
+                            OutboxSyncNotice(
+                                taskId = entry.taskId,
+                                movedToRepairedTab = movedToRepaired,
+                                recordedAtText = entry.recordedAtText,
+                                attachedCount = livePhotos.size
+                            )
+                        )
+                    } catch (t: Throwable) {
+                        val httpCode = (t as? IntraHttpException)?.httpCode
+                        val errMsg = toIntraException(t).message ?: "Ошибка синхронизации"
+                        val updatedEntry = entry.copy(
+                            lastError = errMsg,
+                            attemptCount = entry.attemptCount + 1
+                        )
+                        val updatedAll = PendingOutboxLogic.upsert(outboxStorage.loadAll(), updatedEntry)
+                        outboxStorage.saveAll(updatedAll)
+                        refreshOutboxFlowForUser(session.userId)
+
+                        if (isRecoverableOutboxFailure(t, httpCode)) {
+                            // Intra is still unreachable, stop remaining queue items until recovery
+                            break
+                        }
+                    }
+                }
+            } finally {
+                _isSyncingOutbox.value = false
+            }
+            syncedCount
+        }
+    }
+
+    private suspend fun uploadPhotosAndPutTask(
+        taskId: Int,
+        newStatusId: Int?,
+        photos: List<PendingPhoto>,
+        comment: String,
+        onStageChange: (String) -> Unit
+    ) {
+        var fileTokens: String? = null
+        if (photos.isNotEmpty()) {
+            onStageChange("Загрузка фото (${photos.size})...")
+            val parts = mutableListOf<MultipartBody.Part>()
+            val jpegMediaType = "image/jpeg".toMediaType()
+
+            photos.forEachIndexed { index, photo ->
+                val fieldKey = "file$index"
+                val requestBody = photo.file.asRequestBody(jpegMediaType)
+                parts += MultipartBody.Part.createFormData(
+                    fieldKey,
+                    "${photo.nameWithoutExt}.jpg",
+                    requestBody
+                )
+                parts += MultipartBody.Part.createFormData(
+                    "${fieldKey}Name",
+                    photo.nameWithoutExt
+                )
+            }
+
+            val uploadResp = api.uploadTaskFiles(parts)
+            if (!uploadResp.isSuccessful) {
+                throw IntraHttpException(
+                    uploadResp.code(),
+                    "Ошибка загрузки фото: ${parseErrorMessage(uploadResp)}"
+                )
+            }
+            val rawUpload = uploadResp.body()?.string().orEmpty()
+            val tokens = extractFileTokensFromRaw(rawUpload, json)
+            if (tokens.isBlank()) {
+                throw IllegalStateException("Сервер не вернул токены загруженных файлов")
+            }
+            fileTokens = tokens
+        }
+
+        val trimmedComment = comment.trim().takeIf { it.isNotEmpty() }
+        if (newStatusId == null && fileTokens == null && trimmedComment == null) {
+            throw IllegalArgumentException("Нет изменений для сохранения")
+        }
+
+        onStageChange("Сохранение заявки...")
+        val updateDto = UpdateTaskRequestDto(
+            statusId = newStatusId,
+            fileTokens = fileTokens,
+            comment = trimmedComment
+        )
+
+        val putResp = api.updateTask(taskId = taskId, body = updateDto)
+        if (!putResp.isSuccessful) {
+            throw IntraHttpException(putResp.code(), parseErrorMessage(putResp))
+        }
+        putResp.body()?.close()
+    }
+
+    private fun markLocalRepairedIfNeeded(taskId: Int, newStatusId: Int?): Boolean {
+        val statusChangedToRepaired = newStatusId != null &&
+            isRepairedStatus(
+                statusId = newStatusId,
+                statusName = statusesById[newStatusId]?.name,
+                repairedIds = findRepairedStatusIds(statusesById.values)
+            )
+        if (statusChangedToRepaired) {
+            locallyRepairedTaskIds.add(taskId)
+            repairedHistoryCache.keys
+                .filter { it.startsWith("$taskId|") }
+                .forEach { repairedHistoryCache[it] = true }
+        }
+        return statusChangedToRepaired
+    }
+
+    private fun saveTicketListCache(userId: Int, items: List<TicketItem>) {
+        items.forEach { ticketItemCache[it.id] = it }
+        runCatching {
+            val file = File(context.filesDir, "cache_tickets_$userId.json")
+            val encoded = json.encodeToString(ListSerializer(TicketItem.serializer()), items)
+            file.writeText(encoded, Charsets.UTF_8)
         }
     }
 
@@ -713,15 +1033,42 @@ class IntraRepository(
             ?: throw IllegalStateException("Требуется авторизация")
     }
 
-    private suspend fun refreshStatusCatalog(): List<TaskStatusDto> {
-        val resp = api.getStatuses()
+    private suspend fun refreshStatusCatalog(forceRefresh: Boolean = false): List<TaskStatusDto> {
+        val now = System.currentTimeMillis()
+        if (statusesById.isEmpty()) {
+            loadDiskStatusCatalog().forEach { statusesById[it.id] = it }
+        }
+        if (statusesById.isNotEmpty() && !forceRefresh && (now - statusesLastLoadedAtMs) < STATUS_CACHE_TTL_MS) {
+            return statusesById.values.toList()
+        }
+        val resp = runCatching { api.getStatuses() }.getOrElse { err ->
+            if (statusesById.isNotEmpty()) return statusesById.values.toList()
+            throw err
+        }
         if (!resp.isSuccessful) {
             if (statusesById.isNotEmpty()) return statusesById.values.toList()
             throw IllegalStateException(parseErrorMessage(resp))
         }
         val list = resp.body().orEmpty()
         list.forEach { statusesById[it.id] = it }
+        statusesLastLoadedAtMs = now
+        saveDiskStatusCatalog(list)
         return list
+    }
+
+    private fun loadDiskStatusCatalog(): List<TaskStatusDto> {
+        val file = File(context.filesDir, "cache_statuses.json")
+        if (!file.exists()) return emptyList()
+        return runCatching {
+            json.decodeFromString(ListSerializer(TaskStatusDto.serializer()), file.readText(Charsets.UTF_8))
+        }.getOrElse { emptyList() }
+    }
+
+    private fun saveDiskStatusCatalog(list: List<TaskStatusDto>) {
+        runCatching {
+            val file = File(context.filesDir, "cache_statuses.json")
+            file.writeText(json.encodeToString(ListSerializer(TaskStatusDto.serializer()), list), Charsets.UTF_8)
+        }
     }
 
     private suspend fun checkTaskHadRepairedInLifetime(
@@ -799,6 +1146,34 @@ class IntraRepository(
     companion object {
         const val REPAIRED_STATUS_NAME = "Починил"
         const val REPAIRED_STATUS_KEYWORD = "починил"
+
+        private const val STATUS_CACHE_TTL_MS = 15L * 60L * 1000L
+
+        fun isRecoverableOutboxFailure(t: Throwable, httpCode: Int? = (t as? IntraHttpException)?.httpCode): Boolean {
+            if (httpCode != null) {
+                return httpCode == 408 || httpCode == 429 || httpCode >= 500
+            }
+            return t is IOException ||
+                t is IntraNetworkException ||
+                t.cause is IOException
+        }
+
+        fun buildDeferredComment(userComment: String, recordedAtText: String): String {
+            val clean = userComment.trim()
+            val marker = "[Отложенная отправка: попытка от $recordedAtText]"
+            if (clean.contains(marker)) return clean
+            return if (clean.isEmpty()) marker else "$clean\n\n$marker"
+        }
+
+        fun buildDeferredPhotoName(taskId: Int, recordedAtText: String, index: Int): String {
+            val compactStamp = recordedAtText
+                .replace(".", "")
+                .replace(":", "")
+                .replace(" ", "_")
+                .replace(Regex("[^A-Za-z0-9_-]"), "")
+                .ifBlank { "queued" }
+            return "task${taskId}_${compactStamp}_${index + 1}"
+        }
 
         fun extractEmailLocalPart(input: String): String? {
             val atIdx = input.indexOf('@')

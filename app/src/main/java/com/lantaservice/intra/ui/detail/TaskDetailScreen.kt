@@ -47,6 +47,7 @@ import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.ExpandLess
@@ -71,6 +72,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -100,6 +102,7 @@ import com.lantaservice.intra.data.model.PendingPhoto
 import com.lantaservice.intra.data.model.TaskAttachment
 import com.lantaservice.intra.data.model.TicketDetail
 import com.lantaservice.intra.data.model.TicketSaveResult
+import com.lantaservice.intra.data.storage.PendingOutboxEntry
 import com.lantaservice.intra.ui.camera.SmartCameraScreen
 import com.lantaservice.intra.ui.components.FullscreenPhotoViewer
 import com.lantaservice.intra.ui.components.IntraHeaderBanner
@@ -320,6 +323,19 @@ fun TaskDetailScreen(
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
+                        state.queuedOutbox?.let { outboxEntry ->
+                            item(key = "outbox_banner") {
+                                DeferredOutboxCard(
+                                    entry = outboxEntry,
+                                    isSaving = state.isSaving,
+                                    onRetryNow = {
+                                        viewModel.retryDeferredSendNow(onSavedSuccess)
+                                    },
+                                    onCancelDeferred = viewModel::cancelDeferredSend
+                                )
+                            }
+                        }
+
                         item {
                             TicketInfoCard(
                                 detail = detail,
@@ -1089,6 +1105,84 @@ private fun HistoryCard(
 }
 
 @Composable
+private fun DeferredOutboxCard(
+    entry: PendingOutboxEntry,
+    isSaving: Boolean,
+    onRetryNow: () -> Unit,
+    onCancelDeferred: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = IntraColors.WarningTint,
+        border = BorderStroke(1.dp, IntraColors.WarningAmber.copy(alpha = 0.55f))
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Rounded.CloudUpload,
+                    contentDescription = null,
+                    tint = IntraColors.WarningAmber,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "В очереди отложенной отправки",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = IntraColors.TextPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Text(
+                text = "Зафиксировано: ${entry.recordedAtText}",
+                style = MaterialTheme.typography.labelMedium,
+                color = IntraColors.WarningAmber,
+                fontWeight = FontWeight.SemiBold
+            )
+            entry.lastError?.takeIf { it.isNotBlank() }?.let { err ->
+                Text(
+                    text = "Причина задержки: $err",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = IntraColors.TextSecondary
+                )
+            }
+            Text(
+                text = "Как только Интра станет доступна, данные и фото отправятся с зафиксированным временем. Если измените статус или файлы и нажмёте «Обновить очередь», данные перезапишутся на новые.",
+                style = MaterialTheme.typography.bodySmall,
+                color = IntraColors.TextSecondary
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = onRetryNow,
+                    enabled = !isSaving,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = IntraColors.WarningAmber,
+                        contentColor = Color.White
+                    )
+                ) {
+                    Text("Отправить сейчас", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                TextButton(
+                    onClick = onCancelDeferred,
+                    enabled = !isSaving
+                ) {
+                    Text("Отменить", color = IntraColors.ErrorRed)
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun SaveStickyBottomBar(
     state: TaskDetailUiState,
     onSaveClick: () -> Unit
@@ -1165,7 +1259,7 @@ private fun SaveStickyBottomBar(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Сохранить",
+                        text = if (state.queuedOutbox != null) "Обновить очередь" else "Сохранить",
                         style = MaterialTheme.typography.titleMedium
                     )
                 }
