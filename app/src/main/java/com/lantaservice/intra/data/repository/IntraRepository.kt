@@ -33,8 +33,10 @@ import com.lantaservice.intra.data.storage.PendingOutboxLogic
 import com.lantaservice.intra.data.storage.PendingOutboxStorage
 import com.lantaservice.intra.data.storage.SavedCredentials
 import com.lantaservice.intra.data.storage.SecureSessionStorage
+import com.lantaservice.intra.data.worker.TicketNotificationHelper
 import com.lantaservice.intra.util.AvrCounterParser
 import com.lantaservice.intra.util.DateAndTextFormatter
+import com.lantaservice.intra.util.EquipmentScanResult
 import com.lantaservice.intra.util.ImageCompressor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -616,6 +618,9 @@ class IntraRepository(
 
             val needHistoryCheck = initialItems.filter { !it.isLifetimeChecked }
             if (needHistoryCheck.isEmpty()) {
+                runCatching {
+                    TicketNotificationHelper.processTicketsAndNotify(context, session.userId, initialItems)
+                }
                 val finalSnap = TicketListSnapshot(initialItems, isResolvingHistory = false)
                 onProgress(finalSnap)
                 return@withContext Result.success(finalSnap)
@@ -654,6 +659,9 @@ class IntraRepository(
             saveTicketListCache(session.userId, updatedItems)
             if (resolvedMap.isNotEmpty()) {
                 saveRepairedHistoryDiskCache(session.userId)
+            }
+            runCatching {
+                TicketNotificationHelper.processTicketsAndNotify(context, session.userId, updatedItems)
             }
             val finalSnap = TicketListSnapshot(updatedItems, isResolvingHistory = false)
             onProgress(finalSnap)
@@ -891,6 +899,7 @@ class IntraRepository(
         comment: String,
         counterValue: String = "",
         geoSnapshot: GeoAddressSnapshot? = null,
+        equipmentScan: EquipmentScanResult? = null,
         allowOfflineQueue: Boolean = true,
         forcedRecordedAtText: String? = null,
         onStageChange: (String) -> Unit
@@ -905,7 +914,7 @@ class IntraRepository(
         val recordedAtText = DateAndTextFormatter.formatLocalDateTime(LocalDateTime.now())
         val trimmedComment = comment.trim()
         val cleanCounter = counterValue.trim()
-        if (newStatusId == null && pendingPhotos.isEmpty() && trimmedComment.isEmpty() && cleanCounter.isEmpty()) {
+        if (newStatusId == null && pendingPhotos.isEmpty() && trimmedComment.isEmpty() && cleanCounter.isEmpty() && equipmentScan == null) {
             return@withContext Result.failure(IllegalArgumentException("Нет изменений для сохранения"))
         }
 
@@ -937,6 +946,7 @@ class IntraRepository(
             counterValue = cleanCounter,
             photos = effectivePhotos,
             geoSnapshot = effectiveGeo,
+            equipmentScan = equipmentScan,
             deferredRecordedAtText = forcedRecordedAtText
         )
 
@@ -979,6 +989,7 @@ class IntraRepository(
                     comment = trimmedComment,
                     counterValue = cleanCounter,
                     geoSnapshot = effectiveGeo,
+                    equipmentScan = equipmentScan,
                     photos = stagedPhotos,
                     recordedAtEpochMs = nowEpochMs,
                     recordedAtText = recordedAtText,
@@ -1068,6 +1079,7 @@ class IntraRepository(
                         counterValue = entry.counterValue,
                         photos = livePhotos,
                         geoSnapshot = resolvedGeo,
+                        equipmentScan = entry.equipmentScan,
                         deferredRecordedAtText = entry.recordedAtText
                     )
 
@@ -1416,6 +1428,7 @@ class IntraRepository(
             counterValue: String = "",
             photos: List<PendingPhoto> = emptyList(),
             geoSnapshot: GeoAddressSnapshot? = null,
+            equipmentScan: EquipmentScanResult? = null,
             deferredRecordedAtText: String? = null
         ): String {
             val sections = mutableListOf<String>()
@@ -1440,6 +1453,13 @@ class IntraRepository(
                 }
                 if (parts.isNotEmpty()) {
                     sections += "Документы: ${parts.joinToString(", ")}"
+                }
+            }
+
+            if (equipmentScan != null && !cleanUser.contains("Оборудование:")) {
+                val equipSummary = equipmentScan.formatSummaryForComment()
+                if (equipSummary.isNotBlank()) {
+                    sections += "Оборудование: $equipSummary"
                 }
             }
 

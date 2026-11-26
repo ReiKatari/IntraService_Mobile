@@ -30,6 +30,10 @@
 }
 -keep class com.lantaservice.intra.data.geo.** { *; }
 
+-keep class com.lantaservice.intra.data.worker.** { *; }
+-keep,includedescriptorclasses class com.lantaservice.intra.util.EquipmentScanResult$$serializer { *; }
+-keep class com.lantaservice.intra.util.EquipmentScanResult { *; }
+
 # Keep Retrofit service interface and runtime annotations
 -keep,allowobfuscation,allowshrinking interface retrofit2.Call
 -keep,allowobfuscation,allowshrinking class retrofit2.Response

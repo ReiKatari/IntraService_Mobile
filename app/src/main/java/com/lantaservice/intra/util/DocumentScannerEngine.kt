@@ -77,6 +77,12 @@ data class DocumentGeometryReport(
     val warningMessage: String?
 )
 
+data class LiveSheetGuidance(
+    val normalizedQuad: List<Point2D>?,
+    val isReadyToAutoCapture: Boolean,
+    val hint: String
+)
+
 data class ScannedDocumentResult(
     val flattenedBitmap: Bitmap,
     val wasDeskewed: Boolean,
@@ -110,8 +116,6 @@ object DocumentGeometry {
         if (width < 24 || height < 24 || pixels.size < width * height) return null
         val n = width * height
         val scores = IntArray(n)
-        val hist = IntArray(256)
-
         for (i in 0 until n) {
             val c = pixels[i]
             val r = (c ushr 16) and 0xFF
@@ -121,9 +125,97 @@ object DocumentGeometry {
             val maxC = max(r, max(g, b))
             val minC = min(r, min(g, b))
             val chroma = maxC - minC
-            val s = (luma - (chroma * 1.35f).roundToInt()).coerceIn(0, 255)
-            scores[i] = s
-            hist[s]++
+            scores[i] = (luma - (chroma * 1.35f).roundToInt()).coerceIn(0, 255)
+        }
+        return detectPaperQuadFromScorePlane(scores, width, height)
+    }
+
+    fun detectPaperQuadFromLuma(
+        luma: ByteArray,
+        width: Int,
+        height: Int
+    ): DocumentQuad? {
+        if (width < 24 || height < 24 || luma.size < width * height) return null
+        val scores = IntArray(width * height) { i -> luma[i].toInt() and 0xFF }
+        return detectPaperQuadFromScorePlane(scores, width, height)
+    }
+
+    fun evaluateLiveSheetGuidance(
+        quad: DocumentQuad?,
+        frameW: Int,
+        frameH: Int,
+        light: LightStatus,
+        sharpness: SharpnessStatus,
+        stability: StabilityStatus
+    ): LiveSheetGuidance {
+        if (quad == null || frameW <= 0 || frameH <= 0) {
+            val fallbackHint = when {
+                light == LightStatus.TOO_DARK -> "Слишком темно - включите фонарик или добавьте света"
+                stability == StabilityStatus.MOVING -> "Держите телефон неподвижно"
+                sharpness == SharpnessStatus.BLURRY -> "Наведите на лист и коснитесь экрана для фокуса"
+                else -> "Поместите лист A4 целиком в рамку"
+            }
+            return LiveSheetGuidance(normalizedQuad = null, isReadyToAutoCapture = false, hint = fallbackHint)
+        }
+
+        val norm = listOf(
+            Point2D((quad.topLeft.x / frameW).coerceIn(0f, 1f), (quad.topLeft.y / frameH).coerceIn(0f, 1f)),
+            Point2D((quad.topRight.x / frameW).coerceIn(0f, 1f), (quad.topRight.y / frameH).coerceIn(0f, 1f)),
+            Point2D((quad.bottomRight.x / frameW).coerceIn(0f, 1f), (quad.bottomRight.y / frameH).coerceIn(0f, 1f)),
+            Point2D((quad.bottomLeft.x / frameW).coerceIn(0f, 1f), (quad.bottomLeft.y / frameH).coerceIn(0f, 1f))
+        )
+
+        val frameArea = frameW.toFloat() * frameH.toFloat()
+        val areaRatio = (polygonArea(quad) / frameArea).coerceIn(0f, 1f)
+        val topLen = dist(quad.topLeft, quad.topRight)
+        val rightLen = dist(quad.topRight, quad.bottomRight)
+        val bottomLen = dist(quad.bottomRight, quad.bottomLeft)
+        val leftLen = dist(quad.bottomLeft, quad.topLeft)
+        val horizTaper = max(topLen, bottomLen) / max(1f, min(topLen, bottomLen))
+        val vertTaper = max(leftLen, rightLen) / max(1f, min(leftLen, rightLen))
+        val maxTaper = max(horizTaper, vertTaper)
+        val angleDev = max(
+            max(
+                cornerDeviationDeg(quad.bottomLeft, quad.topLeft, quad.topRight),
+                cornerDeviationDeg(quad.topLeft, quad.topRight, quad.bottomRight)
+            ),
+            max(
+                cornerDeviationDeg(quad.topRight, quad.bottomRight, quad.bottomLeft),
+                cornerDeviationDeg(quad.bottomRight, quad.bottomLeft, quad.topLeft)
+            )
+        )
+
+        return when {
+            light == LightStatus.TOO_DARK -> LiveSheetGuidance(
+                norm, false, "Слишком темно - включите фонарик"
+            )
+            maxTaper > 1.58f || angleDev > 26f -> LiveSheetGuidance(
+                norm, false, "Выровняйте угол - держите камеру параллельно листу"
+            )
+            areaRatio < 0.22f -> LiveSheetGuidance(
+                norm, false, "Подойдите ближе к листу A4"
+            )
+            stability == StabilityStatus.MOVING -> LiveSheetGuidance(
+                norm, false, "Держите телефон неподвижно..."
+            )
+            sharpness == SharpnessStatus.BLURRY -> LiveSheetGuidance(
+                norm, false, "Наведите фокус на текст"
+            )
+            else -> LiveSheetGuidance(
+                norm, true, "Лист ровно в рамке - автосъёмка..."
+            )
+        }
+    }
+
+    private fun detectPaperQuadFromScorePlane(
+        scores: IntArray,
+        width: Int,
+        height: Int
+    ): DocumentQuad? {
+        val n = width * height
+        val hist = IntArray(256)
+        for (i in 0 until n) {
+            hist[scores[i]]++
         }
 
         val otsu = computeOtsuThreshold(hist, n)

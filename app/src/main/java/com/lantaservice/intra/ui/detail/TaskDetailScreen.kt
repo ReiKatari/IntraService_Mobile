@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.webkit.MimeTypeMap
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -18,8 +19,10 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +30,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -53,6 +57,7 @@ import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudUpload
+import androidx.compose.material.icons.rounded.CropFree
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Download
@@ -67,6 +72,7 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Phone
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.Print
+import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Settings
@@ -74,6 +80,7 @@ import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -99,11 +106,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -111,8 +123,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -128,6 +142,7 @@ import com.lantaservice.intra.data.model.TaskSaveValidator
 import com.lantaservice.intra.data.model.TicketDetail
 import com.lantaservice.intra.data.model.TicketSaveResult
 import com.lantaservice.intra.data.storage.PendingOutboxEntry
+import com.lantaservice.intra.ui.camera.EquipmentScannerScreen
 import com.lantaservice.intra.ui.camera.SmartCameraScreen
 import com.lantaservice.intra.ui.components.FullscreenPhotoViewer
 import com.lantaservice.intra.ui.components.IntraHeaderBanner
@@ -136,8 +151,11 @@ import com.lantaservice.intra.ui.components.ViewerPhoto
 import com.lantaservice.intra.ui.components.intraHeaderInsetsPadding
 import com.lantaservice.intra.ui.theme.IntraColors
 import com.lantaservice.intra.util.AvrCounterParser
+import com.lantaservice.intra.util.AvrCounterRecognizer
 import com.lantaservice.intra.util.DateAndTextFormatter
+import com.lantaservice.intra.util.EquipmentScanResult
 import com.lantaservice.intra.util.ImageCompressor
+import com.lantaservice.intra.util.NormalizedRect
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
@@ -160,11 +178,18 @@ fun TaskDetailScreen(
     val haptics = LocalHapticFeedback.current
 
     var showSmartCamera by remember { mutableStateOf(false) }
+    var showEquipmentScanner by remember { mutableStateOf(false) }
+    var pendingCameraPurpose by remember { mutableStateOf("photo") }
     var smartCameraPhotoIndex by remember { mutableIntStateOf(1) }
     var activePhotoTypeForCapture by rememberSaveable { mutableStateOf(PhotoDocumentType.AVR) }
     var pendingCameraUriString by rememberSaveable { mutableStateOf<String?>(null) }
     var photoTypePickerMode by remember { mutableStateOf<PhotoTypePickerMode?>(null) }
+    var avrCropTargetPhoto by remember { mutableStateOf<PendingPhoto?>(null) }
     var nowEpochMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    val latestPendingAvr = remember(state.pendingPhotos) {
+        state.pendingPhotos.lastOrNull { it.documentType == PhotoDocumentType.AVR }
+    }
 
     val hasUnlockedPending = remember(state.pendingPhotos, nowEpochMs) {
         state.pendingPhotos.any { PhotoDocumentTypeLock.canChangeType(it.createdAtEpochMs, nowEpochMs) }
@@ -213,13 +238,19 @@ fun TaskDetailScreen(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            smartCameraPhotoIndex = viewModel.nextPhotoIndex()
-            showSmartCamera = true
+            if (pendingCameraPurpose == "equipment") {
+                showEquipmentScanner = true
+            } else {
+                smartCameraPhotoIndex = viewModel.nextPhotoIndex()
+                showSmartCamera = true
+            }
         }
+        pendingCameraPurpose = "photo"
     }
 
     fun startCameraWithType(docType: PhotoDocumentType) {
         activePhotoTypeForCapture = docType
+        pendingCameraPurpose = "photo"
         val granted = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.CAMERA
@@ -227,6 +258,19 @@ fun TaskDetailScreen(
         if (granted) {
             smartCameraPhotoIndex = viewModel.nextPhotoIndex()
             showSmartCamera = true
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    fun startEquipmentScanner() {
+        pendingCameraPurpose = "equipment"
+        val granted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            showEquipmentScanner = true
         } else {
             cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
@@ -284,8 +328,54 @@ fun TaskDetailScreen(
         CounterInputDialog(
             initialValue = state.counterValue,
             reasonMessage = state.counterPromptReason,
+            hasAvrPhoto = latestPendingAvr != null,
+            onOpenCropDialog = {
+                latestPendingAvr?.let { avr ->
+                    viewModel.dismissManualCounterDialog()
+                    avrCropTargetPhoto = avr
+                }
+            },
             onDismiss = viewModel::dismissManualCounterDialog,
             onConfirm = viewModel::submitManualCounter
+        )
+    }
+
+    avrCropTargetPhoto?.let { targetPhoto ->
+        val savedTemplate = remember(targetPhoto.id) {
+            AvrCounterRecognizer.loadAvrTemplateRoi(context)
+        }
+        AvrCounterCropDialog(
+            photo = targetPhoto,
+            initialRoi = savedTemplate,
+            isRecognizing = state.isRecognizingRoiCrop,
+            onDismiss = {
+                if (!state.isRecognizingRoiCrop) {
+                    avrCropTargetPhoto = null
+                }
+            },
+            onRecognizeRegion = { roi, saveTemplate ->
+                viewModel.recognizeCounterFromCrop(
+                    context = context,
+                    photoFile = targetPhoto.file,
+                    roi = roi,
+                    saveTemplate = saveTemplate
+                ) {
+                    avrCropTargetPhoto = null
+                }
+            }
+        )
+    }
+
+    if (showEquipmentScanner) {
+        val ticketTextForScanner = state.detail?.let { "${it.name}\n${it.description}" }.orEmpty()
+        EquipmentScannerScreen(
+            taskId = state.taskId,
+            ticketText = ticketTextForScanner,
+            onDismiss = { showEquipmentScanner = false },
+            onResultConfirmed = { scanResult ->
+                showEquipmentScanner = false
+                viewModel.onEquipmentScanned(scanResult)
+            }
         )
     }
 
@@ -502,6 +592,9 @@ fun TaskDetailScreen(
                                     )
                                 },
                                 onEditCounter = viewModel::openManualCounterDialog,
+                                onSelectCounterRegion = {
+                                    latestPendingAvr?.let { avrCropTargetPhoto = it }
+                                },
                                 onRemovePending = viewModel::removePendingPhoto,
                                 onPreviewPending = { pending ->
                                     viewModel.openPhotoViewer(
@@ -529,6 +622,15 @@ fun TaskDetailScreen(
                                         }
                                     }
                                 }
+                            )
+                        }
+
+                        item {
+                            EquipmentScanCard(
+                                equipmentScan = state.equipmentScan,
+                                isSaving = state.isSaving,
+                                onScanClick = ::startEquipmentScanner,
+                                onClear = viewModel::clearEquipmentScan
                             )
                         }
 
@@ -856,6 +958,8 @@ private fun PhotoTypePickerDialog(
 private fun CounterInputDialog(
     initialValue: String,
     reasonMessage: String?,
+    hasAvrPhoto: Boolean = false,
+    onOpenCropDialog: () -> Unit = {},
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit
 ) {
@@ -927,6 +1031,27 @@ private fun CounterInputDialog(
                         color = IntraColors.EmeraldDeep,
                         fontWeight = FontWeight.SemiBold
                     )
+                }
+
+                if (hasAvrPhoto) {
+                    OutlinedButton(
+                        onClick = onOpenCropDialog,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, IntraColors.BrandPrimary.copy(alpha = 0.45f))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.CropFree,
+                            contentDescription = null,
+                            tint = IntraColors.BrandPrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Выделить область счётчика на АВР",
+                            color = IntraColors.BrandPrimary
+                        )
+                    }
                 }
 
                 Row(
@@ -1265,6 +1390,7 @@ private fun AttachmentsCard(
     onAddForCategory: (PhotoDocumentType) -> Unit,
     onChangePhotoType: (PendingPhoto) -> Unit,
     onEditCounter: () -> Unit,
+    onSelectCounterRegion: () -> Unit = {},
     onRemovePending: (String) -> Unit,
     onPreviewPending: (PendingPhoto) -> Unit,
     onClickExistingAttachment: (TaskAttachment) -> Unit
@@ -1402,7 +1528,9 @@ private fun AttachmentsCard(
                             counterAutoDetected = counterAutoDetected,
                             isRecognizing = isRecognizingCounter,
                             isSaving = isSaving,
-                            onEditCounter = onEditCounter
+                            hasAvrPhoto = catPending.isNotEmpty(),
+                            onEditCounter = onEditCounter,
+                            onSelectRegion = onSelectCounterRegion
                         )
                     }
                 }
@@ -1803,7 +1931,9 @@ private fun AvrCounterBanner(
     counterAutoDetected: Boolean,
     isRecognizing: Boolean,
     isSaving: Boolean,
-    onEditCounter: () -> Unit
+    hasAvrPhoto: Boolean = false,
+    onEditCounter: () -> Unit,
+    onSelectRegion: () -> Unit = {}
 ) {
     val hasCounter = TaskSaveValidator.isValidCounter(counterValue)
     Surface(
@@ -1883,27 +2013,60 @@ private fun AvrCounterBanner(
 
             if (!isRecognizing) {
                 Spacer(modifier = Modifier.width(8.dp))
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = IntraColors.SurfaceWhite
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    if (hasAvrPhoto) {
+                        Surface(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable(enabled = !isSaving, onClick = onSelectRegion),
+                            shape = RoundedCornerShape(10.dp),
+                            color = IntraColors.BrandPrimary.copy(alpha = 0.12f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.CropFree,
+                                    contentDescription = null,
+                                    tint = IntraColors.BrandPrimary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Область",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = IntraColors.BrandPrimary,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = IntraColors.SurfaceWhite
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Edit,
-                            contentDescription = null,
-                            tint = if (hasCounter) IntraColors.EmeraldDeep else IntraColors.WarningAmber,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = if (hasCounter) "Изменить" else "Ввести",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (hasCounter) IntraColors.EmeraldDeep else IntraColors.WarningAmber,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Edit,
+                                contentDescription = null,
+                                tint = if (hasCounter) IntraColors.EmeraldDeep else IntraColors.WarningAmber,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (hasCounter) "Изменить" else "Ввести",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (hasCounter) IntraColors.EmeraldDeep else IntraColors.WarningAmber,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
                 }
             }
@@ -2307,6 +2470,389 @@ private fun RequirementCheckPill(
                 fontWeight = FontWeight.SemiBold,
                 color = if (satisfied) IntraColors.EmeraldDeep else IntraColors.WarningAmber
             )
+        }
+    }
+}
+
+@Composable
+private fun EquipmentScanCard(
+    equipmentScan: EquipmentScanResult?,
+    isSaving: Boolean,
+    onScanClick: () -> Unit,
+    onClear: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = IntraColors.SurfaceWhite,
+        border = BorderStroke(
+            1.dp,
+            when (equipmentScan?.matchesTicket) {
+                true -> IntraColors.EmeraldSuccess.copy(alpha = 0.55f)
+                false -> IntraColors.ErrorRed.copy(alpha = 0.55f)
+                null -> IntraColors.SubtleBorder
+            }
+        ),
+        shadowElevation = 2.dp
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.QrCodeScanner,
+                        contentDescription = null,
+                        tint = IntraColors.BrandPrimary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Оборудование (шильдик / ШК)",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = IntraColors.TextPrimary
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = onScanClick,
+                    enabled = !isSaving,
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    border = BorderStroke(1.dp, IntraColors.BrandPrimary)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.QrCodeScanner,
+                        contentDescription = null,
+                        tint = IntraColors.BrandPrimary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (equipmentScan == null) "Сканировать" else "Ещё раз",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = IntraColors.BrandPrimary
+                    )
+                }
+            }
+
+            if (equipmentScan == null) {
+                Text(
+                    text = "Считайте серийный номер (S/N), инвентарный номер или модель с наклейки (DataMatrix / Code128 / QR / текст) для сверки с заявкой.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = IntraColors.TextSecondary
+                )
+            } else {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = when (equipmentScan.matchesTicket) {
+                        true -> IntraColors.EmeraldTint
+                        false -> IntraColors.ErrorTint
+                        null -> IntraColors.BackgroundIce
+                    }
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = when (equipmentScan.matchesTicket) {
+                                        true -> Icons.Rounded.CheckCircle
+                                        false -> Icons.Rounded.WarningAmber
+                                        null -> Icons.Rounded.Print
+                                    },
+                                    contentDescription = null,
+                                    tint = when (equipmentScan.matchesTicket) {
+                                        true -> IntraColors.EmeraldDeep
+                                        false -> IntraColors.ErrorRed
+                                        null -> IntraColors.BrandPrimary
+                                    },
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = equipmentScan.matchNote.ifBlank { "Данные оборудования считаны" },
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = when (equipmentScan.matchesTicket) {
+                                        true -> IntraColors.EmeraldDeep
+                                        false -> IntraColors.ErrorRed
+                                        null -> IntraColors.TextPrimary
+                                    }
+                                )
+                            }
+                            if (!isSaving) {
+                                IconButton(
+                                    onClick = onClear,
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Close,
+                                        contentDescription = "Очистить",
+                                        tint = IntraColors.TextSecondary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        if (equipmentScan.modelName.isNotBlank()) {
+                            Text(
+                                text = "Модель: ${equipmentScan.modelName}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = IntraColors.TextPrimary,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                        if (equipmentScan.serialNumber.isNotBlank()) {
+                            Text(
+                                text = "S/N: ${equipmentScan.serialNumber}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = IntraColors.TextPrimary
+                            )
+                        }
+                        if (equipmentScan.inventoryNumber.isNotBlank()) {
+                            Text(
+                                text = "Инв. №: ${equipmentScan.inventoryNumber}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = IntraColors.TextPrimary
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AvrCounterCropDialog(
+    photo: PendingPhoto,
+    initialRoi: NormalizedRect?,
+    isRecognizing: Boolean,
+    onDismiss: () -> Unit,
+    onRecognizeRegion: (NormalizedRect, Boolean) -> Unit
+) {
+    val imageAspectRatio = remember(photo.file.absolutePath) {
+        val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(photo.file.absolutePath, opts)
+        if (opts.outWidth > 0 && opts.outHeight > 0) {
+            (opts.outWidth.toFloat() / opts.outHeight.toFloat()).coerceIn(0.45f, 1.8f)
+        } else {
+            0.71f
+        }
+    }
+
+    var roi by remember(photo.id, initialRoi) {
+        mutableStateOf(
+            initialRoi ?: NormalizedRect(
+                left = 0.35f,
+                top = 0.45f,
+                right = 0.90f,
+                bottom = 0.65f
+            )
+        )
+    }
+    var saveAsTemplate by remember { mutableStateOf(true) }
+    var dragAnchor by remember { mutableStateOf<Offset?>(null) }
+    var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            shape = RoundedCornerShape(22.dp),
+            color = IntraColors.SurfaceWhite,
+            shadowElevation = 16.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Rounded.CropFree,
+                            contentDescription = null,
+                            tint = IntraColors.BrandPrimary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Область счётчика на АВР",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = IntraColors.TextPrimary
+                        )
+                    }
+                    if (!isRecognizing) {
+                        IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = "Закрыть",
+                                tint = IntraColors.TextSecondary
+                            )
+                        }
+                    }
+                }
+
+                Text(
+                    text = "Проведите пальцем по фото АВР, чтобы выделить рамкой поле со счётчиком копий.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = IntraColors.TextSecondary
+                )
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .aspectRatio(imageAspectRatio)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color.Black)
+                            .onSizeChanged { canvasSize = it }
+                            .pointerInput(photo.id, canvasSize) {
+                                detectDragGestures(
+                                    onDragStart = { start ->
+                                        if (canvasSize.width > 0 && canvasSize.height > 0) {
+                                            dragAnchor = Offset(
+                                                (start.x / canvasSize.width).coerceIn(0f, 1f),
+                                                (start.y / canvasSize.height).coerceIn(0f, 1f)
+                                            )
+                                        }
+                                    },
+                                    onDrag = { change, _ ->
+                                        val anchor = dragAnchor ?: return@detectDragGestures
+                                        if (canvasSize.width <= 0 || canvasSize.height <= 0) return@detectDragGestures
+                                        change.consume()
+                                        val curX = (change.position.x / canvasSize.width).coerceIn(0f, 1f)
+                                        val curY = (change.position.y / canvasSize.height).coerceIn(0f, 1f)
+                                        val l = minOf(anchor.x, curX)
+                                        val r = maxOf(anchor.x, curX)
+                                        val t = minOf(anchor.y, curY)
+                                        val b = maxOf(anchor.y, curY)
+                                        if (r - l >= 0.04f && b - t >= 0.03f) {
+                                            roi = NormalizedRect(l, t, r, b)
+                                        }
+                                    },
+                                    onDragEnd = { dragAnchor = null },
+                                    onDragCancel = { dragAnchor = null }
+                                )
+                            }
+                    ) {
+                        AsyncImage(
+                            model = photo.file,
+                            contentDescription = "Фото АВР",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val leftPx = roi.left * size.width
+                            val topPx = roi.top * size.height
+                            val rightPx = roi.right * size.width
+                            val bottomPx = roi.bottom * size.height
+                            val boxW = (rightPx - leftPx).coerceAtLeast(4f)
+                            val boxH = (bottomPx - topPx).coerceAtLeast(4f)
+
+                            // Dim outside ROI
+                            val shade = Color.Black.copy(alpha = 0.45f)
+                            drawRect(shade, Offset.Zero, Size(size.width, topPx))
+                            drawRect(shade, Offset(0f, bottomPx), Size(size.width, size.height - bottomPx))
+                            drawRect(shade, Offset(0f, topPx), Size(leftPx, boxH))
+                            drawRect(shade, Offset(rightPx, topPx), Size(size.width - rightPx, boxH))
+
+                            // Selection border
+                            drawRect(
+                                color = Color(0xFF22C55E),
+                                topLeft = Offset(leftPx, topPx),
+                                size = Size(boxW, boxH),
+                                style = Stroke(width = 3.dp.toPx())
+                            )
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = !isRecognizing) { saveAsTemplate = !saveAsTemplate },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = saveAsTemplate,
+                        onCheckedChange = { if (!isRecognizing) saveAsTemplate = it }
+                    )
+                    Text(
+                        text = "Запомнить шаблон АВР для следующих заявок",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = IntraColors.TextPrimary
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(
+                        onClick = onDismiss,
+                        enabled = !isRecognizing
+                    ) {
+                        Text("Отмена", color = IntraColors.TextSecondary)
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = { onRecognizeRegion(roi, saveAsTemplate) },
+                        enabled = !isRecognizing,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = IntraColors.BrandPrimary,
+                            contentColor = Color.White
+                        )
+                    ) {
+                        if (isRecognizing) {
+                            CircularProgressIndicator(
+                                color = Color.White,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Распознавание...")
+                        } else {
+                            Text("Распознать цифры")
+                        }
+                    }
+                }
+            }
         }
     }
 }

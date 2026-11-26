@@ -33,8 +33,8 @@ android {
         applicationId = "com.lantaservice.intra"
         minSdk = 26
         targetSdk = 36
-        versionCode = 14
-        versionName = "2.1.0"
+        versionCode = 15
+        versionName = "2.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "FIXED_BASE_URL", "\"https://intra.lantaservice.com\"")
@@ -132,6 +132,8 @@ dependencies {
     implementation("androidx.camera:camera-view:1.6.1")
 
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
+    implementation("androidx.work:work-runtime-ktx:2.10.1")
 
     testImplementation("junit:junit:4.13.2")
     debugImplementation("androidx.compose.ui:ui-tooling:1.11.1")

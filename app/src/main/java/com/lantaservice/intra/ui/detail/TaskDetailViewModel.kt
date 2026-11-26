@@ -20,7 +20,9 @@ import com.lantaservice.intra.data.storage.PendingOutboxEntry
 import com.lantaservice.intra.ui.components.ViewerPhoto
 import com.lantaservice.intra.util.AvrCounterRecognizer
 import com.lantaservice.intra.util.EnhanceMode
+import com.lantaservice.intra.util.EquipmentScanResult
 import com.lantaservice.intra.util.ImageCompressor
+import com.lantaservice.intra.util.NormalizedRect
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -44,8 +46,10 @@ data class TaskDetailUiState(
     val counterValue: String = "",
     val counterAutoDetected: Boolean = false,
     val isRecognizingCounter: Boolean = false,
+    val isRecognizingRoiCrop: Boolean = false,
     val showManualCounterPrompt: Boolean = false,
     val counterPromptReason: String? = null,
+    val equipmentScan: EquipmentScanResult? = null,
     val isProcessingPhoto: Boolean = false,
     val isSaving: Boolean = false,
     val savingStage: String = "",
@@ -54,7 +58,11 @@ data class TaskDetailUiState(
     val viewerPhoto: ViewerPhoto? = null
 ) {
     val hasChangesToSave: Boolean
-        get() = markAsRepaired || pendingPhotos.isNotEmpty() || commentText.isNotBlank() || counterValue.isNotBlank()
+        get() = markAsRepaired ||
+            pendingPhotos.isNotEmpty() ||
+            commentText.isNotBlank() ||
+            counterValue.isNotBlank() ||
+            equipmentScan != null
 
     val saveReadiness: SaveReadiness
         get() = TaskSaveValidator.evaluate(
@@ -65,7 +73,11 @@ data class TaskDetailUiState(
         )
 
     val canSave: Boolean
-        get() = saveReadiness.isReadyToSave && !isSaving && !isProcessingPhoto && !isRecognizingCounter
+        get() = saveReadiness.isReadyToSave &&
+            !isSaving &&
+            !isProcessingPhoto &&
+            !isRecognizingCounter &&
+            !isRecognizingRoiCrop
 }
 
 class TaskDetailViewModel(
@@ -88,7 +100,8 @@ class TaskDetailViewModel(
             queuedOutbox = initialOutbox,
             geoSnapshot = initialOutbox?.geoSnapshot ?: repository.getCachedGeoSnapshot(),
             counterValue = initialOutbox?.counterValue.orEmpty(),
-            counterAutoDetected = false
+            counterAutoDetected = false,
+            equipmentScan = initialOutbox?.equipmentScan
         )
     )
     val uiState: StateFlow<TaskDetailUiState> = _uiState.asStateFlow()
@@ -109,6 +122,7 @@ class TaskDetailViewModel(
                             commentText = "",
                             counterValue = "",
                             counterAutoDetected = false,
+                            equipmentScan = null,
                             pendingPhotos = emptyList(),
                             actionMessage = null
                         )
@@ -254,6 +268,63 @@ class TaskDetailViewModel(
                 counterPromptReason = null,
                 actionMessage = null
             )
+        }
+    }
+
+    fun onEquipmentScanned(result: EquipmentScanResult) {
+        _uiState.update {
+            it.copy(
+                equipmentScan = result,
+                actionMessage = null
+            )
+        }
+    }
+
+    fun clearEquipmentScan() {
+        _uiState.update { it.copy(equipmentScan = null) }
+    }
+
+    fun recognizeCounterFromCrop(
+        context: Context,
+        photoFile: File,
+        roi: NormalizedRect,
+        saveTemplate: Boolean,
+        onDone: (Boolean) -> Unit
+    ) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isRecognizingRoiCrop = true, actionMessage = null) }
+            if (saveTemplate) {
+                AvrCounterRecognizer.saveAvrTemplateRoi(context, roi)
+            }
+            val rawDigits = runCatching {
+                AvrCounterRecognizer.recognizeDigitsInCropRegion(context, photoFile, roi)
+            }.getOrNull()
+
+            val normalized = rawDigits
+                ?.let { TaskSaveValidator.normalizeCounterDigits(it) }
+                ?.takeIf { TaskSaveValidator.isValidCounter(it) }
+
+            if (normalized != null) {
+                _uiState.update {
+                    it.copy(
+                        isRecognizingRoiCrop = false,
+                        counterValue = normalized,
+                        counterAutoDetected = true,
+                        showManualCounterPrompt = false,
+                        counterPromptReason = null
+                    )
+                }
+                onDone(true)
+            } else {
+                _uiState.update {
+                    it.copy(
+                        isRecognizingRoiCrop = false,
+                        showManualCounterPrompt = true,
+                        counterPromptReason = "В выделенной области не удалось прочитать цифры - введите вручную"
+                    )
+                }
+                onDone(false)
+            }
         }
     }
 
@@ -438,6 +509,7 @@ class TaskDetailViewModel(
                 commentText = "",
                 counterValue = "",
                 counterAutoDetected = false,
+                equipmentScan = null,
                 pendingPhotos = emptyList(),
                 actionMessage = null
             )
@@ -526,6 +598,7 @@ class TaskDetailViewModel(
                 comment = state.commentText,
                 counterValue = state.counterValue,
                 geoSnapshot = state.geoSnapshot,
+                equipmentScan = state.equipmentScan,
                 allowOfflineQueue = true,
                 forcedRecordedAtText = forcedRecordedAtText,
                 onStageChange = { stage ->
@@ -543,7 +616,8 @@ class TaskDetailViewModel(
                             queuedOutbox = freshOutbox,
                             pendingPhotos = refreshedPhotos,
                             counterValue = freshOutbox?.counterValue ?: it.counterValue,
-                            geoSnapshot = freshOutbox?.geoSnapshot ?: it.geoSnapshot
+                            geoSnapshot = freshOutbox?.geoSnapshot ?: it.geoSnapshot,
+                            equipmentScan = freshOutbox?.equipmentScan ?: it.equipmentScan
                         )
                     }
                 } else {
@@ -556,7 +630,8 @@ class TaskDetailViewModel(
                             markAsRepaired = false,
                             commentText = "",
                             counterValue = "",
-                            counterAutoDetected = false
+                            counterAutoDetected = false,
+                            equipmentScan = null
                         )
                     }
                 }

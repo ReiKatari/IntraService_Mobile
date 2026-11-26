@@ -27,14 +27,16 @@ data class FrameQualityMetrics(
     val sharpness: SharpnessStatus = SharpnessStatus.OK,
     val stability: StabilityStatus = StabilityStatus.STEADY,
     val isOptimalToShoot: Boolean = false,
-    val primaryHint: String = "Наведите камеру на объект или текст",
+    val primaryHint: String = "Поместите лист A4 целиком в рамку",
     val avgLuma: Double = 128.0,
-    val sharpnessVar: Double = 0.0
+    val sharpnessVar: Double = 0.0,
+    val detectedQuadNormalized: List<Point2D>? = null,
+    val sheetReadyToAutoCapture: Boolean = false
 )
 
 /**
  * Evaluates live camera Y-plane frames every ~180ms to guide the engineer on
- * lighting, focus sharpness, and hand stability before pressing the shutter.
+ * lighting, focus sharpness, hand stability, and live A4 sheet boundary alignment.
  */
 class FrameQualityAnalyzer(
     private val onMetrics: (FrameQualityMetrics) -> Unit
@@ -54,7 +56,7 @@ class FrameQualityAnalyzer(
             val bytes = ByteArray(buffer.remaining())
             buffer.get(bytes)
 
-            val (metrics, nextSample) = evaluateFrameQuality(
+            val (baseMetrics, nextSample) = evaluateFrameQuality(
                 luma = bytes,
                 width = image.width,
                 height = image.height,
@@ -62,10 +64,74 @@ class FrameQualityAnalyzer(
                 prevSample = prevSample
             )
             prevSample = nextSample
-            onMetrics(metrics)
+
+            // Fast downsampled rotation-corrected Y plane for live A4 sheet contour detection (~112px max)
+            val rotDeg = image.imageInfo.rotationDegrees
+            val (orientedW, orientedH, smallLuma) = extractOrientedSmallLuma(
+                luma = bytes,
+                srcW = image.width,
+                srcH = image.height,
+                rowStride = yPlane.rowStride,
+                rotationDegrees = rotDeg,
+                maxDim = 112
+            )
+            val liveQuad = DocumentGeometry.detectPaperQuadFromLuma(smallLuma, orientedW, orientedH)
+            val guidance = DocumentGeometry.evaluateLiveSheetGuidance(
+                quad = liveQuad,
+                frameW = orientedW,
+                frameH = orientedH,
+                light = baseMetrics.light,
+                sharpness = baseMetrics.sharpness,
+                stability = baseMetrics.stability
+            )
+
+            onMetrics(
+                baseMetrics.copy(
+                    detectedQuadNormalized = guidance.normalizedQuad,
+                    sheetReadyToAutoCapture = guidance.isReadyToAutoCapture,
+                    primaryHint = guidance.hint,
+                    isOptimalToShoot = baseMetrics.isOptimalToShoot || guidance.isReadyToAutoCapture
+                )
+            )
         } finally {
             image.close()
         }
+    }
+
+    private fun extractOrientedSmallLuma(
+        luma: ByteArray,
+        srcW: Int,
+        srcH: Int,
+        rowStride: Int,
+        rotationDegrees: Int,
+        maxDim: Int
+    ): Triple<Int, Int, ByteArray> {
+        val normRot = ((rotationDegrees % 360) + 360) % 360
+        val swap = normRot == 90 || normRot == 270
+        val targetRawW = if (swap) srcH else srcW
+        val targetRawH = if (swap) srcW else srcH
+        val scale = min(1f, maxDim.toFloat() / max(1, max(targetRawW, targetRawH)).toFloat())
+        val outW = (targetRawW * scale).toInt().coerceAtLeast(24)
+        val outH = (targetRawH * scale).toInt().coerceAtLeast(24)
+        val out = ByteArray(outW * outH)
+
+        for (oy in 0 until outH) {
+            val ny = oy.toFloat() / outH.toFloat()
+            for (ox in 0 until outW) {
+                val nx = ox.toFloat() / outW.toFloat()
+                val (sxNorm, syNorm) = when (normRot) {
+                    90 -> ny to (1f - nx)
+                    180 -> (1f - nx) to (1f - ny)
+                    270 -> (1f - ny) to nx
+                    else -> nx to ny
+                }
+                val sx = (sxNorm * srcW).toInt().coerceIn(0, srcW - 1)
+                val sy = (syNorm * srcH).toInt().coerceIn(0, srcH - 1)
+                val idx = sy * rowStride + sx
+                out[oy * outW + ox] = if (idx < luma.size) luma[idx] else 0
+            }
+        }
+        return Triple(outW, outH, out)
     }
 
     companion object {

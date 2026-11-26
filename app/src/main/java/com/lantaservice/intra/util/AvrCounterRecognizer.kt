@@ -1,7 +1,11 @@
 package com.lantaservice.intra.util
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.graphics.Rect
+import android.media.ExifInterface
 import android.net.Uri
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
@@ -15,6 +19,14 @@ import java.util.Locale
 import kotlin.coroutines.resume
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.roundToInt
+
+data class NormalizedRect(
+    val left: Float,
+    val top: Float,
+    val right: Float,
+    val bottom: Float
+)
 
 enum class CounterConfidence {
     HIGH,
@@ -213,6 +225,84 @@ object AvrCounterParser {
  */
 object AvrCounterRecognizer {
 
+    private const val ROI_PREFS = "intra_avr_roi_prefs"
+    private const val KEY_LEFT = "roi_left"
+    private const val KEY_TOP = "roi_top"
+    private const val KEY_RIGHT = "roi_right"
+    private const val KEY_BOTTOM = "roi_bottom"
+
+    fun saveAvrTemplateRoi(context: Context, roi: NormalizedRect) {
+        context.getSharedPreferences(ROI_PREFS, Context.MODE_PRIVATE).edit()
+            .putFloat(KEY_LEFT, roi.left.coerceIn(0f, 1f))
+            .putFloat(KEY_TOP, roi.top.coerceIn(0f, 1f))
+            .putFloat(KEY_RIGHT, roi.right.coerceIn(0f, 1f))
+            .putFloat(KEY_BOTTOM, roi.bottom.coerceIn(0f, 1f))
+            .apply()
+    }
+
+    fun loadAvrTemplateRoi(context: Context): NormalizedRect? {
+        val prefs = context.getSharedPreferences(ROI_PREFS, Context.MODE_PRIVATE)
+        if (!prefs.contains(KEY_LEFT)) return null
+        val l = prefs.getFloat(KEY_LEFT, 0f)
+        val t = prefs.getFloat(KEY_TOP, 0f)
+        val r = prefs.getFloat(KEY_RIGHT, 0f)
+        val b = prefs.getFloat(KEY_BOTTOM, 0f)
+        if (r - l < 0.04f || b - t < 0.03f) return null
+        return NormalizedRect(l, t, r, b)
+    }
+
+    suspend fun recognizeDigitsInCropRegion(
+        context: Context,
+        imageFile: File,
+        roi: NormalizedRect
+    ): String? = withContext(Dispatchers.Default) {
+        if (!imageFile.exists()) return@withContext null
+        val fullBmp = decodeOrientedBitmap(imageFile) ?: return@withContext null
+        val x0 = (roi.left.coerceIn(0f, 0.95f) * fullBmp.width).roundToInt()
+        val y0 = (roi.top.coerceIn(0f, 0.95f) * fullBmp.height).roundToInt()
+        val x1 = (roi.right.coerceIn(0.05f, 1f) * fullBmp.width).roundToInt().coerceAtLeast(x0 + 16)
+        val y1 = (roi.bottom.coerceIn(0.05f, 1f) * fullBmp.height).roundToInt().coerceAtLeast(y0 + 16)
+        val cw = (x1 - x0).coerceAtMost(fullBmp.width - x0).coerceAtLeast(16)
+        val ch = (y1 - y0).coerceAtMost(fullBmp.height - y0).coerceAtLeast(16)
+
+        val cropped = Bitmap.createBitmap(fullBmp, x0, y0, cw, ch)
+        if (cropped !== fullBmp) fullBmp.recycle()
+
+        // Upscale handwritten crop if small so ML Kit reads pen strokes cleanly
+        val scale = if (minOf(cropped.width, cropped.height) < 260) {
+            260f / max(1, minOf(cropped.width, cropped.height)).toFloat()
+        } else {
+            1f
+        }
+        val targetBmp = if (scale > 1.05f) {
+            Bitmap.createScaledBitmap(
+                cropped,
+                (cropped.width * scale).roundToInt().coerceAtMost(1400),
+                (cropped.height * scale).roundToInt().coerceAtMost(1400),
+                true
+            ).also { if (it !== cropped) cropped.recycle() }
+        } else {
+            cropped
+        }
+
+        val bwRes = PhotoEnhancerEngine.enhance(targetBmp, EnhanceMode.DOCUMENT_SCAN_BW)
+        val ocrCandidates = mutableListOf<String>()
+
+        processBitmapOcr(bwRes.bitmap)?.let { vt ->
+            extractDigitTokens(vt.text).forEach { ocrCandidates += it }
+        }
+        if (ocrCandidates.isEmpty()) {
+            processBitmapOcr(targetBmp)?.let { vt ->
+                extractDigitTokens(vt.text).forEach { ocrCandidates += it }
+            }
+        }
+
+        if (bwRes.bitmap !== targetBmp) bwRes.bitmap.recycle()
+        targetBmp.recycle()
+
+        ocrCandidates.firstOrNull { it.length in 1..9 }
+    }
+
     suspend fun recognizeCounterFromFile(
         context: Context,
         imageFile: File
@@ -221,23 +311,82 @@ object AvrCounterRecognizer {
             return@withContext CounterParseResult(null, CounterConfidence.NONE)
         }
 
+        // Pass 1: Standard OCR on prepared/flattened document image
         val inputImage = runCatching {
             InputImage.fromFilePath(context, Uri.fromFile(imageFile))
         }.getOrNull() ?: return@withContext CounterParseResult(null, CounterConfidence.NONE)
 
-        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-        val visionText: Text = runCatching {
-            suspendCancellableCoroutine { cont ->
-                recognizer.process(inputImage)
-                    .addOnSuccessListener { result ->
-                        if (cont.isActive) cont.resume(result)
-                    }
-                    .addOnFailureListener {
-                        if (cont.isActive) cont.resumeWith(Result.failure(it))
-                    }
+        val visionText = processInputImageOcr(inputImage)
+        if (visionText != null) {
+            val pass1 = evaluateVisionText(visionText)
+            if (pass1.confidence == CounterConfidence.HIGH) {
+                return@withContext pass1
             }
-        }.getOrNull() ?: return@withContext CounterParseResult(null, CounterConfidence.NONE)
 
+            // Pass 2: Crop & 2x-upscale ink-enhanced strips around any keyword blocks for handwritten digits
+            val keywordBox = findKeywordLineExpandedBox(visionText)
+            if (keywordBox != null) {
+                val oriented = decodeOrientedBitmap(imageFile)
+                if (oriented != null) {
+                    val cropRect = Rect(
+                        (keywordBox.left - keywordBox.width() * 0.25f).roundToInt().coerceIn(0, oriented.width - 16),
+                        (keywordBox.top - keywordBox.height() * 0.6f).roundToInt().coerceIn(0, oriented.height - 16),
+                        (keywordBox.right + oriented.width * 0.38f).roundToInt().coerceIn(16, oriented.width),
+                        (keywordBox.bottom + keywordBox.height() * 2.2f).roundToInt().coerceIn(16, oriented.height)
+                    )
+                    val cw = (cropRect.width()).coerceAtLeast(16)
+                    val ch = (cropRect.height()).coerceAtLeast(16)
+                    val strip = Bitmap.createBitmap(oriented, cropRect.left, cropRect.top, cw, ch)
+                    oriented.recycle()
+                    val upscaled = Bitmap.createScaledBitmap(
+                        strip,
+                        (cw * 2).coerceAtMost(1800),
+                        (ch * 2).coerceAtMost(900),
+                        true
+                    )
+                    if (upscaled !== strip) strip.recycle()
+                    val inkEnhanced = PhotoEnhancerEngine.enhance(upscaled, EnhanceMode.DOCUMENT_SCAN_BW)
+                    upscaled.recycle()
+                    val stripText = processBitmapOcr(inkEnhanced.bitmap)
+                    inkEnhanced.bitmap.recycle()
+                    if (stripText != null) {
+                        val pass2 = evaluateVisionText(stripText)
+                        if (pass2.confidence == CounterConfidence.HIGH) {
+                            return@withContext pass2
+                        }
+                    }
+                }
+            }
+        }
+
+        // Pass 3: B&W ink-enhanced full-page OCR pass
+        val orientedFull = decodeOrientedBitmap(imageFile)
+        if (orientedFull != null) {
+            val bwFull = PhotoEnhancerEngine.enhance(orientedFull, EnhanceMode.DOCUMENT_SCAN_BW)
+            orientedFull.recycle()
+            val bwText = processBitmapOcr(bwFull.bitmap)
+            bwFull.bitmap.recycle()
+            if (bwText != null) {
+                val pass3 = evaluateVisionText(bwText)
+                if (pass3.confidence == CounterConfidence.HIGH) {
+                    return@withContext pass3
+                }
+            }
+        }
+
+        // Pass 4: Saved engineer AVR template ROI fallback
+        val savedRoi = loadAvrTemplateRoi(context)
+        if (savedRoi != null) {
+            val roiDigits = recognizeDigitsInCropRegion(context, imageFile, savedRoi)
+            if (!roiDigits.isNullOrBlank()) {
+                return@withContext CounterParseResult(roiDigits, CounterConfidence.HIGH, "Шаблон АВР")
+            }
+        }
+
+        CounterParseResult(null, CounterConfidence.NONE)
+    }
+
+    private fun evaluateVisionText(visionText: Text): CounterParseResult {
         val boxedLines = visionText.textBlocks
             .flatMap { it.lines }
             .mapNotNull { line ->
@@ -245,10 +394,7 @@ object AvrCounterRecognizer {
                 val txt = line.text.trim()
                 if (txt.isEmpty()) null else Triple(box, txt, box.exactCenterY())
             }
-
-        if (boxedLines.isEmpty()) {
-            return@withContext CounterParseResult(null, CounterConfidence.NONE)
-        }
+        if (boxedLines.isEmpty()) return CounterParseResult(null, CounterConfidence.NONE)
 
         // Cluster boxes into visual rows so "Счётчик" on the left pairs with "12450" on the right
         val sortedByY = boxedLines.sortedBy { it.third }
@@ -271,16 +417,70 @@ object AvrCounterRecognizer {
             row.sortedBy { it.first.left }.joinToString(" ") { it.second }
         }
         val rowResult = AvrCounterParser.extractCounterFromLines(visualRowStrings)
-        if (rowResult.confidence == CounterConfidence.HIGH) {
-            return@withContext rowResult
-        }
+        if (rowResult.confidence == CounterConfidence.HIGH) return rowResult
 
         val rawLines = boxedLines.map { it.second }
-        val rawResult = AvrCounterParser.extractCounterFromLines(rawLines)
-        if (rawResult.confidence != CounterConfidence.NONE) {
-            rawResult
-        } else {
-            rowResult
+        return AvrCounterParser.extractCounterFromLines(rawLines)
+    }
+
+    private fun findKeywordLineExpandedBox(visionText: Text): Rect? {
+        val hints = listOf("счет", "счёт", "пробег", "копий", "counter", "page", "c4et", "cyet", "chetchik")
+        for (block in visionText.textBlocks) {
+            for (line in block.lines) {
+                val lower = line.text.lowercase(Locale.ROOT)
+                if (hints.any { lower.contains(it) } && !lower.contains("четкост") && !lower.contains("чёткост")) {
+                    return line.boundingBox
+                }
+            }
+        }
+        return null
+    }
+
+    private fun extractDigitTokens(raw: String): List<String> {
+        val grouped = Regex("\\b\\d{1,3}(?:[\\s,.']\\d{3})+\\b|\\b\\d{1,9}\\b")
+        return grouped.findAll(raw)
+            .map { it.value.filter(Char::isDigit) }
+            .filter { it.isNotEmpty() && it.length <= 9 }
+            .sortedByDescending { it.length }
+            .toList()
+    }
+
+    private suspend fun processBitmapOcr(bmp: Bitmap): Text? {
+        val input = runCatching { InputImage.fromBitmap(bmp, 0) }.getOrNull() ?: return null
+        return processInputImageOcr(input)
+    }
+
+    private suspend fun processInputImageOcr(inputImage: InputImage): Text? {
+        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        return runCatching {
+            suspendCancellableCoroutine { cont ->
+                recognizer.process(inputImage)
+                    .addOnSuccessListener { result ->
+                        if (cont.isActive) cont.resume(result)
+                    }
+                    .addOnFailureListener {
+                        if (cont.isActive) cont.resumeWith(Result.failure(it))
+                    }
+            }
+        }.getOrNull()
+    }
+
+    private fun decodeOrientedBitmap(file: File): Bitmap? {
+        val opts = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 }
+        val bmp = BitmapFactory.decodeFile(file.absolutePath, opts) ?: return null
+        val rot = runCatching {
+            val exif = ExifInterface(file.absolutePath)
+            when (exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
+                ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+                ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+                ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+                else -> 0f
+            }
+        }.getOrDefault(0f)
+        if (rot == 0f) return bmp
+        val m = Matrix().apply { postRotate(rot) }
+        return Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true).also {
+            if (it !== bmp) bmp.recycle()
         }
     }
 }

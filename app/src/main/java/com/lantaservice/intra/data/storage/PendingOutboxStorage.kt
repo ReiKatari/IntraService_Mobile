@@ -5,6 +5,7 @@ import androidx.compose.runtime.Immutable
 import com.lantaservice.intra.data.geo.GeoAddressSnapshot
 import com.lantaservice.intra.data.model.PendingPhoto
 import com.lantaservice.intra.data.model.PhotoDocumentType
+import com.lantaservice.intra.util.EquipmentScanResult
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
@@ -35,6 +36,7 @@ data class PendingOutboxEntry(
     val comment: String = "",
     val counterValue: String = "",
     val geoSnapshot: GeoAddressSnapshot? = null,
+    val equipmentScan: EquipmentScanResult? = null,
     val photos: List<PendingOutboxPhoto> = emptyList(),
     val recordedAtEpochMs: Long,
     val recordedAtText: String,

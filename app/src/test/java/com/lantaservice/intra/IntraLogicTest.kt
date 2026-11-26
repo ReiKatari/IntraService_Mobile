@@ -13,6 +13,7 @@ import com.lantaservice.intra.data.model.TaskListResponseDto
 import com.lantaservice.intra.data.model.TaskSaveValidator
 import com.lantaservice.intra.data.model.TaskStatusDto
 import com.lantaservice.intra.data.model.TaskStatusSimpleViewDto
+import com.lantaservice.intra.data.model.TicketItem
 import com.lantaservice.intra.data.model.UpdateTaskRequestDto
 import com.lantaservice.intra.data.model.extractFileTokens
 import com.lantaservice.intra.data.model.extractFileTokensFromRaw
@@ -28,6 +29,7 @@ import com.lantaservice.intra.data.storage.SavedCredentials
 import com.lantaservice.intra.data.update.AppUpdateInfo
 import com.lantaservice.intra.data.update.AppUpdateManager
 import com.lantaservice.intra.data.update.UpdateUiState
+import com.lantaservice.intra.data.worker.DeadlineUrgencyDetector
 import com.lantaservice.intra.ui.components.ReleaseNoteBlock
 import com.lantaservice.intra.ui.components.parseReleaseNotes
 import com.lantaservice.intra.ui.login.LoginViewModel
@@ -37,6 +39,7 @@ import com.lantaservice.intra.util.DateAndTextFormatter
 import com.lantaservice.intra.util.DocumentGeometry
 import com.lantaservice.intra.util.DocumentQuad
 import com.lantaservice.intra.util.DocumentQualityIssue
+import com.lantaservice.intra.util.EquipmentScanParser
 import com.lantaservice.intra.util.FrameQualityAnalyzer
 import com.lantaservice.intra.util.Point2D
 import com.lantaservice.intra.util.LightStatus
@@ -1049,5 +1052,155 @@ class IntraLogicTest {
         )
         assertFalse(readableFail)
         assertNull(okMsg)
+    }
+
+    @Test
+    fun liveLumaSheetGuidanceDetectsCenteredA4AndPromptsWhenTooFar() {
+        val w = 112
+        val h = 150
+        val luma = ByteArray(w * h)
+        // Bright A4 sheet centered on dark tabletop (occupies ~54% area)
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                val onSheet = x in 20..92 && y in 18..132
+                luma[y * w + x] = (if (onSheet) 232 else 48).toByte()
+            }
+        }
+        val quad = DocumentGeometry.detectPaperQuadFromLuma(luma, w, h)
+        assertNotNull(quad)
+        val ready = DocumentGeometry.evaluateLiveSheetGuidance(
+            quad = quad,
+            frameW = w,
+            frameH = h,
+            light = LightStatus.OK,
+            sharpness = SharpnessStatus.OK,
+            stability = StabilityStatus.STEADY
+        )
+        assertTrue(ready.isReadyToAutoCapture)
+        assertNotNull(ready.normalizedQuad)
+        assertEquals(4, ready.normalizedQuad!!.size)
+
+        // Small sheet (< 22% area) -> prompt to approach closer
+        val smallLuma = ByteArray(w * h)
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                val onSmallSheet = x in 42..68 && y in 54..92
+                smallLuma[y * w + x] = (if (onSmallSheet) 235 else 42).toByte()
+            }
+        }
+        val smallQuad = DocumentGeometry.detectPaperQuadFromLuma(smallLuma, w, h)
+        assertNotNull(smallQuad)
+        val tooFar = DocumentGeometry.evaluateLiveSheetGuidance(
+            quad = smallQuad,
+            frameW = w,
+            frameH = h,
+            light = LightStatus.OK,
+            sharpness = SharpnessStatus.OK,
+            stability = StabilityStatus.STEADY
+        )
+        assertFalse(tooFar.isReadyToAutoCapture)
+        assertTrue(tooFar.hint.contains("ближе", ignoreCase = true))
+    }
+
+    @Test
+    fun documentScanBwPlaneRemovesShadowAndPreservesDarkInk() {
+        val w = 64
+        val h = 64
+        val yIn = IntArray(w * h)
+        for (y in 0 until h) {
+            val paperBg = if (y < h / 2) 220 else 108 // Half sheet in deep hand shadow
+            for (x in 0 until w) {
+                val isInk = (x in 28..35) && (y in 12..52)
+                yIn[y * w + x] = if (isInk) 28 else paperBg
+            }
+        }
+        val bw = PhotoEnhancerEngine.enhanceDocumentScanBwPlane(yIn, w, h)
+        // Bright & shaded paper backgrounds both normalize near pure white (>= 240)
+        assertTrue(bw[10 * w + 10] >= 240)
+        assertTrue(bw[54 * w + 10] >= 240)
+        // Ink strokes stay dark (<= 55) in both bright and shaded halves
+        assertTrue(bw[16 * w + 31] <= 55)
+        assertTrue(bw[44 * w + 31] <= 55)
+    }
+
+    @Test
+    fun equipmentScanParserExtractsSerialModelAndMatchesTicket() {
+        val resMatch = EquipmentScanParser.parse(
+            barcodeValues = listOf("S/N: 70169412345"),
+            ocrLines = listOf("Lexmark MX622ade", "Инв. № INV-4402"),
+            ticketText = "Замена термоблока на МФУ Lexmark MX622ade, s/n 70169412345"
+        )
+        assertNotNull(resMatch)
+        assertEquals("70169412345", resMatch!!.serialNumber)
+        assertEquals("INV-4402", resMatch.inventoryNumber)
+        assertTrue(resMatch.modelName.contains("Lexmark", ignoreCase = true))
+        assertEquals(true, resMatch.matchesTicket)
+
+        val submission = IntraRepository.buildSubmissionComment(
+            userComment = "Работы выполнены",
+            counterValue = "54120",
+            equipmentScan = resMatch
+        )
+        assertTrue(submission.contains("Оборудование:"))
+        assertTrue(submission.contains("70169412345"))
+
+        val resMismatch = EquipmentScanParser.parse(
+            barcodeValues = listOf("S/N: 99988877766"),
+            ocrLines = listOf("Kyocera M2040dn"),
+            ticketText = "Ремонт Lexmark MX622ade S/N 70169412345"
+        )
+        assertNotNull(resMismatch)
+        assertEquals(false, resMismatch!!.matchesTicket)
+    }
+
+    @Test
+    fun deadlineUrgencyDetectorFindsNewTicketsAndUrgentDeadlines() {
+        val now = LocalDateTime.of(2026, 11, 26, 14, 0)
+        val fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
+        fun item(id: Int, deadline: String, repaired: Boolean = false) = TicketItem(
+            id = id,
+            name = "Заявка $id",
+            descriptionPreview = "",
+            statusId = 26,
+            statusName = if (repaired) "Починил" else "В работе",
+            priorityId = null,
+            priorityName = "Средний",
+            serviceName = "Сервис",
+            creatorName = "Инженер",
+            createdText = "26.11.2026",
+            changedText = "26.11.2026 12:00",
+            changedRaw = "",
+            deadlineText = deadline,
+            isOverdue = false,
+            attachmentCount = 0,
+            hasHadRepairedStatus = repaired,
+            isLifetimeChecked = true
+        )
+
+        val t1 = item(101, now.plusMinutes(35).format(fmt))
+        val t2 = item(102, now.plusMinutes(180).format(fmt))
+        val t3 = item(103, now.plusMinutes(20).format(fmt), repaired = true)
+
+        assertTrue(DeadlineUrgencyDetector.findNewTickets(emptySet(), listOf(t1, t2)).isEmpty())
+        val newlyAssigned = DeadlineUrgencyDetector.findNewTickets(setOf(101), listOf(t1, t2, t3))
+        assertEquals(listOf(102), newlyAssigned.map { it.id })
+
+        val urgent = DeadlineUrgencyDetector.findUrgentDeadlines(
+            tickets = listOf(t1, t2, t3),
+            now = now,
+            alreadyAlertedKeys = emptySet(),
+            thresholdMinutes = 60L
+        )
+        assertEquals(1, urgent.size)
+        assertEquals(101, urgent.first().first.id)
+        assertEquals(35L, urgent.first().second)
+
+        val suppressed = DeadlineUrgencyDetector.findUrgentDeadlines(
+            tickets = listOf(t1),
+            now = now,
+            alreadyAlertedKeys = setOf("101|${t1.deadlineText}"),
+            thresholdMinutes = 60L
+        )
+        assertTrue(suppressed.isEmpty())
     }
 }

@@ -22,18 +22,20 @@ import java.util.UUID
 import kotlin.math.max
 
 data class CameraReviewPair(
+    val scanBwPhoto: PendingPhoto,
     val enhancedPhoto: PendingPhoto,
     val originalPhoto: PendingPhoto
 )
 
 /**
- * Handles camera temp files, EXIF orientation correction, crisp scaling (up to 2400px),
- * and integration with PhotoEnhancerEngine for readable text.
+ * Handles camera temp files, EXIF orientation correction, crisp scaling (up to 2200px),
+ * flatbed B&W scan generation, and integration with DocumentScannerEngine / PhotoEnhancerEngine.
  */
 object ImageCompressor {
 
     private const val MAX_DIMENSION_PX = 2200
     private const val JPEG_QUALITY = 88
+    private const val SCAN_BW_JPEG_QUALITY = 76
 
     fun createTempCameraFile(context: Context, taskId: Int): Pair<File, Uri> {
         val cameraDir = File(context.cacheDir, "camera").apply { mkdirs() }
@@ -112,11 +114,13 @@ object ImageCompressor {
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val origName = "orig_${documentType.filePrefix}_task${taskId}_${stamp}_$index"
         val enhName = "${documentType.filePrefix}_task${taskId}_${stamp}_$index"
+        val bwName = "scan_${documentType.filePrefix}_task${taskId}_${stamp}_$index"
         val origFile = File(uploadsDir, "$origName.jpg")
         val enhFile = File(uploadsDir, "$enhName.jpg")
+        val bwFile = File(uploadsDir, "$bwName.jpg")
         val createdEpochMs = System.currentTimeMillis()
 
-        val (naturalResultPair, enhancedResultPair) = coroutineScope {
+        val (naturalResultPair, enhancedResultPair, scanBwResultPair) = coroutineScope {
             val origDeferred = async(Dispatchers.Default) {
                 val res = PhotoEnhancerEngine.enhance(oriented, EnhanceMode.NATURAL)
                 FileOutputStream(origFile).use { out ->
@@ -137,7 +141,17 @@ object ImageCompressor {
                 }
                 res
             }
-            origDeferred.await() to enhDeferred.await()
+            val bwDeferred = async(Dispatchers.Default) {
+                val res = PhotoEnhancerEngine.enhance(flattenedInput, EnhanceMode.DOCUMENT_SCAN_BW)
+                FileOutputStream(bwFile).use { out ->
+                    res.bitmap.compress(Bitmap.CompressFormat.JPEG, SCAN_BW_JPEG_QUALITY, out)
+                }
+                if (res.bitmap !== flattenedInput) {
+                    res.bitmap.recycle()
+                }
+                res
+            }
+            Triple(origDeferred.await(), enhDeferred.await(), bwDeferred.await())
         }
         if (flattenedInput !== oriented) {
             flattenedInput.recycle()
@@ -153,6 +167,20 @@ object ImageCompressor {
         }
 
         CameraReviewPair(
+            scanBwPhoto = PendingPhoto(
+                id = UUID.randomUUID().toString(),
+                file = bwFile,
+                nameWithoutExt = enhName,
+                sizeBytes = bwFile.length(),
+                isEnhanced = true,
+                isBlurryWarning = scanResult.needsRetakeWarning || scanBwResultPair.isBlurryWarning,
+                sharpnessScore = scanBwResultPair.sharpnessScore,
+                documentType = documentType,
+                createdAtEpochMs = createdEpochMs,
+                qualityWarning = effectiveWarning,
+                wasDeskewed = scanResult.wasDeskewed,
+                autoRotatedDegrees = scanResult.autoRotatedDegrees
+            ),
             enhancedPhoto = PendingPhoto(
                 id = UUID.randomUUID().toString(),
                 file = enhFile,

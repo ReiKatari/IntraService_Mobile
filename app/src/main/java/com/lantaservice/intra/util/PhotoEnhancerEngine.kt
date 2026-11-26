@@ -10,7 +10,8 @@ import kotlin.math.roundToInt
 
 enum class EnhanceMode {
     TEXT_CLARITY,
-    NATURAL
+    NATURAL,
+    DOCUMENT_SCAN_BW
 }
 
 data class EnhancedPhotoResult(
@@ -49,6 +50,28 @@ object PhotoEnhancerEngine {
                 sharpnessScore = score,
                 isBlurryWarning = score < BLURRY_THRESHOLD,
                 enhanced = false
+            )
+        }
+
+        if (mode == EnhanceMode.DOCUMENT_SCAN_BW) {
+            val yRaw = IntArray(n)
+            for (idx in 0 until n) {
+                yRaw[idx] = argbLuma(pixels[idx])
+            }
+            val bwPlane = enhanceDocumentScanBwPlane(yRaw, w, h)
+            val bwPixels = IntArray(n)
+            for (idx in 0 until n) {
+                val g = bwPlane[idx]
+                bwPixels[idx] = (0xFF shl 24) or (g shl 16) or (g shl 8) or g
+            }
+            val score = computeSharpnessScore(bwPlane, w, h)
+            val outBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            outBitmap.setPixels(bwPixels, 0, w, 0, 0, w, h)
+            return@withContext EnhancedPhotoResult(
+                bitmap = outBitmap,
+                sharpnessScore = score,
+                isBlurryWarning = score < BLURRY_THRESHOLD,
+                enhanced = true
             )
         }
 
@@ -165,6 +188,115 @@ object PhotoEnhancerEngine {
                 base + boost
             }
             out[i] = newVal.coerceIn(0, 255)
+        }
+        return out
+    }
+
+    /**
+     * Pure-JVM flatbed-scanner style B&W document pipeline:
+     * removes uneven hand/lamp shadows via morphological closing + blurred illumination surface,
+     * normalizes paper to crisp white (255), and boosts ink readability for small JPEG size.
+     */
+    fun enhanceDocumentScanBwPlane(
+        yIn: IntArray,
+        width: Int,
+        height: Int
+    ): IntArray {
+        val n = width * height
+        if (n == 0 || width < 8 || height < 8) return yIn.copyOf()
+
+        // 1. Estimate local paper background illumination on a 4x downsampled grid
+        val step = 4
+        val dw = max(4, (width + step - 1) / step)
+        val dh = max(4, (height + step - 1) / step)
+        val down = IntArray(dw * dh)
+        for (dy in 0 until dh) {
+            val sy = min(height - 1, dy * step)
+            val row = sy * width
+            for (dx in 0 until dw) {
+                val sx = min(width - 1, dx * step)
+                // Take local 4x4 max so narrow dark text lines do not darken background estimate
+                var localMax = 0
+                val yEnd = min(height, sy + step)
+                val xEnd = min(width, sx + step)
+                for (yy in sy until yEnd) {
+                    val rOff = yy * width
+                    for (xx in sx until xEnd) {
+                        val v = yIn[rOff + xx]
+                        if (v > localMax) localMax = v
+                    }
+                }
+                down[dy * dw + dx] = localMax
+            }
+        }
+
+        // Morphological dilation (3x3 max) followed by wide box blur for smooth shadow envelope
+        val dilated = IntArray(dw * dh)
+        for (dy in 0 until dh) {
+            for (dx in 0 until dw) {
+                var m = 0
+                for (ky in -1..1) {
+                    val yy = (dy + ky).coerceIn(0, dh - 1)
+                    val rOff = yy * dw
+                    for (kx in -1..1) {
+                        val xx = (dx + kx).coerceIn(0, dw - 1)
+                        val v = down[rOff + xx]
+                        if (v > m) m = v
+                    }
+                }
+                dilated[dy * dw + dx] = m
+            }
+        }
+        val bgSmooth = separableBoxBlur(dilated, dw, dh, radius = max(5, min(dw, dh) / 14))
+
+        // 2. Upsample illumination field & apply crisp document tone mapping
+        val normalized = IntArray(n)
+        for (y in 0 until height) {
+            val fy = (y.toFloat() / step.toFloat()).coerceIn(0f, (dh - 1).toFloat())
+            val y0 = fy.toInt().coerceIn(0, dh - 1)
+            val y1 = (y0 + 1).coerceIn(0, dh - 1)
+            val wy = fy - y0
+            val row = y * width
+
+            for (x in 0 until width) {
+                val fx = (x.toFloat() / step.toFloat()).coerceIn(0f, (dw - 1).toFloat())
+                val x0 = fx.toInt().coerceIn(0, dw - 1)
+                val x1 = (x0 + 1).coerceIn(0, dw - 1)
+                val wx = fx - x0
+
+                val c00 = bgSmooth[y0 * dw + x0]
+                val c10 = bgSmooth[y0 * dw + x1]
+                val c01 = bgSmooth[y1 * dw + x0]
+                val c11 = bgSmooth[y1 * dw + x1]
+                val top = c00 + (c10 - c00) * wx
+                val bot = c01 + (c11 - c01) * wx
+                val bgEst = max(28f, top + (bot - top) * wy)
+
+                val ratio = ((yIn[row + x] * 246f) / bgEst).coerceIn(0f, 255f)
+                // Clean pure white background, smooth edges, crisp dark ink
+                val tone = when {
+                    ratio >= 204f -> 255
+                    ratio <= 122f -> ((ratio / 122f) * 38f).roundToInt().coerceIn(0, 38)
+                    else -> {
+                        val t = (ratio - 122f) / (204f - 122f)
+                        (38f + t * t * (3f - 2f * t) * 217f).roundToInt().coerceIn(38, 255)
+                    }
+                }
+                normalized[row + x] = tone
+            }
+        }
+
+        // Light edge sharpening on the B&W scan plane for razor-sharp letters
+        val blur = separableBoxBlur(normalized, width, height, radius = 1)
+        val out = IntArray(n)
+        for (i in 0 until n) {
+            val v = normalized[i]
+            val d = v - blur[i]
+            out[i] = if (v >= 252 && abs(d) <= 4) {
+                255
+            } else {
+                (v + (d * 0.55f).roundToInt()).coerceIn(0, 255)
+            }
         }
         return out
     }

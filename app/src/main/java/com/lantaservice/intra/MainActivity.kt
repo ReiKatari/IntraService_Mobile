@@ -1,9 +1,11 @@
 package com.lantaservice.intra
 
+import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.location.LocationManager
 import android.net.ConnectivityManager
@@ -24,18 +26,40 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lantaservice.intra.data.repository.AuthState
+import com.lantaservice.intra.data.worker.TicketNotificationHelper
+import com.lantaservice.intra.data.worker.TicketSyncWorker
 import com.lantaservice.intra.ui.IntraAppRoot
 import com.lantaservice.intra.ui.theme.IntraTheme
 import com.lantaservice.intra.util.LocationPermissionHelper
 
 class MainActivity : ComponentActivity() {
 
+    private val pendingOpenTaskIdState = mutableStateOf<Int?>(null)
+
+    private fun extractTaskDeepLink(intent: Intent?) {
+        val deepLinkTaskId = intent?.getIntExtra(TicketNotificationHelper.EXTRA_OPEN_TASK_ID, -1) ?: -1
+        if (deepLinkTaskId > 0) {
+            pendingOpenTaskIdState.value = deepLinkTaskId
+            intent?.removeExtra(TicketNotificationHelper.EXTRA_OPEN_TASK_ID)
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        extractTaskDeepLink(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        extractTaskDeepLink(intent)
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
@@ -56,6 +80,12 @@ class MainActivity : ComponentActivity() {
                 }
                 var pendingManualRetry by remember { mutableStateOf(false) }
                 var shouldShowBeforeRetry by remember { mutableStateOf(false) }
+                var notificationPermissionRequested by rememberSaveable { mutableStateOf(false) }
+                val authState by repository.authState.collectAsStateWithLifecycle()
+
+                val notificationLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.RequestPermission()
+                ) { }
 
                 val locationLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -87,6 +117,22 @@ class MainActivity : ComponentActivity() {
                         locationLauncher.launch(LocationPermissionHelper.LOCATION_PERMISSIONS)
                     } else if (LocationPermissionHelper.isLocationServiceEnabled(this@MainActivity)) {
                         app.geoLocationEngine.warmBreadcrumbAsync()
+                    }
+                }
+
+                LaunchedEffect(authState) {
+                    if (authState is AuthState.Authenticated) {
+                        TicketSyncWorker.schedulePeriodic(this@MainActivity)
+                        if (!notificationPermissionRequested &&
+                            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                            ContextCompat.checkSelfPermission(
+                                this@MainActivity,
+                                Manifest.permission.POST_NOTIFICATIONS
+                            ) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            notificationPermissionRequested = true
+                            notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
                     }
                 }
 
@@ -184,6 +230,8 @@ class MainActivity : ComponentActivity() {
                     appUpdateManager = appUpdateManager,
                     locationPermissionGranted = locationPermissionGranted,
                     locationServiceEnabled = locationServiceEnabled,
+                    pendingOpenTaskId = pendingOpenTaskIdState.value,
+                    onConsumePendingOpenTaskId = { pendingOpenTaskIdState.value = null },
                     onRequestLocationAgain = {
                         shouldShowBeforeRetry = LocationPermissionHelper.shouldShowRationale(this)
                         pendingManualRetry = true

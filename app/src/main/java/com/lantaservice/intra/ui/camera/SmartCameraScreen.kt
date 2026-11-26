@@ -77,13 +77,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
@@ -113,9 +116,15 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
 
+private enum class CameraReviewMode {
+    SCAN_BW,
+    COLOR_ENHANCED,
+    ORIGINAL
+}
+
 /**
- * Full-screen smart CameraX viewfinder with real-time hints for lighting, focus,
- * and hand stability, plus built-in text clarity enhancement review.
+ * Full-screen smart CameraX viewfinder with real-time detected A4 sheet contour,
+ * specific alignment/distance hints, 0.5s steady auto-capture, and 3-mode review (B&W scan, color, original).
  */
 @SuppressLint("ClickableViewAccessibility")
 @Composable
@@ -130,17 +139,19 @@ fun SmartCameraScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
 
     var quality by remember { mutableStateOf(FrameQualityMetrics()) }
     var torchEnabled by remember { mutableStateOf(false) }
     var hasFlash by remember { mutableStateOf(false) }
-    var textEnhanceEnabled by remember { mutableStateOf(true) }
+    var autoCaptureEnabled by remember { mutableStateOf(true) }
     var isCapturing by remember { mutableStateOf(false) }
     var reviewPair by remember { mutableStateOf<CameraReviewPair?>(null) }
-    var useEnhancedInReview by remember { mutableStateOf(true) }
+    var reviewMode by remember { mutableStateOf(CameraReviewMode.SCAN_BW) }
     var zoomRatio by remember { mutableFloatStateOf(1f) }
     var focusTapOffset by remember { mutableStateOf<Offset?>(null) }
     val focusAlpha = remember { Animatable(0f) }
+    val autoCaptureProgress = remember { Animatable(0f) }
 
     var cameraRef by remember { mutableStateOf<Camera?>(null) }
     var imageCaptureRef by remember { mutableStateOf<ImageCapture?>(null) }
@@ -148,10 +159,62 @@ fun SmartCameraScreen(
 
     val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
 
+    fun triggerCapture() {
+        val capture = imageCaptureRef ?: return
+        if (isCapturing) return
+        isCapturing = true
+        val (rawFile, _) = ImageCompressor.createTempCameraFile(context, taskId)
+        val outputOpts = ImageCapture.OutputFileOptions.Builder(rawFile).build()
+        capture.takePicture(
+            outputOpts,
+            ContextCompat.getMainExecutor(context),
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                    scope.launch {
+                        runCatching {
+                            ImageCompressor.prepareCameraReviewPair(
+                                context = context,
+                                rawFile = rawFile,
+                                taskId = taskId,
+                                index = photoIndex,
+                                documentType = documentType
+                            )
+                        }.onSuccess { prepared ->
+                            reviewMode = CameraReviewMode.SCAN_BW
+                            reviewPair = prepared
+                            isCapturing = false
+                        }.onFailure {
+                            isCapturing = false
+                        }
+                    }
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    isCapturing = false
+                    runCatching { rawFile.delete() }
+                }
+            }
+        )
+    }
+
+    LaunchedEffect(autoCaptureEnabled, quality.sheetReadyToAutoCapture, isCapturing, reviewPair) {
+        if (autoCaptureEnabled && quality.sheetReadyToAutoCapture && !isCapturing && reviewPair == null && imageCaptureRef != null) {
+            autoCaptureProgress.snapTo(0f)
+            autoCaptureProgress.animateTo(1f, animationSpec = tween(durationMillis = 500))
+            if (autoCaptureEnabled && !isCapturing && reviewPair == null) {
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                triggerCapture()
+            }
+        } else {
+            autoCaptureProgress.snapTo(0f)
+        }
+    }
+
     DisposableEffect(Unit) {
         onDispose {
             analysisExecutor.shutdown()
             reviewPair?.let { pair ->
+                runCatching { pair.scanBwPhoto.file.delete() }
                 runCatching { pair.enhancedPhoto.file.delete() }
                 runCatching { pair.originalPhoto.file.delete() }
             }
@@ -278,6 +341,37 @@ fun SmartCameraScreen(
                                         CircleShape
                                     )
                             )
+                        }
+
+                        // Live detected paper contour overlay directly over CameraX preview
+                        val detectedQuad = quality.detectedQuadNormalized
+                        if (detectedQuad != null && detectedQuad.size == 4) {
+                            val liveContourColor = if (quality.sheetReadyToAutoCapture) {
+                                IntraColors.EmeraldSuccess
+                            } else {
+                                IntraColors.BrandCyan
+                            }
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                val pts = detectedQuad.map { p ->
+                                    Offset(p.x * size.width, p.y * size.height)
+                                }
+                                val path = Path().apply {
+                                    moveTo(pts[0].x, pts[0].y)
+                                    lineTo(pts[1].x, pts[1].y)
+                                    lineTo(pts[2].x, pts[2].y)
+                                    lineTo(pts[3].x, pts[3].y)
+                                    close()
+                                }
+                                drawPath(path = path, color = liveContourColor.copy(alpha = 0.14f))
+                                drawPath(
+                                    path = path,
+                                    color = liveContourColor,
+                                    style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
+                                )
+                                pts.forEach { pt ->
+                                    drawCircle(color = liveContourColor, radius = 6.dp.toPx(), center = pt)
+                                }
+                            }
                         }
 
                         // Portrait A4 document guide frame + Top HUD + Bottom shutter in non-overlapping Column
@@ -489,18 +583,18 @@ fun SmartCameraScreen(
                             ) {
                                 Surface(
                                     shape = RoundedCornerShape(50),
-                                    color = if (textEnhanceEnabled) {
+                                    color = if (autoCaptureEnabled) {
                                         IntraColors.EmeraldSuccess.copy(alpha = 0.25f)
                                     } else {
                                         Color.White.copy(alpha = 0.14f)
                                     },
                                     border = BorderStroke(
                                         1.dp,
-                                        if (textEnhanceEnabled) IntraColors.EmeraldSuccess else Color.White.copy(alpha = 0.35f)
+                                        if (autoCaptureEnabled) IntraColors.EmeraldSuccess else Color.White.copy(alpha = 0.35f)
                                     ),
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(50))
-                                        .clickable { textEnhanceEnabled = !textEnhanceEnabled }
+                                        .clickable { autoCaptureEnabled = !autoCaptureEnabled }
                                 ) {
                                     Row(
                                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
@@ -509,15 +603,15 @@ fun SmartCameraScreen(
                                         Icon(
                                             imageVector = Icons.Rounded.AutoFixHigh,
                                             contentDescription = null,
-                                            tint = if (textEnhanceEnabled) Color(0xFF8FF5BE) else Color.White,
+                                            tint = if (autoCaptureEnabled) Color(0xFF8FF5BE) else Color.White,
                                             modifier = Modifier.size(16.dp)
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(
-                                            text = if (textEnhanceEnabled) {
-                                                "Усиление четкости текста: ВКЛ"
+                                            text = if (autoCaptureEnabled) {
+                                                "Автосъёмка листа A4: ВКЛ"
                                             } else {
-                                                "Усиление четкости текста: ВЫКЛ"
+                                                "Автосъёмка листа A4: ВЫКЛ"
                                             },
                                             color = Color.White,
                                             style = MaterialTheme.typography.labelMedium
@@ -526,69 +620,70 @@ fun SmartCameraScreen(
                                 }
 
                                 Box(
-                                    modifier = Modifier
-                                        .size(74.dp)
-                                        .clip(CircleShape)
-                                        .border(
-                                            4.dp,
-                                            if (quality.isOptimalToShoot) IntraColors.EmeraldSuccess else Color.White,
-                                            CircleShape
-                                        )
-                                        .padding(6.dp)
-                                        .clip(CircleShape)
-                                        .background(if (isCapturing) Color.Gray else Color.White)
-                                        .clickable(enabled = !isCapturing) {
-                                            val capture = imageCaptureRef ?: return@clickable
-                                            isCapturing = true
-                                            val (rawFile, _) = ImageCompressor.createTempCameraFile(context, taskId)
-                                            val outputOpts = ImageCapture.OutputFileOptions.Builder(rawFile).build()
-                                            capture.takePicture(
-                                                outputOpts,
-                                                ContextCompat.getMainExecutor(context),
-                                                object : ImageCapture.OnImageSavedCallback {
-                                                    override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                                                        scope.launch {
-                                                            runCatching {
-                                                                ImageCompressor.prepareCameraReviewPair(
-                                                                    context = context,
-                                                                    rawFile = rawFile,
-                                                                    taskId = taskId,
-                                                                    index = photoIndex,
-                                                                    documentType = documentType
-                                                                )
-                                                            }.onSuccess { prepared ->
-                                                                useEnhancedInReview = textEnhanceEnabled
-                                                                reviewPair = prepared
-                                                                isCapturing = false
-                                                            }.onFailure {
-                                                                isCapturing = false
-                                                            }
-                                                        }
-                                                    }
-
-                                                    override fun onError(exception: ImageCaptureException) {
-                                                        isCapturing = false
-                                                        runCatching { rawFile.delete() }
-                                                    }
-                                                }
-                                            )
-                                        },
+                                    modifier = Modifier.size(80.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    if (isCapturing) {
-                                        CircularProgressIndicator(
-                                            color = IntraColors.BrandPrimary,
-                                            strokeWidth = 3.dp,
-                                            modifier = Modifier.size(30.dp)
-                                        )
+                                    if (autoCaptureProgress.value > 0.01f) {
+                                        Canvas(modifier = Modifier.fillMaxSize()) {
+                                            drawArc(
+                                                color = IntraColors.EmeraldSuccess,
+                                                startAngle = -90f,
+                                                sweepAngle = 360f * autoCaptureProgress.value,
+                                                useCenter = false,
+                                                style = Stroke(width = 4.5.dp.toPx(), cap = StrokeCap.Round)
+                                            )
+                                        }
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .size(72.dp)
+                                            .clip(CircleShape)
+                                            .border(
+                                                3.5.dp,
+                                                if (quality.isOptimalToShoot) IntraColors.EmeraldSuccess else Color.White,
+                                                CircleShape
+                                            )
+                                            .padding(6.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isCapturing) Color.Gray else Color.White)
+                                            .clickable(enabled = !isCapturing) { triggerCapture() },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (isCapturing) {
+                                            CircularProgressIndicator(
+                                                color = IntraColors.BrandPrimary,
+                                                strokeWidth = 3.dp,
+                                                modifier = Modifier.size(28.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                 } else {
-                    // Quick Enhancement Review Screen
-                    val activePhoto = if (useEnhancedInReview) pair.enhancedPhoto else pair.originalPhoto
+                    // Quick Enhancement Review Screen (3 Modes: B&W Scan, Color Flattened, Original)
+                    val activePhoto = when (reviewMode) {
+                        CameraReviewMode.SCAN_BW -> pair.scanBwPhoto
+                        CameraReviewMode.COLOR_ENHANCED -> pair.enhancedPhoto
+                        CameraReviewMode.ORIGINAL -> pair.originalPhoto
+                    }
+                    fun acceptChosenPhoto() {
+                        val all = listOf(pair.scanBwPhoto, pair.enhancedPhoto, pair.originalPhoto)
+                        all.filter { it.id != activePhoto.id }.forEach { runCatching { it.file.delete() } }
+                        reviewPair = null
+                        onPhotoAccepted(activePhoto)
+                    }
+                    fun retakePhoto() {
+                        scope.launch(Dispatchers.IO) {
+                            runCatching { pair.scanBwPhoto.file.delete() }
+                            runCatching { pair.enhancedPhoto.file.delete() }
+                            runCatching { pair.originalPhoto.file.delete() }
+                            withContext(Dispatchers.Main) {
+                                reviewPair = null
+                            }
+                        }
+                    }
                     Box(modifier = Modifier.fillMaxSize()) {
                         AsyncImage(
                             model = activePhoto.file,
@@ -705,22 +800,24 @@ fun SmartCameraScreen(
 
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 ReviewModeChip(
-                                    label = if (pair.enhancedPhoto.wasDeskewed) {
-                                        "Выровнено и чётко"
-                                    } else {
-                                        "Улучшено (резкий текст)"
-                                    },
-                                    selected = useEnhancedInReview,
-                                    onClick = { useEnhancedInReview = true },
+                                    label = "Ч/Б Скан",
+                                    selected = reviewMode == CameraReviewMode.SCAN_BW,
+                                    onClick = { reviewMode = CameraReviewMode.SCAN_BW },
+                                    modifier = Modifier.weight(1f)
+                                )
+                                ReviewModeChip(
+                                    label = "Цвет",
+                                    selected = reviewMode == CameraReviewMode.COLOR_ENHANCED,
+                                    onClick = { reviewMode = CameraReviewMode.COLOR_ENHANCED },
                                     modifier = Modifier.weight(1f)
                                 )
                                 ReviewModeChip(
                                     label = "Оригинал",
-                                    selected = !useEnhancedInReview,
-                                    onClick = { useEnhancedInReview = false },
+                                    selected = reviewMode == CameraReviewMode.ORIGINAL,
+                                    onClick = { reviewMode = CameraReviewMode.ORIGINAL },
                                     modifier = Modifier.weight(1f)
                                 )
                             }
@@ -731,15 +828,7 @@ fun SmartCameraScreen(
                             ) {
                                 if (reviewNeedsRetake) {
                                     Button(
-                                        onClick = {
-                                            scope.launch(Dispatchers.IO) {
-                                                runCatching { pair.enhancedPhoto.file.delete() }
-                                                runCatching { pair.originalPhoto.file.delete() }
-                                                withContext(Dispatchers.Main) {
-                                                    reviewPair = null
-                                                }
-                                            }
-                                        },
+                                        onClick = ::retakePhoto,
                                         modifier = Modifier
                                             .weight(1f)
                                             .height(50.dp),
@@ -759,13 +848,7 @@ fun SmartCameraScreen(
                                     }
 
                                     OutlinedButton(
-                                        onClick = {
-                                            val chosen = if (useEnhancedInReview) pair.enhancedPhoto else pair.originalPhoto
-                                            val unused = if (useEnhancedInReview) pair.originalPhoto else pair.enhancedPhoto
-                                            runCatching { unused.file.delete() }
-                                            reviewPair = null
-                                            onPhotoAccepted(chosen)
-                                        },
+                                        onClick = ::acceptChosenPhoto,
                                         modifier = Modifier
                                             .weight(1f)
                                             .height(50.dp),
@@ -776,15 +859,7 @@ fun SmartCameraScreen(
                                     }
                                 } else {
                                     OutlinedButton(
-                                        onClick = {
-                                            scope.launch(Dispatchers.IO) {
-                                                runCatching { pair.enhancedPhoto.file.delete() }
-                                                runCatching { pair.originalPhoto.file.delete() }
-                                                withContext(Dispatchers.Main) {
-                                                    reviewPair = null
-                                                }
-                                            }
-                                        },
+                                        onClick = ::retakePhoto,
                                         modifier = Modifier
                                             .weight(1f)
                                             .height(50.dp),
@@ -802,13 +877,7 @@ fun SmartCameraScreen(
                                     }
 
                                     Button(
-                                        onClick = {
-                                            val chosen = if (useEnhancedInReview) pair.enhancedPhoto else pair.originalPhoto
-                                            val unused = if (useEnhancedInReview) pair.originalPhoto else pair.enhancedPhoto
-                                            runCatching { unused.file.delete() }
-                                            reviewPair = null
-                                            onPhotoAccepted(chosen)
-                                        },
+                                        onClick = ::acceptChosenPhoto,
                                         modifier = Modifier
                                             .weight(1f)
                                             .height(50.dp),

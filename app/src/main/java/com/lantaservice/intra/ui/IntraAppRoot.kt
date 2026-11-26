@@ -71,6 +71,8 @@ fun IntraAppRoot(
     appUpdateManager: AppUpdateManager,
     locationPermissionGranted: Boolean,
     locationServiceEnabled: Boolean,
+    pendingOpenTaskId: Int? = null,
+    onConsumePendingOpenTaskId: () -> Unit = {},
     onRequestLocationAgain: () -> Unit,
     onOpenLocationSettings: () -> Unit,
     onExitApp: () -> Unit
@@ -216,6 +218,16 @@ fun IntraAppRoot(
                         key = "tasks_${session.userId}",
                         factory = TaskListViewModel.Factory(repository)
                     )
+
+                    LaunchedEffect(pendingOpenTaskId) {
+                        val deepLinkId = pendingOpenTaskId
+                        if (deepLinkId != null && deepLinkId > 0) {
+                            navController.navigate("task/$deepLinkId") {
+                                launchSingleTop = true
+                            }
+                            onConsumePendingOpenTaskId()
+                        }
+                    }
 
                     NavHost(
                         navController = navController,
