@@ -99,9 +99,24 @@ class LoginViewModel(
         }
     }
 
-    fun submit() {
+    fun clearLocationBlockErrorIfNeeded(locationGranted: Boolean) {
+        if (locationGranted && _uiState.value.errorMessage?.contains("геолокац", ignoreCase = true) == true) {
+            _uiState.update { it.copy(errorMessage = null) }
+        }
+    }
+
+    fun submit(locationGranted: Boolean = true) {
         val state = _uiState.value
         if (state.isLoading) return
+        if (!locationGranted) {
+            _uiState.update {
+                it.copy(
+                    errorMessage = LOCATION_REQUIRED_ERROR,
+                    showVpnSettingsHint = false
+                )
+            }
+            return
+        }
         val cleanLogin = state.login.trim()
         if (cleanLogin.isEmpty() || state.password.isEmpty()) {
             _uiState.update { it.copy(errorMessage = "Укажите логин или E-mail и пароль", showVpnSettingsHint = false) }
@@ -174,6 +189,9 @@ class LoginViewModel(
     }
 
     companion object {
+        const val LOCATION_REQUIRED_ERROR =
+            "Авторизация заблокирована: необходимо разрешить доступ к геолокации."
+
         fun resolvePostLoginFields(
             login: String,
             password: String,

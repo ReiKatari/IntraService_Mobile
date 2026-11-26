@@ -8,6 +8,7 @@ import android.media.ExifInterface
 import android.net.Uri
 import androidx.core.content.FileProvider
 import com.lantaservice.intra.data.model.PendingPhoto
+import com.lantaservice.intra.data.model.PhotoDocumentType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -51,7 +52,8 @@ object ImageCompressor {
         sourceUri: Uri,
         taskId: Int,
         index: Int,
-        enhanceMode: EnhanceMode = EnhanceMode.TEXT_CLARITY
+        enhanceMode: EnhanceMode = EnhanceMode.TEXT_CLARITY,
+        documentType: PhotoDocumentType = PhotoDocumentType.AVR
     ): PendingPhoto = withContext(Dispatchers.IO) {
         val preparedBitmap = decodeAndOrientUri(context, sourceUri)
         val result = PhotoEnhancerEngine.enhance(preparedBitmap, enhanceMode)
@@ -61,7 +63,7 @@ object ImageCompressor {
 
         val uploadsDir = File(context.cacheDir, "uploads").apply { mkdirs() }
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val nameWithoutExt = "photo_task${taskId}_${stamp}_$index"
+        val nameWithoutExt = "${documentType.filePrefix}_task${taskId}_${stamp}_$index"
         val outFile = File(uploadsDir, "$nameWithoutExt.jpg")
 
         FileOutputStream(outFile).use { out ->
@@ -76,7 +78,9 @@ object ImageCompressor {
             sizeBytes = outFile.length(),
             isEnhanced = result.enhanced,
             isBlurryWarning = result.isBlurryWarning,
-            sharpnessScore = result.sharpnessScore
+            sharpnessScore = result.sharpnessScore,
+            documentType = documentType,
+            createdAtEpochMs = System.currentTimeMillis()
         )
     }
 
@@ -84,16 +88,18 @@ object ImageCompressor {
         context: Context,
         rawFile: File,
         taskId: Int,
-        index: Int
+        index: Int,
+        documentType: PhotoDocumentType = PhotoDocumentType.AVR
     ): CameraReviewPair = withContext(Dispatchers.IO) {
         val uri = Uri.fromFile(rawFile)
         val oriented = decodeAndOrientUri(context, uri)
         val uploadsDir = File(context.cacheDir, "uploads").apply { mkdirs() }
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val origName = "orig_task${taskId}_${stamp}_$index"
-        val enhName = "photo_task${taskId}_${stamp}_$index"
+        val origName = "orig_${documentType.filePrefix}_task${taskId}_${stamp}_$index"
+        val enhName = "${documentType.filePrefix}_task${taskId}_${stamp}_$index"
         val origFile = File(uploadsDir, "$origName.jpg")
         val enhFile = File(uploadsDir, "$enhName.jpg")
+        val createdEpochMs = System.currentTimeMillis()
 
         val (naturalResultPair, enhancedResultPair) = coroutineScope {
             val origDeferred = async(Dispatchers.Default) {
@@ -129,7 +135,9 @@ object ImageCompressor {
                 sizeBytes = enhFile.length(),
                 isEnhanced = true,
                 isBlurryWarning = enhancedResultPair.isBlurryWarning,
-                sharpnessScore = enhancedResultPair.sharpnessScore
+                sharpnessScore = enhancedResultPair.sharpnessScore,
+                documentType = documentType,
+                createdAtEpochMs = createdEpochMs
             ),
             originalPhoto = PendingPhoto(
                 id = UUID.randomUUID().toString(),
@@ -138,9 +146,23 @@ object ImageCompressor {
                 sizeBytes = origFile.length(),
                 isEnhanced = false,
                 isBlurryWarning = naturalResultPair.isBlurryWarning,
-                sharpnessScore = naturalResultPair.sharpnessScore
+                sharpnessScore = naturalResultPair.sharpnessScore,
+                documentType = documentType,
+                createdAtEpochMs = createdEpochMs
             )
         )
+    }
+
+    fun readExifLatLong(context: Context, uri: Uri): Pair<Double, Double>? {
+        return runCatching {
+            context.contentResolver.openInputStream(uri)?.use { stream ->
+                val exif = ExifInterface(stream)
+                val latLong = FloatArray(2)
+                @Suppress("DEPRECATION")
+                val ok = exif.getLatLong(latLong)
+                if (ok) latLong[0].toDouble() to latLong[1].toDouble() else null
+            }
+        }.getOrNull()
     }
 
     fun isInCacheUploads(context: Context, file: File): Boolean {

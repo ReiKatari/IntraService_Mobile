@@ -311,7 +311,9 @@ data class PendingPhoto(
     val sizeBytes: Long,
     val isEnhanced: Boolean = true,
     val isBlurryWarning: Boolean = false,
-    val sharpnessScore: Double = 0.0
+    val sharpnessScore: Double = 0.0,
+    val documentType: PhotoDocumentType = PhotoDocumentType.AVR,
+    val createdAtEpochMs: Long = System.currentTimeMillis()
 )
 
 @Immutable

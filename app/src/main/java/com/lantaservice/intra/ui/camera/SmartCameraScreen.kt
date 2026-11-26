@@ -93,6 +93,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil.compose.AsyncImage
 import com.lantaservice.intra.data.model.PendingPhoto
+import com.lantaservice.intra.data.model.PhotoDocumentType
 import com.lantaservice.intra.ui.components.intraHeaderInsetsPadding
 import com.lantaservice.intra.ui.theme.IntraColors
 import com.lantaservice.intra.util.CameraReviewPair
@@ -119,6 +120,7 @@ import kotlin.math.roundToInt
 fun SmartCameraScreen(
     taskId: Int,
     photoIndex: Int,
+    documentType: PhotoDocumentType = PhotoDocumentType.AVR,
     onDismiss: () -> Unit,
     onPhotoAccepted: (PendingPhoto) -> Unit,
     onCameraFallbackRequested: () -> Unit
@@ -341,7 +343,7 @@ fun SmartCameraScreen(
                                     modifier = Modifier.weight(1f, fill = false)
                                 ) {
                                     Text(
-                                        text = "Фото для заявки #$taskId",
+                                        text = "${documentType.shortTitle} - заявка #$taskId",
                                         color = Color.White,
                                         style = MaterialTheme.typography.labelLarge,
                                         textAlign = TextAlign.Center,
@@ -514,7 +516,8 @@ fun SmartCameraScreen(
                                                                 context = context,
                                                                 rawFile = rawFile,
                                                                 taskId = taskId,
-                                                                index = photoIndex
+                                                                index = photoIndex,
+                                                                documentType = documentType
                                                             )
                                                         }.onSuccess { prepared ->
                                                             useEnhancedInReview = textEnhanceEnabled

@@ -5,6 +5,8 @@ import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
+import com.lantaservice.intra.data.geo.GeoLocationEngine
+import com.lantaservice.intra.data.geo.ReverseGeocoderService
 import com.lantaservice.intra.data.network.IntraConnectionManager
 import com.lantaservice.intra.data.network.IntraNetworkFactory
 import com.lantaservice.intra.data.network.IntraResilientDns
@@ -72,6 +74,22 @@ class IntraApplication : Application(), ImageLoaderFactory {
         )
     }
 
+    val reverseGeocoderService: ReverseGeocoderService by lazy {
+        ReverseGeocoderService(
+            context = applicationContext,
+            json = json,
+            resilientDns = resilientDns
+        )
+    }
+
+    val geoLocationEngine: GeoLocationEngine by lazy {
+        GeoLocationEngine(
+            context = applicationContext,
+            json = json,
+            reverseGeocoderService = reverseGeocoderService
+        )
+    }
+
     val repository: IntraRepository by lazy {
         IntraRepository(
             context = applicationContext,
@@ -80,7 +98,9 @@ class IntraApplication : Application(), ImageLoaderFactory {
             credentialsProvider = credentialsProvider,
             connectionManager = connectionManager,
             sessionStorage = sessionStorage,
-            outboxStorage = pendingOutboxStorage
+            outboxStorage = pendingOutboxStorage,
+            geoLocationEngine = geoLocationEngine,
+            reverseGeocoderService = reverseGeocoderService
         )
     }
 

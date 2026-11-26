@@ -6,13 +6,19 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.lantaservice.intra.data.geo.GeoAddressSnapshot
 import com.lantaservice.intra.data.model.PendingPhoto
+import com.lantaservice.intra.data.model.PhotoDocumentType
+import com.lantaservice.intra.data.model.PhotoDocumentTypeLock
+import com.lantaservice.intra.data.model.SaveReadiness
 import com.lantaservice.intra.data.model.TaskAttachment
+import com.lantaservice.intra.data.model.TaskSaveValidator
 import com.lantaservice.intra.data.model.TicketDetail
 import com.lantaservice.intra.data.model.TicketSaveResult
 import com.lantaservice.intra.data.repository.IntraRepository
 import com.lantaservice.intra.data.storage.PendingOutboxEntry
 import com.lantaservice.intra.ui.components.ViewerPhoto
+import com.lantaservice.intra.util.AvrCounterRecognizer
 import com.lantaservice.intra.util.EnhanceMode
 import com.lantaservice.intra.util.ImageCompressor
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,6 +38,13 @@ data class TaskDetailUiState(
     val commentText: String = "",
     val pendingPhotos: List<PendingPhoto> = emptyList(),
     val queuedOutbox: PendingOutboxEntry? = null,
+    val geoSnapshot: GeoAddressSnapshot? = null,
+    val isLoadingGeo: Boolean = false,
+    val counterValue: String = "",
+    val counterAutoDetected: Boolean = false,
+    val isRecognizingCounter: Boolean = false,
+    val showManualCounterPrompt: Boolean = false,
+    val counterPromptReason: String? = null,
     val isProcessingPhoto: Boolean = false,
     val isSaving: Boolean = false,
     val savingStage: String = "",
@@ -40,7 +53,18 @@ data class TaskDetailUiState(
     val viewerPhoto: ViewerPhoto? = null
 ) {
     val hasChangesToSave: Boolean
-        get() = markAsRepaired || pendingPhotos.isNotEmpty() || commentText.isNotBlank()
+        get() = markAsRepaired || pendingPhotos.isNotEmpty() || commentText.isNotBlank() || counterValue.isNotBlank()
+
+    val saveReadiness: SaveReadiness
+        get() = TaskSaveValidator.evaluate(
+            pendingPhotos = pendingPhotos,
+            existingAttachments = detail?.attachments.orEmpty(),
+            counterValue = counterValue,
+            hasChanges = hasChangesToSave
+        )
+
+    val canSave: Boolean
+        get() = saveReadiness.isReadyToSave && !isSaving && !isProcessingPhoto && !isRecognizingCounter
 }
 
 class TaskDetailViewModel(
@@ -60,7 +84,10 @@ class TaskDetailViewModel(
             markAsRepaired = initialOutbox?.newStatusId != null,
             commentText = initialOutbox?.comment.orEmpty(),
             pendingPhotos = initialQueuedPhotos,
-            queuedOutbox = initialOutbox
+            queuedOutbox = initialOutbox,
+            geoSnapshot = initialOutbox?.geoSnapshot,
+            counterValue = initialOutbox?.counterValue.orEmpty(),
+            counterAutoDetected = false
         )
     )
     val uiState: StateFlow<TaskDetailUiState> = _uiState.asStateFlow()
@@ -79,6 +106,8 @@ class TaskDetailViewModel(
                             queuedOutbox = null,
                             markAsRepaired = false,
                             commentText = "",
+                            counterValue = "",
+                            counterAutoDetected = false,
                             pendingPhotos = emptyList(),
                             actionMessage = null
                         )
@@ -90,9 +119,25 @@ class TaskDetailViewModel(
             }
         }
         loadDetail()
+        if (_uiState.value.geoSnapshot == null) {
+            refreshGeolocation()
+        }
     }
 
     fun nextPhotoIndex(): Int = ++photoCounter
+
+    fun refreshGeolocation(exifHint: Pair<Double, Double>? = null) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingGeo = true) }
+            val captured = repository.captureCurrentGeo(exifHint = exifHint)
+            _uiState.update { state ->
+                state.copy(
+                    geoSnapshot = captured ?: state.geoSnapshot,
+                    isLoadingGeo = false
+                )
+            }
+        }
+    }
 
     fun loadDetail() {
         viewModelScope.launch {
@@ -162,27 +207,93 @@ class TaskDetailViewModel(
         _uiState.update { it.copy(viewerPhoto = null) }
     }
 
-    fun addPreparedPhoto(photo: PendingPhoto) {
-        _uiState.update { state ->
-            state.copy(
-                pendingPhotos = state.pendingPhotos + photo,
+    fun openManualCounterDialog() {
+        _uiState.update {
+            it.copy(
+                showManualCounterPrompt = true,
+                counterPromptReason = null,
                 actionMessage = null
             )
         }
     }
 
-    fun addCapturedPhoto(context: Context, sourceUri: Uri, tempFileToDelete: Boolean = false) {
-        addPhotoUris(context, listOf(sourceUri), deleteSourceFiles = tempFileToDelete)
+    fun dismissManualCounterDialog() {
+        _uiState.update {
+            it.copy(
+                showManualCounterPrompt = false,
+                counterPromptReason = null
+            )
+        }
     }
 
-    fun addPhotoUris(context: Context, uris: List<Uri>, deleteSourceFiles: Boolean = false) {
+    fun submitManualCounter(rawInput: String) {
+        val normalized = TaskSaveValidator.normalizeCounterDigits(rawInput)
+        if (!TaskSaveValidator.isValidCounter(normalized)) {
+            _uiState.update {
+                it.copy(
+                    counterPromptReason = "Введите корректное целое число счётчика копий (от 1 до 9 цифр)"
+                )
+            }
+            return
+        }
+        _uiState.update {
+            it.copy(
+                counterValue = normalized,
+                counterAutoDetected = false,
+                showManualCounterPrompt = false,
+                counterPromptReason = null,
+                actionMessage = null
+            )
+        }
+    }
+
+    fun addPreparedPhoto(context: Context, photo: PendingPhoto) {
+        val stampedPhoto = photo.copy(createdAtEpochMs = System.currentTimeMillis())
+        _uiState.update { state ->
+            state.copy(
+                pendingPhotos = state.pendingPhotos + stampedPhoto,
+                actionMessage = null
+            )
+        }
+        if (_uiState.value.geoSnapshot == null) {
+            refreshGeolocation()
+        }
+        if (stampedPhoto.documentType == PhotoDocumentType.AVR) {
+            recognizeAvrCounter(context, stampedPhoto.file)
+        }
+    }
+
+    fun addCapturedPhoto(
+        context: Context,
+        sourceUri: Uri,
+        documentType: PhotoDocumentType,
+        tempFileToDelete: Boolean = false
+    ) {
+        addPhotoUris(
+            context = context,
+            uris = listOf(sourceUri),
+            documentType = documentType,
+            deleteSourceFiles = tempFileToDelete
+        )
+    }
+
+    fun addPhotoUris(
+        context: Context,
+        uris: List<Uri>,
+        documentType: PhotoDocumentType,
+        deleteSourceFiles: Boolean = false
+    ) {
         if (uris.isEmpty()) return
         viewModelScope.launch {
             _uiState.update { it.copy(isProcessingPhoto = true, actionMessage = null) }
             val added = mutableListOf<PendingPhoto>()
             var lastError: String? = null
+            var exifHint: Pair<Double, Double>? = null
 
             for (uri in uris) {
+                if (exifHint == null) {
+                    exifHint = ImageCompressor.readExifLatLong(context, uri)
+                }
                 val idx = ++photoCounter
                 runCatching {
                     ImageCompressor.compressPhoto(
@@ -190,7 +301,8 @@ class TaskDetailViewModel(
                         sourceUri = uri,
                         taskId = taskId,
                         index = idx,
-                        enhanceMode = EnhanceMode.TEXT_CLARITY
+                        enhanceMode = EnhanceMode.TEXT_CLARITY,
+                        documentType = documentType
                     )
                 }.onSuccess { compressed ->
                     added += compressed
@@ -209,6 +321,84 @@ class TaskDetailViewModel(
                     pendingPhotos = state.pendingPhotos + added,
                     actionMessage = lastError
                 )
+            }
+
+            val currentGeo = _uiState.value.geoSnapshot
+            if (currentGeo == null || (exifHint != null && currentGeo.jammerSuspected)) {
+                refreshGeolocation(exifHint = exifHint)
+            }
+
+            if (documentType == PhotoDocumentType.AVR && added.isNotEmpty()) {
+                recognizeAvrCounter(context, added.last().file)
+            }
+        }
+    }
+
+    fun changePhotoDocumentType(
+        context: Context,
+        photoId: String,
+        newType: PhotoDocumentType
+    ) {
+        val current = _uiState.value.pendingPhotos
+        val target = current.firstOrNull { it.id == photoId } ?: return
+        if (!PhotoDocumentTypeLock.canChangeType(target.createdAtEpochMs, System.currentTimeMillis())) {
+            _uiState.update {
+                it.copy(actionMessage = "Формат фото уже зафиксирован (прошло более 5 минут после создания)")
+            }
+            return
+        }
+        if (target.documentType == newType) return
+
+        val updatedPhoto = target.copy(
+            documentType = newType,
+            nameWithoutExt = PhotoDocumentTypeLock.renamePrefix(target.nameWithoutExt, newType)
+        )
+        _uiState.update { state ->
+            state.copy(
+                pendingPhotos = state.pendingPhotos.map { if (it.id == photoId) updatedPhoto else it },
+                actionMessage = null
+            )
+        }
+        if (newType == PhotoDocumentType.AVR) {
+            recognizeAvrCounter(context, updatedPhoto.file)
+        }
+    }
+
+    private fun recognizeAvrCounter(context: Context, imageFile: File) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isRecognizingCounter = true) }
+            val result = runCatching {
+                AvrCounterRecognizer.recognizeCounterFromFile(context, imageFile)
+            }.getOrNull()
+
+            val recognizedDigits = result?.value
+                ?.let { TaskSaveValidator.normalizeCounterDigits(it) }
+                ?.takeIf { TaskSaveValidator.isValidCounter(it) }
+
+            if (recognizedDigits != null) {
+                _uiState.update { state ->
+                    state.copy(
+                        isRecognizingCounter = false,
+                        counterValue = recognizedDigits,
+                        counterAutoDetected = true,
+                        showManualCounterPrompt = false,
+                        counterPromptReason = null,
+                        actionMessage = null
+                    )
+                }
+            } else {
+                _uiState.update { state ->
+                    val shouldPrompt = state.counterValue.isBlank()
+                    state.copy(
+                        isRecognizingCounter = false,
+                        showManualCounterPrompt = shouldPrompt,
+                        counterPromptReason = if (shouldPrompt) {
+                            "Не удалось автоматически распознать счётчик копий на фото АВР (плохое качество или почерк). Пожалуйста, введите счётчик вручную."
+                        } else {
+                            state.counterPromptReason
+                        }
+                    )
+                }
             }
         }
     }
@@ -232,6 +422,8 @@ class TaskDetailViewModel(
                 queuedOutbox = null,
                 markAsRepaired = false,
                 commentText = "",
+                counterValue = "",
+                counterAutoDetected = false,
                 pendingPhotos = emptyList(),
                 actionMessage = null
             )
@@ -273,7 +465,19 @@ class TaskDetailViewModel(
     ) {
         val state = _uiState.value
         val detail = state.detail ?: return
-        if (state.isSaving || !state.hasChangesToSave) return
+        if (state.isSaving) return
+
+        val readiness = state.saveReadiness
+        if (!readiness.isReadyToSave) {
+            val missing = readiness.missingItems()
+            val msg = if (missing.isNotEmpty()) {
+                "Для сохранения обязательно приложите: ${missing.joinToString(", ")}"
+            } else {
+                "Нет изменений для сохранения"
+            }
+            _uiState.update { it.copy(actionMessage = msg) }
+            return
+        }
 
         val targetStatusId = if (state.markAsRepaired) {
             detail.repairedStatusId ?: state.queuedOutbox?.newStatusId
@@ -306,6 +510,8 @@ class TaskDetailViewModel(
                 newStatusName = if (state.markAsRepaired) detail.repairedStatusName else null,
                 pendingPhotos = state.pendingPhotos,
                 comment = state.commentText,
+                counterValue = state.counterValue,
+                geoSnapshot = state.geoSnapshot,
                 allowOfflineQueue = true,
                 forcedRecordedAtText = forcedRecordedAtText,
                 onStageChange = { stage ->
@@ -321,7 +527,9 @@ class TaskDetailViewModel(
                             isSaving = false,
                             savingStage = "",
                             queuedOutbox = freshOutbox,
-                            pendingPhotos = refreshedPhotos
+                            pendingPhotos = refreshedPhotos,
+                            counterValue = freshOutbox?.counterValue ?: it.counterValue,
+                            geoSnapshot = freshOutbox?.geoSnapshot ?: it.geoSnapshot
                         )
                     }
                 } else {
@@ -332,7 +540,9 @@ class TaskDetailViewModel(
                             queuedOutbox = null,
                             pendingPhotos = emptyList(),
                             markAsRepaired = false,
-                            commentText = ""
+                            commentText = "",
+                            counterValue = "",
+                            counterAutoDetected = false
                         )
                     }
                 }
@@ -355,6 +565,7 @@ class TaskDetailViewModel(
     }
 
     private fun outboxEntryToPendingPhotos(entry: PendingOutboxEntry): List<PendingPhoto> {
+        val fallbackEpoch = entry.recordedAtEpochMs.takeIf { it > 0L } ?: System.currentTimeMillis()
         return entry.photos.mapNotNull { staged ->
             val file = File(staged.filePath)
             if (!file.exists()) null
@@ -365,7 +576,9 @@ class TaskDetailViewModel(
                 sizeBytes = file.length(),
                 isEnhanced = staged.isEnhanced,
                 isBlurryWarning = staged.isBlurryWarning,
-                sharpnessScore = staged.sharpnessScore
+                sharpnessScore = staged.sharpnessScore,
+                documentType = staged.documentType,
+                createdAtEpochMs = staged.createdAtEpochMs.takeIf { it > 0L } ?: fallbackEpoch
             )
         }
     }

@@ -12,6 +12,24 @@
 }
 -keep class com.lantaservice.intra.data.model.** { *; }
 
+-keep,includedescriptorclasses class com.lantaservice.intra.data.storage.**$$serializer { *; }
+-keepclassmembers class com.lantaservice.intra.data.storage.** {
+    *** Companion;
+}
+-keepclasseswithmembers class com.lantaservice.intra.data.storage.** {
+    kotlinx.serialization.KSerializer serializer(...);
+}
+-keep class com.lantaservice.intra.data.storage.** { *; }
+
+-keep,includedescriptorclasses class com.lantaservice.intra.data.geo.**$$serializer { *; }
+-keepclassmembers class com.lantaservice.intra.data.geo.** {
+    *** Companion;
+}
+-keepclasseswithmembers class com.lantaservice.intra.data.geo.** {
+    kotlinx.serialization.KSerializer serializer(...);
+}
+-keep class com.lantaservice.intra.data.geo.** { *; }
+
 # Keep Retrofit service interface and runtime annotations
 -keep,allowobfuscation,allowshrinking interface retrofit2.Call
 -keep,allowobfuscation,allowshrinking class retrofit2.Response
@@ -28,3 +46,5 @@
 -dontwarn org.bouncycastle.**
 -dontwarn org.openjsse.**
 -dontwarn retrofit2.Platform**
+-dontwarn com.google.mlkit.**
+-dontwarn com.google.android.gms.**

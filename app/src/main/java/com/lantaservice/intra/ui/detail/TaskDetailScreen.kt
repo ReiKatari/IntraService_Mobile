@@ -38,27 +38,37 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
-import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.AddCircleOutline
+import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudUpload
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.FactCheck
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Phone
-import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.PhotoLibrary
+import androidx.compose.material.icons.rounded.Print
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -79,6 +89,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -86,35 +97,52 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import coil.compose.AsyncImage
+import com.lantaservice.intra.data.geo.GeoAddressSnapshot
 import com.lantaservice.intra.data.model.PendingPhoto
+import com.lantaservice.intra.data.model.PhotoDocumentType
+import com.lantaservice.intra.data.model.PhotoDocumentTypeLock
 import com.lantaservice.intra.data.model.TaskAttachment
+import com.lantaservice.intra.data.model.TaskSaveValidator
 import com.lantaservice.intra.data.model.TicketDetail
 import com.lantaservice.intra.data.model.TicketSaveResult
 import com.lantaservice.intra.data.storage.PendingOutboxEntry
 import com.lantaservice.intra.ui.camera.SmartCameraScreen
 import com.lantaservice.intra.ui.components.FullscreenPhotoViewer
 import com.lantaservice.intra.ui.components.IntraHeaderBanner
-import com.lantaservice.intra.ui.components.intraHeaderInsetsPadding
 import com.lantaservice.intra.ui.components.StatusPill
 import com.lantaservice.intra.ui.components.ViewerPhoto
+import com.lantaservice.intra.ui.components.intraHeaderInsetsPadding
 import com.lantaservice.intra.ui.theme.IntraColors
+import com.lantaservice.intra.util.AvrCounterParser
 import com.lantaservice.intra.util.DateAndTextFormatter
 import com.lantaservice.intra.util.ImageCompressor
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
+
+private sealed interface PhotoTypePickerMode {
+    data object ForCamera : PhotoTypePickerMode
+    data object ForGallery : PhotoTypePickerMode
+    data class Reclassify(val photoId: String, val currentType: PhotoDocumentType) : PhotoTypePickerMode
+}
 
 @Composable
 fun TaskDetailScreen(
@@ -129,7 +157,22 @@ fun TaskDetailScreen(
 
     var showSmartCamera by remember { mutableStateOf(false) }
     var smartCameraPhotoIndex by remember { mutableIntStateOf(1) }
+    var activePhotoTypeForCapture by rememberSaveable { mutableStateOf(PhotoDocumentType.AVR) }
     var pendingCameraUriString by rememberSaveable { mutableStateOf<String?>(null) }
+    var photoTypePickerMode by remember { mutableStateOf<PhotoTypePickerMode?>(null) }
+    var nowEpochMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    val hasUnlockedPending = remember(state.pendingPhotos, nowEpochMs) {
+        state.pendingPhotos.any { PhotoDocumentTypeLock.canChangeType(it.createdAtEpochMs, nowEpochMs) }
+    }
+
+    LaunchedEffect(hasUnlockedPending) {
+        if (!hasUnlockedPending) return@LaunchedEffect
+        while (true) {
+            nowEpochMs = System.currentTimeMillis()
+            delay(1000L)
+        }
+    }
 
     // Automatic 1-minute silent refresh while ticket detail is active
     LaunchedEffect(lifecycleOwner) {
@@ -147,7 +190,12 @@ fun TaskDetailScreen(
         val uriStr = pendingCameraUriString
         pendingCameraUriString = null
         if (success && uriStr != null) {
-            viewModel.addCapturedPhoto(context, Uri.parse(uriStr), tempFileToDelete = true)
+            viewModel.addCapturedPhoto(
+                context = context,
+                sourceUri = Uri.parse(uriStr),
+                documentType = activePhotoTypeForCapture,
+                tempFileToDelete = true
+            )
         }
     }
 
@@ -166,7 +214,8 @@ fun TaskDetailScreen(
         }
     }
 
-    fun onCapturePhotoClick() {
+    fun startCameraWithType(docType: PhotoDocumentType) {
+        activePhotoTypeForCapture = docType
         val granted = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.CAMERA
@@ -183,18 +232,68 @@ fun TaskDetailScreen(
         contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 5)
     ) { uris ->
         if (uris.isNotEmpty()) {
-            viewModel.addPhotoUris(context, uris)
+            viewModel.addPhotoUris(
+                context = context,
+                uris = uris,
+                documentType = activePhotoTypeForCapture
+            )
         }
+    }
+
+    photoTypePickerMode?.let { mode ->
+        val preselected = when (mode) {
+            is PhotoTypePickerMode.Reclassify -> mode.currentType
+            else -> activePhotoTypeForCapture
+        }
+        PhotoTypePickerDialog(
+            title = if (mode is PhotoTypePickerMode.Reclassify) {
+                "Изменить тип документа"
+            } else {
+                "Выберите формат фото"
+            },
+            subtitle = if (mode is PhotoTypePickerMode.Reclassify) {
+                "Тип можно сменить в течение 5 минут после съёмки, затем он фиксируется"
+            } else {
+                "Сразу укажите назначение снимка (формат можно поменять в течение 5 минут)"
+            },
+            currentSelection = preselected,
+            onDismiss = { photoTypePickerMode = null },
+            onSelect = { chosenType ->
+                photoTypePickerMode = null
+                when (mode) {
+                    is PhotoTypePickerMode.ForCamera -> startCameraWithType(chosenType)
+                    is PhotoTypePickerMode.ForGallery -> {
+                        activePhotoTypeForCapture = chosenType
+                        pickGalleryLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    }
+                    is PhotoTypePickerMode.Reclassify -> {
+                        viewModel.changePhotoDocumentType(context, mode.photoId, chosenType)
+                    }
+                }
+            }
+        )
+    }
+
+    if (state.showManualCounterPrompt) {
+        CounterInputDialog(
+            initialValue = state.counterValue,
+            reasonMessage = state.counterPromptReason,
+            onDismiss = viewModel::dismissManualCounterDialog,
+            onConfirm = viewModel::submitManualCounter
+        )
     }
 
     if (showSmartCamera) {
         SmartCameraScreen(
             taskId = state.taskId,
             photoIndex = smartCameraPhotoIndex,
+            documentType = activePhotoTypeForCapture,
             onDismiss = { showSmartCamera = false },
             onPhotoAccepted = { photo ->
                 showSmartCamera = false
-                viewModel.addPreparedPhoto(photo)
+                viewModel.addPreparedPhoto(context, photo)
             },
             onCameraFallbackRequested = {
                 showSmartCamera = false
@@ -257,7 +356,10 @@ fun TaskDetailScreen(
 
                     Spacer(modifier = Modifier.width(8.dp))
                     IconButton(
-                        onClick = viewModel::loadDetail,
+                        onClick = {
+                            viewModel.loadDetail()
+                            viewModel.refreshGeolocation()
+                        },
                         colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White)
                     ) {
                         Icon(Icons.Rounded.Refresh, contentDescription = "Обновить")
@@ -349,6 +451,14 @@ fun TaskDetailScreen(
                         }
 
                         item {
+                            GeolocationCard(
+                                snapshot = state.geoSnapshot,
+                                isLoading = state.isLoadingGeo,
+                                onRefreshGeo = { viewModel.refreshGeolocation() }
+                            )
+                        }
+
+                        item {
                             QuickRepairedStatusCard(
                                 detail = detail,
                                 markAsRepaired = state.markAsRepaired,
@@ -366,19 +476,34 @@ fun TaskDetailScreen(
                             AttachmentsCard(
                                 detail = detail,
                                 pendingPhotos = state.pendingPhotos,
+                                nowEpochMs = nowEpochMs,
+                                counterValue = state.counterValue,
+                                counterAutoDetected = state.counterAutoDetected,
+                                isRecognizingCounter = state.isRecognizingCounter,
                                 isProcessingPhoto = state.isProcessingPhoto,
                                 isSaving = state.isSaving,
-                                onTakePhoto = ::onCapturePhotoClick,
+                                onTakePhoto = {
+                                    photoTypePickerMode = PhotoTypePickerMode.ForCamera
+                                },
                                 onPickFromGallery = {
-                                    pickGalleryLauncher.launch(
-                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    photoTypePickerMode = PhotoTypePickerMode.ForGallery
+                                },
+                                onAddForCategory = { docType ->
+                                    activePhotoTypeForCapture = docType
+                                    startCameraWithType(docType)
+                                },
+                                onChangePhotoType = { pending ->
+                                    photoTypePickerMode = PhotoTypePickerMode.Reclassify(
+                                        photoId = pending.id,
+                                        currentType = pending.documentType
                                     )
                                 },
+                                onEditCounter = viewModel::openManualCounterDialog,
                                 onRemovePending = viewModel::removePendingPhoto,
                                 onPreviewPending = { pending ->
                                     viewModel.openPhotoViewer(
                                         ViewerPhoto(
-                                            title = "${pending.nameWithoutExt}.jpg",
+                                            title = "${pending.documentType.shortTitle} - ${pending.nameWithoutExt}.jpg",
                                             model = pending.file
                                         )
                                     )
@@ -417,6 +542,414 @@ fun TaskDetailScreen(
                         item {
                             Spacer(modifier = Modifier.height(12.dp))
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GeolocationCard(
+    snapshot: GeoAddressSnapshot?,
+    isLoading: Boolean,
+    onRefreshGeo: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = IntraColors.SurfaceWhite,
+        border = BorderStroke(
+            1.dp,
+            if (snapshot?.jammerSuspected == true) IntraColors.WarningAmber.copy(alpha = 0.55f) else IntraColors.SubtleBorder
+        ),
+        shadowElevation = 2.dp
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.LocationOn,
+                        contentDescription = null,
+                        tint = if (snapshot?.jammerSuspected == true) IntraColors.WarningAmber else IntraColors.BrandPrimary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Геолокация на объекте",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = IntraColors.TextPrimary
+                    )
+                }
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        color = IntraColors.BrandPrimary,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(18.dp)
+                    )
+                } else {
+                    TextButton(
+                        onClick = onRefreshGeo,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Refresh,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Уточнить", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+
+            if (snapshot == null) {
+                Text(
+                    text = if (isLoading) {
+                        "Определение точных координат и адреса (GPS + Wi-Fi/сотовая сеть)..."
+                    } else {
+                        "Нажмите «Уточнить», чтобы определить полный адрес и координаты"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = IntraColors.TextSecondary
+                )
+            } else {
+                Text(
+                    text = snapshot.fullAddress.ifBlank {
+                        "Координаты зафиксированы (полный адрес уточнится при подключении к сети)"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = IntraColors.TextPrimary
+                )
+
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = if (snapshot.jammerSuspected) IntraColors.WarningTint else IntraColors.EmeraldTint
+                    ) {
+                        Text(
+                            text = snapshot.sourceLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (snapshot.jammerSuspected) IntraColors.WarningAmber else IntraColors.EmeraldDeep,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = IntraColors.BackgroundIce
+                    ) {
+                        val accText = if (snapshot.accuracyMeters > 0f) {
+                            "~${snapshot.accuracyMeters.roundToInt()} м"
+                        } else {
+                            "точность н/д"
+                        }
+                        Text(
+                            text = "${snapshot.formatCoordinates()} ($accText)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = IntraColors.TextSecondary,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = IntraColors.BackgroundIce
+                    ) {
+                        Text(
+                            text = snapshot.capturedAtText,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = IntraColors.TextSecondary,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+
+                snapshot.warningNote?.takeIf { it.isNotBlank() }?.let { note ->
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = IntraColors.WarningTint,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.WarningAmber,
+                                contentDescription = null,
+                                tint = IntraColors.WarningAmber,
+                                modifier = Modifier
+                                    .padding(top = 1.dp)
+                                    .size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = note,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = IntraColors.TextPrimary
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PhotoTypePickerDialog(
+    title: String,
+    subtitle: String,
+    currentSelection: PhotoDocumentType,
+    onDismiss: () -> Unit,
+    onSelect: (PhotoDocumentType) -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            color = IntraColors.SurfaceWhite,
+            shadowElevation = 16.dp
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(IntraColors.BrandPrimary, IntraColors.BrandCyan)
+                            )
+                        )
+                        .padding(horizontal = 20.dp, vertical = 16.dp)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = title,
+                            color = Color.White,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = subtitle,
+                            color = Color.White.copy(alpha = 0.88f),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    PhotoDocumentType.entries.forEach { docType ->
+                        val isSelected = docType == currentSelection
+                        val accent = when (docType) {
+                            PhotoDocumentType.AVR -> IntraColors.BrandPrimary
+                            PhotoDocumentType.TEST_LIST -> IntraColors.EmeraldDeep
+                            PhotoDocumentType.CONFIG_LIST -> IntraColors.BrandCyan
+                        }
+                        val icon = when (docType) {
+                            PhotoDocumentType.AVR -> Icons.Rounded.Description
+                            PhotoDocumentType.TEST_LIST -> Icons.Rounded.Print
+                            PhotoDocumentType.CONFIG_LIST -> Icons.Rounded.Settings
+                        }
+
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp))
+                                .clickable { onSelect(docType) },
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (isSelected) accent.copy(alpha = 0.08f) else IntraColors.BackgroundIce,
+                            border = BorderStroke(
+                                width = if (isSelected) 1.5.dp else 1.dp,
+                                color = if (isSelected) accent else IntraColors.SubtleBorder
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = accent.copy(alpha = 0.14f),
+                                    modifier = Modifier.size(44.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = icon,
+                                            contentDescription = null,
+                                            tint = accent,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(
+                                            text = docType.shortTitle,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = IntraColors.TextPrimary
+                                        )
+                                        Surface(
+                                            shape = RoundedCornerShape(50),
+                                            color = if (docType.isRequired) {
+                                                IntraColors.WarningTint
+                                            } else {
+                                                IntraColors.SurfaceWhite
+                                            }
+                                        ) {
+                                            Text(
+                                                text = if (docType.isRequired) "Обязательно" else "Дополнительно",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = if (docType.isRequired) {
+                                                    IntraColors.WarningAmber
+                                                } else {
+                                                    IntraColors.TextSecondary
+                                                },
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                    Text(
+                                        text = docType.description,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = IntraColors.TextSecondary
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    TextButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Text("Отмена", color = IntraColors.TextSecondary)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CounterInputDialog(
+    initialValue: String,
+    reasonMessage: String?,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var inputText by remember(initialValue) { mutableStateOf(initialValue) }
+    val digitsOnly = TaskSaveValidator.normalizeCounterDigits(inputText)
+    val isValid = TaskSaveValidator.isValidCounter(digitsOnly)
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(22.dp),
+            color = IntraColors.SurfaceWhite,
+            shadowElevation = 14.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Rounded.FactCheck,
+                        contentDescription = null,
+                        tint = IntraColors.BrandPrimary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Счётчик копий (АВР)",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = IntraColors.TextPrimary
+                    )
+                }
+
+                Text(
+                    text = reasonMessage
+                        ?: "Укажите или скорректируйте количество копий, вписанное в Акт выполненных работ (обязательно для сохранения).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (reasonMessage != null) IntraColors.WarningAmber else IntraColors.TextSecondary
+                )
+
+                OutlinedTextField(
+                    value = inputText,
+                    onValueChange = { raw ->
+                        inputText = TaskSaveValidator.normalizeCounterDigits(raw)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Количество копий") },
+                    placeholder = { Text("Например: 145230") },
+                    shape = RoundedCornerShape(14.dp),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = { if (isValid) onConfirm(digitsOnly) }
+                    ),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = IntraColors.BrandPrimary,
+                        unfocusedBorderColor = IntraColors.SubtleBorder
+                    )
+                )
+
+                if (digitsOnly.isNotEmpty()) {
+                    Text(
+                        text = "Значение к отправке: ${AvrCounterParser.formatCounterDisplay(digitsOnly)}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = IntraColors.EmeraldDeep,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Отмена", color = IntraColors.TextSecondary)
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = { onConfirm(digitsOnly) },
+                        enabled = isValid,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = IntraColors.BrandPrimary,
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Text("Применить")
                     }
                 }
             }
@@ -721,10 +1254,17 @@ private fun QuickRepairedStatusCard(
 private fun AttachmentsCard(
     detail: TicketDetail,
     pendingPhotos: List<PendingPhoto>,
+    nowEpochMs: Long,
+    counterValue: String,
+    counterAutoDetected: Boolean,
+    isRecognizingCounter: Boolean,
     isProcessingPhoto: Boolean,
     isSaving: Boolean,
     onTakePhoto: () -> Unit,
     onPickFromGallery: () -> Unit,
+    onAddForCategory: (PhotoDocumentType) -> Unit,
+    onChangePhotoType: (PendingPhoto) -> Unit,
+    onEditCounter: () -> Unit,
     onRemovePending: (String) -> Unit,
     onPreviewPending: (PendingPhoto) -> Unit,
     onClickExistingAttachment: (TaskAttachment) -> Unit
@@ -754,7 +1294,7 @@ private fun AttachmentsCard(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Вложенные файлы",
+                        text = "Документы и фотоотчёт",
                         style = MaterialTheme.typography.titleMedium,
                         color = IntraColors.TextPrimary
                     )
@@ -830,105 +1370,63 @@ private fun AttachmentsCard(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Повышение четкости и сжатие фото...",
+                        text = "Повышение чёткости и сжатие фото...",
                         style = MaterialTheme.typography.bodySmall,
                         color = IntraColors.TextSecondary
                     )
                 }
             }
 
-            if (pendingPhotos.isNotEmpty()) {
-                Text(
-                    text = "Новые фото к отправке (${pendingPhotos.size})",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = IntraColors.EmeraldDeep,
-                    fontWeight = FontWeight.SemiBold
-                )
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(pendingPhotos, key = { it.id }) { pending ->
-                        Box(
-                            modifier = Modifier
-                                .size(112.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(IntraColors.BackgroundIce)
-                                .clickable { onPreviewPending(pending) }
-                        ) {
-                            AsyncImage(
-                                model = pending.file,
-                                contentDescription = pending.nameWithoutExt,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                            Surface(
-                                shape = RoundedCornerShape(bottomEnd = 8.dp),
-                                color = if (pending.isBlurryWarning) {
-                                    IntraColors.WarningAmber
-                                } else {
-                                    IntraColors.EmeraldSuccess
-                                },
-                                modifier = Modifier.align(Alignment.TopStart)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = if (pending.isBlurryWarning) {
-                                            Icons.Rounded.WarningAmber
-                                        } else {
-                                            Icons.Rounded.AutoFixHigh
-                                        },
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(11.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(3.dp))
-                                    Text(
-                                        text = DateAndTextFormatter.formatBytes(pending.sizeBytes),
-                                        color = Color.White,
-                                        style = MaterialTheme.typography.labelSmall
-                                    )
-                                }
-                            }
-                            if (!isSaving) {
-                                IconButton(
-                                    onClick = { onRemovePending(pending.id) },
-                                    modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .padding(4.dp)
-                                        .size(24.dp),
-                                    colors = IconButtonDefaults.iconButtonColors(
-                                        containerColor = Color.Black.copy(alpha = 0.6f),
-                                        contentColor = Color.White
-                                    )
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Close,
-                                        contentDescription = "Удалить",
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                }
-                            }
-                        }
+            // 3 Structured Photo Document Blocks
+            PhotoDocumentType.entries.forEach { docType ->
+                val catPending = pendingPhotos.filter { it.documentType == docType }
+                val catExisting = detail.attachments.filter {
+                    PhotoDocumentTypeLock.detectTypeFromFileName(it.name) == docType
+                }
+                PhotoCategoryBlock(
+                    docType = docType,
+                    pendingPhotos = catPending,
+                    existingAttachments = catExisting,
+                    nowEpochMs = nowEpochMs,
+                    canAttachFiles = detail.canAttachFiles,
+                    isSaving = isSaving,
+                    onQuickCapture = { onAddForCategory(docType) },
+                    onChangePhotoType = onChangePhotoType,
+                    onRemovePending = onRemovePending,
+                    onPreviewPending = onPreviewPending,
+                    onClickExistingAttachment = onClickExistingAttachment
+                ) {
+                    if (docType == PhotoDocumentType.AVR) {
+                        AvrCounterBanner(
+                            counterValue = counterValue,
+                            counterAutoDetected = counterAutoDetected,
+                            isRecognizing = isRecognizingCounter,
+                            isSaving = isSaving,
+                            onEditCounter = onEditCounter
+                        )
                     }
                 }
             }
 
-            if (detail.attachments.isNotEmpty()) {
+            // Unclassified existing server files (from web portal or previous versions)
+            val otherAttachments = detail.attachments.filter {
+                PhotoDocumentTypeLock.detectTypeFromFileName(it.name) == null
+            }
+            if (otherAttachments.isNotEmpty()) {
                 Text(
-                    text = "Уже прикреплено (${detail.attachments.size})",
+                    text = "Прочие вложения в заявке (${otherAttachments.size})",
                     style = MaterialTheme.typography.labelMedium,
                     color = IntraColors.TextSecondary
                 )
-                val images = detail.attachments.filter { it.isImage }
-                val files = detail.attachments.filter { !it.isImage }
+                val otherImages = otherAttachments.filter { it.isImage }
+                val otherFiles = otherAttachments.filter { !it.isImage }
 
-                if (images.isNotEmpty()) {
+                if (otherImages.isNotEmpty()) {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(images, key = { it.id }) { img ->
+                        items(otherImages, key = { it.id }) { img ->
                             Box(
                                 modifier = Modifier
-                                    .size(96.dp)
+                                    .size(90.dp)
                                     .clip(RoundedCornerShape(14.dp))
                                     .background(IntraColors.BackgroundIce)
                                     .clickable { onClickExistingAttachment(img) }
@@ -944,7 +1442,7 @@ private fun AttachmentsCard(
                     }
                 }
 
-                files.forEach { fileAtt ->
+                otherFiles.forEach { fileAtt ->
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -986,12 +1484,411 @@ private fun AttachmentsCard(
                         }
                     }
                 }
-            } else if (pendingPhotos.isEmpty()) {
+            }
+        }
+    }
+}
+
+@Composable
+private fun PhotoCategoryBlock(
+    docType: PhotoDocumentType,
+    pendingPhotos: List<PendingPhoto>,
+    existingAttachments: List<TaskAttachment>,
+    nowEpochMs: Long,
+    canAttachFiles: Boolean,
+    isSaving: Boolean,
+    onQuickCapture: () -> Unit,
+    onChangePhotoType: (PendingPhoto) -> Unit,
+    onRemovePending: (String) -> Unit,
+    onPreviewPending: (PendingPhoto) -> Unit,
+    onClickExistingAttachment: (TaskAttachment) -> Unit,
+    extraContent: @Composable () -> Unit = {}
+) {
+    val totalCount = pendingPhotos.size + existingAttachments.size
+    val hasAny = totalCount > 0
+    val borderColor = when {
+        hasAny -> IntraColors.EmeraldSuccess.copy(alpha = 0.45f)
+        docType.isRequired -> IntraColors.WarningAmber.copy(alpha = 0.50f)
+        else -> IntraColors.SubtleBorder
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = IntraColors.BackgroundIce,
+        border = BorderStroke(1.dp, borderColor)
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = docType.shortTitle,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = IntraColors.TextPrimary
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(50),
+                            color = when {
+                                hasAny -> IntraColors.EmeraldTint
+                                docType.isRequired -> IntraColors.WarningTint
+                                else -> IntraColors.SurfaceWhite
+                            }
+                        ) {
+                            Text(
+                                text = when {
+                                    hasAny -> "Приложено: $totalCount"
+                                    docType.isRequired -> "Обязательно"
+                                    else -> "Необязательно"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = when {
+                                    hasAny -> IntraColors.EmeraldDeep
+                                    docType.isRequired -> IntraColors.WarningAmber
+                                    else -> IntraColors.TextSecondary
+                                },
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                    if (docType.fullTitle != docType.shortTitle) {
+                        Text(
+                            text = docType.fullTitle,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = IntraColors.TextTertiary
+                        )
+                    }
+                }
+
+                if (canAttachFiles) {
+                    TextButton(
+                        onClick = onQuickCapture,
+                        enabled = !isSaving,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.CameraAlt,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Снять", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+
+            if (pendingPhotos.isNotEmpty() || existingAttachments.isNotEmpty()) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(pendingPhotos, key = { it.id }) { pending ->
+                        val canSwitchType = PhotoDocumentTypeLock.canChangeType(
+                            pending.createdAtEpochMs,
+                            nowEpochMs
+                        )
+                        val remainingLabel = PhotoDocumentTypeLock.formatRemainingMmSs(
+                            pending.createdAtEpochMs,
+                            nowEpochMs
+                        )
+                        Column(
+                            modifier = Modifier.width(126.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(126.dp, 108.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(IntraColors.SurfaceWhite)
+                                    .clickable { onPreviewPending(pending) }
+                            ) {
+                                AsyncImage(
+                                    model = pending.file,
+                                    contentDescription = pending.nameWithoutExt,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                Surface(
+                                    shape = RoundedCornerShape(bottomEnd = 8.dp),
+                                    color = if (pending.isBlurryWarning) {
+                                        IntraColors.WarningAmber
+                                    } else {
+                                        IntraColors.EmeraldSuccess
+                                    },
+                                    modifier = Modifier.align(Alignment.TopStart)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = if (pending.isBlurryWarning) {
+                                                Icons.Rounded.WarningAmber
+                                            } else {
+                                                Icons.Rounded.AutoFixHigh
+                                            },
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(11.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text(
+                                            text = DateAndTextFormatter.formatBytes(pending.sizeBytes),
+                                            color = Color.White,
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    }
+                                }
+                                if (!isSaving) {
+                                    IconButton(
+                                        onClick = { onRemovePending(pending.id) },
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(4.dp)
+                                            .size(24.dp),
+                                        colors = IconButtonDefaults.iconButtonColors(
+                                            containerColor = Color.Black.copy(alpha = 0.6f),
+                                            contentColor = Color.White
+                                        )
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Close,
+                                            contentDescription = "Удалить",
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable(enabled = canSwitchType && !isSaving) {
+                                        onChangePhotoType(pending)
+                                    },
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (canSwitchType) {
+                                    IntraColors.BrandPrimary.copy(alpha = 0.12f)
+                                } else {
+                                    IntraColors.EmeraldTint
+                                }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        imageVector = if (canSwitchType) Icons.Rounded.SwapHoriz else Icons.Rounded.Lock,
+                                        contentDescription = null,
+                                        tint = if (canSwitchType) IntraColors.BrandPrimary else IntraColors.EmeraldDeep,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (canSwitchType) {
+                                            "Сменить ($remainingLabel)"
+                                        } else {
+                                            "Зафиксировано"
+                                        },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (canSwitchType) IntraColors.BrandPrimary else IntraColors.EmeraldDeep,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    items(existingAttachments, key = { it.id }) { att ->
+                        Box(
+                            modifier = Modifier
+                                .size(100.dp, 108.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(IntraColors.SurfaceWhite)
+                                .clickable { onClickExistingAttachment(att) }
+                        ) {
+                            if (att.isImage) {
+                                AsyncImage(
+                                    model = att.url,
+                                    contentDescription = att.name,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(8.dp),
+                                    verticalArrangement = Arrangement.Center,
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Rounded.InsertDriveFile,
+                                        contentDescription = null,
+                                        tint = IntraColors.BrandPrimary
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = att.name,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(topStart = 8.dp),
+                                color = Color.Black.copy(alpha = 0.6f),
+                                modifier = Modifier.align(Alignment.BottomEnd)
+                            ) {
+                                Text(
+                                    text = "На сервере",
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
                 Text(
-                    text = "Файлы пока не прикреплены",
+                    text = if (docType.isRequired) {
+                        "Пока нет фото. Необходимо приложить для сохранения заявки."
+                    } else {
+                        "Пока нет фото (прикладывается при необходимости)."
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = IntraColors.TextTertiary
                 )
+            }
+
+            extraContent()
+        }
+    }
+}
+
+@Composable
+private fun AvrCounterBanner(
+    counterValue: String,
+    counterAutoDetected: Boolean,
+    isRecognizing: Boolean,
+    isSaving: Boolean,
+    onEditCounter: () -> Unit
+) {
+    val hasCounter = TaskSaveValidator.isValidCounter(counterValue)
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(enabled = !isSaving && !isRecognizing, onClick = onEditCounter),
+        shape = RoundedCornerShape(12.dp),
+        color = when {
+            isRecognizing -> IntraColors.SurfaceWhite
+            hasCounter -> IntraColors.EmeraldTint
+            else -> IntraColors.WarningTint
+        },
+        border = BorderStroke(
+            1.dp,
+            when {
+                isRecognizing -> IntraColors.BrandPrimary.copy(alpha = 0.35f)
+                hasCounter -> IntraColors.EmeraldSuccess.copy(alpha = 0.45f)
+                else -> IntraColors.WarningAmber.copy(alpha = 0.55f)
+            }
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                if (isRecognizing) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(
+                            color = IntraColors.BrandPrimary,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Распознаём счётчик копий на АВР...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = IntraColors.TextPrimary,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                } else if (hasCounter) {
+                    Text(
+                        text = "Счётчик копий: ${AvrCounterParser.formatCounterDisplay(counterValue)}",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = IntraColors.EmeraldDeep
+                    )
+                    Text(
+                        text = if (counterAutoDetected) {
+                            "Автоматически распознан на фото АВР"
+                        } else {
+                            "Указано инженером вручную"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = IntraColors.EmeraldDeep.copy(alpha = 0.85f)
+                    )
+                } else {
+                    Text(
+                        text = "Счётчик копий не указан",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = IntraColors.WarningAmber
+                    )
+                    Text(
+                        text = "Определится после фото АВР или нажмите для ввода",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = IntraColors.TextSecondary
+                    )
+                }
+            }
+
+            if (!isRecognizing) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = IntraColors.SurfaceWhite
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Edit,
+                            contentDescription = null,
+                            tint = if (hasCounter) IntraColors.EmeraldDeep else IntraColors.WarningAmber,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (hasCounter) "Изменить" else "Ввести",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (hasCounter) IntraColors.EmeraldDeep else IntraColors.WarningAmber,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
             }
         }
     }
@@ -1268,6 +2165,7 @@ private fun SaveStickyBottomBar(
     state: TaskDetailUiState,
     onSaveClick: () -> Unit
 ) {
+    val readiness = state.saveReadiness
     Surface(
         color = IntraColors.SurfaceWhite,
         shadowElevation = 10.dp,
@@ -1295,22 +2193,28 @@ private fun SaveStickyBottomBar(
                 }
             }
 
-            if (state.hasChangesToSave && !state.isSaving) {
-                val summaryParts = buildList {
-                    if (state.markAsRepaired) add("Статус: Починил")
-                    if (state.pendingPhotos.isNotEmpty()) add("Фото: ${state.pendingPhotos.size}")
-                    if (state.commentText.isNotBlank()) add("Комментарий")
+            if (!state.isSaving) {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    RequirementCheckPill(label = "АВР", satisfied = readiness.hasAvr)
+                    RequirementCheckPill(label = "Тест-лист", satisfied = readiness.hasTestList)
+                    RequirementCheckPill(
+                        label = if (readiness.hasValidCounter) {
+                            "Счётчик: ${AvrCounterParser.formatCounterDisplay(state.counterValue)}"
+                        } else {
+                            "Счётчик"
+                        },
+                        satisfied = readiness.hasValidCounter
+                    )
                 }
-                Text(
-                    text = "К отправке: ${summaryParts.joinToString(" + ")}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = IntraColors.EmeraldDeep
-                )
             }
 
             Button(
                 onClick = onSaveClick,
-                enabled = state.hasChangesToSave && !state.isSaving && !state.isProcessingPhoto,
+                enabled = state.canSave,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),
@@ -1321,7 +2225,9 @@ private fun SaveStickyBottomBar(
                     } else {
                         IntraColors.BrandPrimary
                     },
-                    contentColor = Color.White
+                    contentColor = Color.White,
+                    disabledContainerColor = IntraColors.SubtleBorder,
+                    disabledContentColor = IntraColors.TextTertiary
                 )
             ) {
                 if (state.isSaving) {
@@ -1345,6 +2251,36 @@ private fun SaveStickyBottomBar(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun RequirementCheckPill(
+    label: String,
+    satisfied: Boolean
+) {
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = if (satisfied) IntraColors.EmeraldTint else IntraColors.WarningTint
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (satisfied) Icons.Rounded.CheckCircle else Icons.Rounded.WarningAmber,
+                contentDescription = null,
+                tint = if (satisfied) IntraColors.EmeraldDeep else IntraColors.WarningAmber,
+                modifier = Modifier.size(13.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = if (satisfied) IntraColors.EmeraldDeep else IntraColors.WarningAmber
+            )
         }
     }
 }

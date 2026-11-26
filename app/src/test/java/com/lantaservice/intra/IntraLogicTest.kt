@@ -1,6 +1,16 @@
 package com.lantaservice.intra
 
+import com.lantaservice.intra.data.geo.GeoAddressSnapshot
+import com.lantaservice.intra.data.geo.GeoAntiSpoofSelector
+import com.lantaservice.intra.data.geo.GeoCandidate
+import com.lantaservice.intra.data.geo.GeoSource
+import com.lantaservice.intra.data.geo.ReverseGeocoderParser
+import com.lantaservice.intra.data.model.PendingPhoto
+import com.lantaservice.intra.data.model.PhotoDocumentType
+import com.lantaservice.intra.data.model.PhotoDocumentTypeLock
+import com.lantaservice.intra.data.model.TaskAttachment
 import com.lantaservice.intra.data.model.TaskListResponseDto
+import com.lantaservice.intra.data.model.TaskSaveValidator
 import com.lantaservice.intra.data.model.TaskStatusDto
 import com.lantaservice.intra.data.model.TaskStatusSimpleViewDto
 import com.lantaservice.intra.data.model.UpdateTaskRequestDto
@@ -19,6 +29,8 @@ import com.lantaservice.intra.data.update.AppUpdateManager
 import com.lantaservice.intra.ui.components.ReleaseNoteBlock
 import com.lantaservice.intra.ui.components.parseReleaseNotes
 import com.lantaservice.intra.ui.login.LoginViewModel
+import com.lantaservice.intra.util.AvrCounterParser
+import com.lantaservice.intra.util.CounterConfidence
 import com.lantaservice.intra.util.DateAndTextFormatter
 import com.lantaservice.intra.util.FrameQualityAnalyzer
 import com.lantaservice.intra.util.LightStatus
@@ -35,6 +47,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.IOException
 import java.net.SocketTimeoutException
 import java.time.LocalDateTime
@@ -589,5 +602,236 @@ class IntraLogicTest {
         val emptyObj = json.parseToJsonElement("""{"Date":"2026-11-25T17:02:00","Editor":"Иванов И.И."}""").jsonObject
         val emptyEv = IntraRepository.parseLifetimeEvent(emptyObj)
         assertEquals(listOf("Обновление заявки"), emptyEv.changes)
+    }
+
+    @Test
+    fun geoAntiSpoofSelectorHandlesClearSkySpoofJumpJammerAndDeadZone() {
+        val now = 1_760_000_000_000L
+        val moscowGps = GeoCandidate(55.7558, 37.6173, 12f, now, "gps")
+        val moscowNet = GeoCandidate(55.7562, 37.6180, 45f, now, "network")
+
+        // 1. Clean GPS selected under normal conditions
+        val clean = GeoAntiSpoofSelector.selectBestCandidate(listOf(moscowGps, moscowNet), null, nowMs = now)
+        assertNotNull(clean)
+        assertEquals(GeoSource.GPS, clean?.source)
+        assertFalse(clean?.jammerSuspected ?: true)
+
+        // 2. Spoofed GPS (teleported 50 km away) rejected in favor of Wi-Fi/Cellular network fix
+        val spoofedGps = GeoCandidate(56.2000, 38.1000, 8f, now, "gps")
+        val antiSpoof = GeoAntiSpoofSelector.selectBestCandidate(listOf(spoofedGps, moscowNet), moscowGps, nowMs = now)
+        assertNotNull(antiSpoof)
+        assertEquals(GeoSource.NETWORK_ANTI_JAMMER, antiSpoof?.source)
+        assertTrue(antiSpoof?.jammerSuspected == true)
+
+        // 3. GPS jammed (absent) -> falls back to Wi-Fi/Cell triangulation
+        val jammedGps = GeoAntiSpoofSelector.selectBestCandidate(listOf(moscowNet), moscowGps, nowMs = now)
+        assertNotNull(jammedGps)
+        assertEquals(GeoSource.NETWORK_WIFI_CELL, jammedGps?.source)
+
+        // 4. Total dead zone inside bunker -> pre-entry breadcrumb within 2h used
+        val deadZone = GeoAntiSpoofSelector.selectBestCandidate(
+            candidates = emptyList(),
+            lastVerified = moscowGps.copy(timestampMs = now - 5 * 60_000L),
+            exifCandidate = null,
+            nowMs = now
+        )
+        assertNotNull(deadZone)
+        assertEquals(GeoSource.PRE_ENTRY_CACHE, deadZone?.source)
+        assertTrue(deadZone?.jammerSuspected == true)
+    }
+
+    @Test
+    fun reverseGeocoderParserFormatsFullRussianAddressFromNominatimAndPhoton() {
+        val nominatimRaw = """
+            {
+              "address": {
+                "postcode": "125009",
+                "country": "Россия",
+                "state": "Москва",
+                "city": "Москва",
+                "road": "Тверская улица",
+                "house_number": "7"
+              }
+            }
+        """.trimIndent()
+        val nominatim = ReverseGeocoderParser.parseNominatimJson(nominatimRaw, json)
+        assertNotNull(nominatim)
+        assertEquals("125009", nominatim?.postalCode)
+        assertEquals("Москва", nominatim?.region)
+        assertEquals("125009, Москва, Тверская улица, д. 7", nominatim?.fullAddress)
+
+        val photonRaw = """
+            {
+              "features": [
+                {
+                  "properties": {
+                    "postcode": "630099",
+                    "country": "Россия",
+                    "state": "Новосибирская область",
+                    "city": "Новосибирск",
+                    "street": "Красный проспект",
+                    "housenumber": "25"
+                  }
+                }
+              ]
+            }
+        """.trimIndent()
+        val photon = ReverseGeocoderParser.parsePhotonJson(photonRaw, json)
+        assertNotNull(photon)
+        assertEquals(
+            "630099, Новосибирская область, Новосибирск, Красный проспект, д. 25",
+            photon?.fullAddress
+        )
+    }
+
+    @Test
+    fun photoDocumentTypeLockEnforces5MinuteWindowAndRenaming() {
+        val created = 1_000_000L
+        assertTrue(PhotoDocumentTypeLock.canChangeType(created, created + 10_000L))
+        assertTrue(PhotoDocumentTypeLock.canChangeType(created, created + 299_999L))
+        assertFalse(PhotoDocumentTypeLock.canChangeType(created, created + 300_000L))
+        assertEquals("4:30", PhotoDocumentTypeLock.formatRemainingMmSs(created, created + 30_000L))
+        assertEquals(
+            "TestList_task15_20261126_1",
+            PhotoDocumentTypeLock.renamePrefix("AVR_task15_20261126_1", PhotoDocumentType.TEST_LIST)
+        )
+        assertEquals(PhotoDocumentType.AVR, PhotoDocumentTypeLock.detectTypeFromFileName("AVR_task15_1.jpg"))
+        assertEquals(PhotoDocumentType.TEST_LIST, PhotoDocumentTypeLock.detectTypeFromFileName("TestList_task15_2.jpg"))
+        assertEquals(PhotoDocumentType.CONFIG_LIST, PhotoDocumentTypeLock.detectTypeFromFileName("ConfigList_task15_3.jpg"))
+    }
+
+    @Test
+    fun avrCounterParserExtractsValidCountersAndRejectsDatesPhonesAndActs() {
+        // Explicit Russian label
+        val resRu = AvrCounterParser.extractCounterFromLines(
+            listOf(
+                "АКТ ВЫПОЛНЕННЫХ РАБОТ № 4512 от 26.11.2026",
+                "ИНН 7701234567 Тел: +7 999 123-45-67",
+                "Счётчик копий: 145 230"
+            )
+        )
+        assertEquals("145230", resRu.value)
+        assertEquals(CounterConfidence.HIGH, resRu.confidence)
+
+        // Latin-OCR homoglyph reading of Cyrillic label
+        val resHomoglyph = AvrCounterParser.extractCounterFromLines(
+            listOf(
+                "C4ET4WK KONWW: 84210",
+                "26.11.2026 14:30"
+            )
+        )
+        assertEquals("84210", resHomoglyph.value)
+        assertEquals(CounterConfidence.HIGH, resHomoglyph.confidence)
+
+        // Tabular two-line layout ("Счетчик" header above value)
+        val resNextLine = AvrCounterParser.extractCounterFromLines(
+            listOf(
+                "Показания счетчика",
+                "52 400"
+            )
+        )
+        assertEquals("52400", resNextLine.value)
+        assertEquals(CounterConfidence.HIGH, resNextLine.confidence)
+
+        // Unreadable / blurry / no counter -> returns NONE so UI prompts manual entry
+        val resEmpty = AvrCounterParser.extractCounterFromLines(
+            listOf(
+                "Акт № 981 от 26.11.2026",
+                "Телефон: +7 (495) 111-22-33"
+            )
+        )
+        assertNull(resEmpty.value)
+        assertEquals(CounterConfidence.NONE, resEmpty.confidence)
+    }
+
+    @Test
+    fun taskSaveValidatorRequiresAvrTestListAndCounter() {
+        val avrPhoto = PendingPhoto(
+            id = "1",
+            file = File("AVR_1.jpg"),
+            nameWithoutExt = "AVR_1",
+            sizeBytes = 100L,
+            documentType = PhotoDocumentType.AVR
+        )
+        val testPhoto = PendingPhoto(
+            id = "2",
+            file = File("TestList_2.jpg"),
+            nameWithoutExt = "TestList_2",
+            sizeBytes = 100L,
+            documentType = PhotoDocumentType.TEST_LIST
+        )
+
+        // Missing Test-List and Counter
+        val step1 = TaskSaveValidator.evaluate(
+            pendingPhotos = listOf(avrPhoto),
+            existingAttachments = emptyList(),
+            counterValue = "",
+            hasChanges = true
+        )
+        assertFalse(step1.isReadyToSave)
+        assertEquals(listOf("Тест-лист", "Счётчик копий"), step1.missingItems())
+
+        // All 3 present -> ready to save
+        val ready = TaskSaveValidator.evaluate(
+            pendingPhotos = listOf(avrPhoto, testPhoto),
+            existingAttachments = emptyList(),
+            counterValue = "145230",
+            hasChanges = true
+        )
+        assertTrue(ready.isReadyToSave)
+        assertTrue(ready.missingItems().isEmpty())
+
+        // Existing server AVR + pending Test-List + counter -> also ready
+        val readyWithExistingAvr = TaskSaveValidator.evaluate(
+            pendingPhotos = listOf(testPhoto),
+            existingAttachments = listOf(
+                TaskAttachment("10", "AVR_task1_old.jpg", true, "https://example.com/10")
+            ),
+            counterValue = "9910",
+            hasChanges = true
+        )
+        assertTrue(readyWithExistingAvr.isReadyToSave)
+    }
+
+    @Test
+    fun submissionCommentIncludesCounterDocumentsAndFullGeoAddress() {
+        val geo = GeoAddressSnapshot(
+            latitude = 55.755800,
+            longitude = 37.617300,
+            accuracyMeters = 18f,
+            capturedAtEpochMs = 1_760_000_000_000L,
+            capturedAtText = "26.11.2026 12:10",
+            source = GeoSource.NETWORK_ANTI_JAMMER,
+            postalCode = "125009",
+            region = "Москва",
+            locality = "Москва",
+            street = "Тверская улица",
+            houseNumber = "7",
+            fullAddress = "125009, Москва, Тверская улица, д. 7",
+            addressResolved = true,
+            jammerSuspected = true,
+            warningNote = "Обнаружены помехи GPS - использованы Wi-Fi и сотовые вышки"
+        )
+        val comment = IntraRepository.buildSubmissionComment(
+            userComment = "Заменен термоблок",
+            counterValue = "145230",
+            photos = listOf(
+                PendingPhoto("1", File("a.jpg"), "AVR_1", 10L, documentType = PhotoDocumentType.AVR),
+                PendingPhoto("2", File("b.jpg"), "TestList_1", 10L, documentType = PhotoDocumentType.TEST_LIST)
+            ),
+            geoSnapshot = geo,
+            deferredRecordedAtText = "26.11.2026 12:10"
+        )
+        assertTrue(comment.contains("Заменен термоблок"))
+        assertTrue(comment.contains("Счётчик копий (АВР): 145 230"))
+        assertTrue(comment.contains("Документы: АВР (1), Тест-лист (1)"))
+        assertTrue(comment.contains("Геолокация: 125009, Москва, Тверская улица, д. 7"))
+        assertTrue(comment.contains("55.755800, 37.617300"))
+        assertTrue(comment.contains("[Отложенная отправка: попытка от 26.11.2026 12:10]"))
+
+        assertEquals(
+            "AVR_task159_26112026_1210_1",
+            IntraRepository.buildDeferredPhotoName(159, "26.11.2026 12:10", 0, PhotoDocumentType.AVR)
+        )
     }
 }

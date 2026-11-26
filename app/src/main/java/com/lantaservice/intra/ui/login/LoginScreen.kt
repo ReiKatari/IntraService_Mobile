@@ -28,7 +28,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Https
+import androidx.compose.material.icons.rounded.LocationOff
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
@@ -80,7 +82,11 @@ import com.lantaservice.intra.ui.components.IntraWaveBackground
 import com.lantaservice.intra.ui.theme.IntraColors
 
 @Composable
-fun LoginScreen(viewModel: LoginViewModel) {
+fun LoginScreen(
+    viewModel: LoginViewModel,
+    locationGranted: Boolean,
+    onRequestLocationAgain: () -> Unit
+) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
     val context = LocalContext.current
@@ -89,6 +95,10 @@ fun LoginScreen(viewModel: LoginViewModel) {
 
     LaunchedEffect(Unit) {
         viewModel.syncSavedCredentialsIfNeeded()
+    }
+
+    LaunchedEffect(locationGranted) {
+        viewModel.clearLocationBlockErrorIfNeeded(locationGranted)
     }
 
     DisposableEffect(lifecycleOwner) {
@@ -250,7 +260,7 @@ fun LoginScreen(viewModel: LoginViewModel) {
                         keyboardActions = KeyboardActions(
                             onDone = {
                                 focusManager.clearFocus()
-                                viewModel.submit()
+                                viewModel.submit(locationGranted)
                             }
                         )
                     )
@@ -274,6 +284,65 @@ fun LoginScreen(viewModel: LoginViewModel) {
                                 checkedTrackColor = IntraColors.BrandPrimary
                             )
                         )
+                    }
+
+                    AnimatedVisibility(
+                        visible = !locationGranted,
+                        enter = fadeIn() + expandVertically(),
+                        exit = fadeOut() + shrinkVertically()
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = IntraColors.WarningTint,
+                            border = BorderStroke(1.dp, IntraColors.WarningAmber.copy(alpha = 0.55f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.LocationOff,
+                                        contentDescription = null,
+                                        tint = IntraColors.WarningAmber,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Требуется доступ к геолокации",
+                                        color = IntraColors.TextPrimary,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Text(
+                                    text = "Авторизация заблокирована до подтверждения геолокации. Предоставьте доступ к местоположению, чтобы войти в приложение.",
+                                    color = IntraColors.TextSecondary,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                OutlinedButton(
+                                    onClick = onRequestLocationAgain,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = BorderStroke(1.dp, IntraColors.WarningAmber)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.MyLocation,
+                                        contentDescription = null,
+                                        tint = IntraColors.WarningAmber,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Разрешить геолокацию",
+                                        color = IntraColors.WarningAmber,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     AnimatedVisibility(
@@ -333,9 +402,9 @@ fun LoginScreen(viewModel: LoginViewModel) {
                     Button(
                         onClick = {
                             focusManager.clearFocus()
-                            viewModel.submit()
+                            viewModel.submit(locationGranted)
                         },
-                        enabled = !state.isLoading,
+                        enabled = !state.isLoading && locationGranted,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(52.dp),

@@ -53,6 +53,9 @@ class MainActivity : ComponentActivity() {
                 ) {
                     val grantedNow = LocationPermissionHelper.hasLocationPermission(this)
                     locationGranted = grantedNow
+                    if (grantedNow) {
+                        app.geoLocationEngine.warmBreadcrumbAsync()
+                    }
                     if (!grantedNow && pendingManualRetry) {
                         val canShowRationale = LocationPermissionHelper.shouldShowRationale(this)
                         if (!shouldShowBeforeRetry && !canShowRationale) {
@@ -71,6 +74,8 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(Unit) {
                     if (!LocationPermissionHelper.hasLocationPermission(this@MainActivity)) {
                         locationLauncher.launch(LocationPermissionHelper.LOCATION_PERMISSIONS)
+                    } else {
+                        app.geoLocationEngine.warmBreadcrumbAsync()
                     }
                 }
 
@@ -87,7 +92,11 @@ class MainActivity : ComponentActivity() {
                 DisposableEffect(lifecycleOwner) {
                     val observer = LifecycleEventObserver { _, event ->
                         if (event == Lifecycle.Event.ON_RESUME) {
-                            locationGranted = LocationPermissionHelper.hasLocationPermission(this@MainActivity)
+                            val hasLoc = LocationPermissionHelper.hasLocationPermission(this@MainActivity)
+                            locationGranted = hasLoc
+                            if (hasLoc) {
+                                app.geoLocationEngine.warmBreadcrumbAsync()
+                            }
                             appUpdateManager.resumePendingInstallIfPermitted()
                             repository.triggerOutboxSyncAsync()
                         }

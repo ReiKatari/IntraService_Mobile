@@ -3,9 +3,13 @@ package com.lantaservice.intra.data.repository
 import android.content.Context
 import android.net.Uri
 import androidx.core.content.FileProvider
+import com.lantaservice.intra.data.geo.GeoAddressSnapshot
+import com.lantaservice.intra.data.geo.GeoLocationEngine
+import com.lantaservice.intra.data.geo.ReverseGeocoderService
 import com.lantaservice.intra.data.model.CurrentUserDto
 import com.lantaservice.intra.data.model.IntraErrorDto
 import com.lantaservice.intra.data.model.PendingPhoto
+import com.lantaservice.intra.data.model.PhotoDocumentType
 import com.lantaservice.intra.data.model.TaskAttachment
 import com.lantaservice.intra.data.model.TaskFormDto
 import com.lantaservice.intra.data.model.TaskPriorityDto
@@ -29,6 +33,7 @@ import com.lantaservice.intra.data.storage.PendingOutboxLogic
 import com.lantaservice.intra.data.storage.PendingOutboxStorage
 import com.lantaservice.intra.data.storage.SavedCredentials
 import com.lantaservice.intra.data.storage.SecureSessionStorage
+import com.lantaservice.intra.util.AvrCounterParser
 import com.lantaservice.intra.util.DateAndTextFormatter
 import com.lantaservice.intra.util.ImageCompressor
 import kotlinx.coroutines.CoroutineScope
@@ -108,7 +113,9 @@ class IntraRepository(
     private val credentialsProvider: SessionCredentialsProvider,
     private val connectionManager: IntraConnectionManager,
     private val sessionStorage: SecureSessionStorage,
-    private val outboxStorage: PendingOutboxStorage
+    private val outboxStorage: PendingOutboxStorage,
+    private val geoLocationEngine: GeoLocationEngine? = null,
+    private val reverseGeocoderService: ReverseGeocoderService? = null
 ) {
 
     // Always require explicit login screen when app process starts cleanly
@@ -854,6 +861,10 @@ class IntraRepository(
         }
     }
 
+    suspend fun captureCurrentGeo(exifHint: Pair<Double, Double>? = null): GeoAddressSnapshot? {
+        return runCatching { geoLocationEngine?.captureCurrentLocation(exifHint = exifHint) }.getOrNull()
+    }
+
     suspend fun saveTicketChanges(
         taskId: Int,
         taskName: String = "",
@@ -861,6 +872,8 @@ class IntraRepository(
         newStatusName: String? = null,
         pendingPhotos: List<PendingPhoto>,
         comment: String,
+        counterValue: String = "",
+        geoSnapshot: GeoAddressSnapshot? = null,
         allowOfflineQueue: Boolean = true,
         forcedRecordedAtText: String? = null,
         onStageChange: (String) -> Unit
@@ -874,22 +887,41 @@ class IntraRepository(
         val nowEpochMs = System.currentTimeMillis()
         val recordedAtText = DateAndTextFormatter.formatLocalDateTime(LocalDateTime.now())
         val trimmedComment = comment.trim()
-        if (newStatusId == null && pendingPhotos.isEmpty() && trimmedComment.isEmpty()) {
+        val cleanCounter = counterValue.trim()
+        if (newStatusId == null && pendingPhotos.isEmpty() && trimmedComment.isEmpty() && cleanCounter.isEmpty()) {
             return@withContext Result.failure(IllegalArgumentException("Нет изменений для сохранения"))
+        }
+
+        val effectiveGeo = geoSnapshot ?: run {
+            if (geoLocationEngine != null) {
+                onStageChange("Определение геолокации...")
+                runCatching { geoLocationEngine.captureCurrentLocation(timeoutMs = 3500L) }.getOrNull()
+            } else {
+                null
+            }
         }
 
         val effectivePhotos = if (!forcedRecordedAtText.isNullOrBlank()) {
             pendingPhotos.mapIndexed { idx, p ->
-                p.copy(nameWithoutExt = buildDeferredPhotoName(taskId, forcedRecordedAtText, idx))
+                p.copy(
+                    nameWithoutExt = buildDeferredPhotoName(
+                        taskId = taskId,
+                        recordedAtText = forcedRecordedAtText,
+                        index = idx,
+                        documentType = p.documentType
+                    )
+                )
             }
         } else {
             pendingPhotos
         }
-        val effectiveComment = if (!forcedRecordedAtText.isNullOrBlank()) {
-            buildDeferredComment(trimmedComment, forcedRecordedAtText)
-        } else {
-            trimmedComment
-        }
+        val effectiveComment = buildSubmissionComment(
+            userComment = trimmedComment,
+            counterValue = cleanCounter,
+            photos = effectivePhotos,
+            geoSnapshot = effectiveGeo,
+            deferredRecordedAtText = forcedRecordedAtText
+        )
 
         try {
             uploadPhotosAndPutTask(
@@ -928,6 +960,8 @@ class IntraRepository(
                     newStatusId = newStatusId,
                     newStatusName = newStatusName ?: newStatusId?.let { statusesById[it]?.name },
                     comment = trimmedComment,
+                    counterValue = cleanCounter,
+                    geoSnapshot = effectiveGeo,
                     photos = stagedPhotos,
                     recordedAtEpochMs = nowEpochMs,
                     recordedAtText = recordedAtText,
@@ -971,14 +1005,54 @@ class IntraRepository(
                         else PendingPhoto(
                             id = p.id,
                             file = f,
-                            nameWithoutExt = buildDeferredPhotoName(entry.taskId, entry.recordedAtText, idx),
+                            nameWithoutExt = buildDeferredPhotoName(
+                                taskId = entry.taskId,
+                                recordedAtText = entry.recordedAtText,
+                                index = idx,
+                                documentType = p.documentType
+                            ),
                             sizeBytes = f.length(),
                             isEnhanced = p.isEnhanced,
                             isBlurryWarning = p.isBlurryWarning,
-                            sharpnessScore = p.sharpnessScore
+                            sharpnessScore = p.sharpnessScore,
+                            documentType = p.documentType,
+                            createdAtEpochMs = p.createdAtEpochMs
                         )
                     }
-                    val deferredComment = buildDeferredComment(entry.comment, entry.recordedAtText)
+
+                    // If geo address failed to resolve while offline, resolve it now that network is back
+                    val resolvedGeo = entry.geoSnapshot?.let { snap ->
+                        if (snap.addressResolved) {
+                            snap
+                        } else {
+                            val parsed = runCatching {
+                                reverseGeocoderService?.resolveAddress(snap.latitude, snap.longitude)
+                            }.getOrNull()
+                            if (parsed != null && parsed.fullAddress.isNotBlank()) {
+                                snap.copy(
+                                    postalCode = parsed.postalCode,
+                                    country = parsed.country,
+                                    region = parsed.region,
+                                    district = parsed.district,
+                                    locality = parsed.locality,
+                                    street = parsed.street,
+                                    houseNumber = parsed.houseNumber,
+                                    fullAddress = parsed.fullAddress,
+                                    addressResolved = true
+                                )
+                            } else {
+                                snap
+                            }
+                        }
+                    }
+
+                    val deferredComment = buildSubmissionComment(
+                        userComment = entry.comment,
+                        counterValue = entry.counterValue,
+                        photos = livePhotos,
+                        geoSnapshot = resolvedGeo,
+                        deferredRecordedAtText = entry.recordedAtText
+                    )
 
                     try {
                         uploadPhotosAndPutTask(
@@ -1320,14 +1394,64 @@ class IntraRepository(
             return if (clean.isEmpty()) marker else "$clean\n\n$marker"
         }
 
-        fun buildDeferredPhotoName(taskId: Int, recordedAtText: String, index: Int): String {
+        fun buildSubmissionComment(
+            userComment: String,
+            counterValue: String = "",
+            photos: List<PendingPhoto> = emptyList(),
+            geoSnapshot: GeoAddressSnapshot? = null,
+            deferredRecordedAtText: String? = null
+        ): String {
+            val sections = mutableListOf<String>()
+            val cleanUser = userComment.trim()
+            if (cleanUser.isNotEmpty()) {
+                sections += cleanUser
+            }
+
+            val cleanCounter = counterValue.trim()
+            if (cleanCounter.isNotEmpty() && !cleanUser.contains("Счётчик копий (АВР):")) {
+                sections += "Счётчик копий (АВР): ${AvrCounterParser.formatCounterDisplay(cleanCounter)}"
+            }
+
+            if (photos.isNotEmpty() && !cleanUser.contains("Документы:")) {
+                val avrCount = photos.count { it.documentType == PhotoDocumentType.AVR }
+                val testCount = photos.count { it.documentType == PhotoDocumentType.TEST_LIST }
+                val cfgCount = photos.count { it.documentType == PhotoDocumentType.CONFIG_LIST }
+                val parts = buildList {
+                    if (avrCount > 0) add("АВР ($avrCount)")
+                    if (testCount > 0) add("Тест-лист ($testCount)")
+                    if (cfgCount > 0) add("Лист конфигурации ($cfgCount)")
+                }
+                if (parts.isNotEmpty()) {
+                    sections += "Документы: ${parts.joinToString(", ")}"
+                }
+            }
+
+            if (geoSnapshot != null && !cleanUser.contains("Геолокация:")) {
+                sections += geoSnapshot.formatSummaryForComment()
+            }
+
+            val baseText = sections.joinToString("\n\n")
+            return if (!deferredRecordedAtText.isNullOrBlank()) {
+                buildDeferredComment(baseText, deferredRecordedAtText)
+            } else {
+                baseText
+            }
+        }
+
+        fun buildDeferredPhotoName(
+            taskId: Int,
+            recordedAtText: String,
+            index: Int,
+            documentType: PhotoDocumentType? = null
+        ): String {
             val compactStamp = recordedAtText
                 .replace(".", "")
                 .replace(":", "")
                 .replace(" ", "_")
                 .replace(Regex("[^A-Za-z0-9_-]"), "")
                 .ifBlank { "queued" }
-            return "task${taskId}_${compactStamp}_${index + 1}"
+            val prefix = if (documentType != null) "${documentType.filePrefix}_" else ""
+            return "${prefix}task${taskId}_${compactStamp}_${index + 1}"
         }
 
         fun extractEmailLocalPart(input: String): String? {

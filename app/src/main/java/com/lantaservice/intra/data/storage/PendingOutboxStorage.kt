@@ -2,7 +2,9 @@ package com.lantaservice.intra.data.storage
 
 import android.content.Context
 import androidx.compose.runtime.Immutable
+import com.lantaservice.intra.data.geo.GeoAddressSnapshot
 import com.lantaservice.intra.data.model.PendingPhoto
+import com.lantaservice.intra.data.model.PhotoDocumentType
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
@@ -17,7 +19,9 @@ data class PendingOutboxPhoto(
     val sizeBytes: Long,
     val isEnhanced: Boolean = true,
     val isBlurryWarning: Boolean = false,
-    val sharpnessScore: Double = 0.0
+    val sharpnessScore: Double = 0.0,
+    val documentType: PhotoDocumentType = PhotoDocumentType.AVR,
+    val createdAtEpochMs: Long = 0L
 )
 
 @Immutable
@@ -29,6 +33,8 @@ data class PendingOutboxEntry(
     val newStatusId: Int? = null,
     val newStatusName: String? = null,
     val comment: String = "",
+    val counterValue: String = "",
+    val geoSnapshot: GeoAddressSnapshot? = null,
     val photos: List<PendingOutboxPhoto> = emptyList(),
     val recordedAtEpochMs: Long,
     val recordedAtText: String,
@@ -132,7 +138,9 @@ class PendingOutboxStorage(
                 sizeBytes = targetFile.length(),
                 isEnhanced = photo.isEnhanced,
                 isBlurryWarning = photo.isBlurryWarning,
-                sharpnessScore = photo.sharpnessScore
+                sharpnessScore = photo.sharpnessScore,
+                documentType = photo.documentType,
+                createdAtEpochMs = photo.createdAtEpochMs
             )
         }
 

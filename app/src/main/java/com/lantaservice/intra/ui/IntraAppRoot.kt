@@ -150,7 +150,11 @@ fun IntraAppRoot(
                     val loginVm: LoginViewModel = viewModel(
                         factory = LoginViewModel.Factory(repository)
                     )
-                    LoginScreen(viewModel = loginVm)
+                    LoginScreen(
+                        viewModel = loginVm,
+                        locationGranted = locationGranted,
+                        onRequestLocationAgain = onRequestLocationAgain
+                    )
                 }
 
                 RootGate.LOCATION_REQUIRED -> {
