@@ -34,7 +34,11 @@ import com.lantaservice.intra.ui.login.LoginViewModel
 import com.lantaservice.intra.util.AvrCounterParser
 import com.lantaservice.intra.util.CounterConfidence
 import com.lantaservice.intra.util.DateAndTextFormatter
+import com.lantaservice.intra.util.DocumentGeometry
+import com.lantaservice.intra.util.DocumentQuad
+import com.lantaservice.intra.util.DocumentQualityIssue
 import com.lantaservice.intra.util.FrameQualityAnalyzer
+import com.lantaservice.intra.util.Point2D
 import com.lantaservice.intra.util.LightStatus
 import com.lantaservice.intra.util.LocationAccessStatus
 import com.lantaservice.intra.util.LocationPermissionHelper
@@ -969,5 +973,81 @@ class IntraLogicTest {
         assertEquals("Снять АВР", PhotoDocumentType.AVR.captureButtonLabel)
         assertEquals("Снять ТЛ", PhotoDocumentType.TEST_LIST.captureButtonLabel)
         assertEquals("Снять ЛК", PhotoDocumentType.CONFIG_LIST.captureButtonLabel)
+    }
+
+    @Test
+    fun documentGeometryDetectsTiltedA4SheetAndValidatesTiltDistanceAndReadability() {
+        // 1. Synthetic white paper sheet on darker warm wooden desk (120 x 160 test frame)
+        val w = 120
+        val h = 160
+        val pixels = IntArray(w * h)
+        val wood = (0xFF shl 24) or (145 shl 16) or (120 shl 8) or 92
+        val paper = (0xFF shl 24) or (236 shl 16) or (236 shl 8) or 238
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                // Slightly tilted trapezoid: top width ~66px (x 28..94), bottom width ~78px (x 21..99), y 20..140
+                val t = ((y - 20).toFloat() / 120f).coerceIn(0f, 1f)
+                val xMin = 28f - t * 7f
+                val xMax = 94f + t * 5f
+                val inSheet = y in 20..140 && x.toFloat() in xMin..xMax
+                pixels[y * w + x] = if (inSheet) paper else wood
+            }
+        }
+        val detected = DocumentGeometry.detectPaperQuadFromArgb(pixels, w, h)
+        assertNotNull(detected)
+        val fullScaled = detected!!.scaled(10f, 10f)
+        val report = DocumentGeometry.evaluateQuadGeometry(fullScaled, w * 10, h * 10)
+        assertEquals(DocumentQualityIssue.NONE, report.issue)
+        assertTrue(report.canSafelyFlatten)
+
+        // 2. Too far away sheet (< 22% of frame) -> triggers TOO_FAR retake warning
+        val farQuad = DocumentQuad(
+            Point2D(350f, 400f),
+            Point2D(620f, 400f),
+            Point2D(620f, 780f),
+            Point2D(350f, 780f)
+        )
+        val farReport = DocumentGeometry.evaluateQuadGeometry(farQuad, 1200, 1600)
+        assertEquals(DocumentQualityIssue.TOO_FAR, farReport.issue)
+        assertNotNull(farReport.warningMessage)
+
+        // 3. Extreme perspective tilt (top 220px vs bottom 720px -> taper > 3x) -> triggers EXTREME_TILT warning
+        val skewedQuad = DocumentQuad(
+            Point2D(490f, 150f),
+            Point2D(710f, 150f),
+            Point2D(960f, 1450f),
+            Point2D(240f, 1450f)
+        )
+        val tiltReport = DocumentGeometry.evaluateQuadGeometry(skewedQuad, 1200, 1600)
+        assertEquals(DocumentQualityIssue.EXTREME_TILT, tiltReport.issue)
+        assertFalse(tiltReport.canSafelyFlatten)
+
+        // 4. Auto-rotation classification from ML Kit line angles
+        assertEquals(0, DocumentGeometry.resolveRotationFromLineAngles(listOf(-4f, 2f, 5f)))
+        assertEquals(270, DocumentGeometry.resolveRotationFromLineAngles(listOf(88f, 91f)))
+        assertEquals(90, DocumentGeometry.resolveRotationFromLineAngles(listOf(-92f, -89f)))
+        assertEquals(180, DocumentGeometry.resolveRotationFromLineAngles(listOf(178f, -179f)))
+
+        // 5. Readability audit: inked sheet where OCR failed (< 14 readable chars) triggers retake warning
+        val (unreadable, warnMsg) = DocumentGeometry.evaluateReadability(
+            sharpnessScore = 80.0,
+            darkInkRatio = 0.04f,
+            ocrAlnumCount = 3,
+            medianLineHeightPx = 7f,
+            geometryReport = report
+        )
+        assertTrue(unreadable)
+        assertNotNull(warnMsg)
+
+        // 6. Crisp readable flattened document passes cleanly
+        val (readableFail, okMsg) = DocumentGeometry.evaluateReadability(
+            sharpnessScore = 110.0,
+            darkInkRatio = 0.04f,
+            ocrAlnumCount = 120,
+            medianLineHeightPx = 22f,
+            geometryReport = report
+        )
+        assertFalse(readableFail)
+        assertNull(okMsg)
     }
 }

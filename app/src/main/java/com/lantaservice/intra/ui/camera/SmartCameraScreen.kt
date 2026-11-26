@@ -608,13 +608,14 @@ fun SmartCameraScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            val needsRetake = activePhoto.isBlurryWarning || !activePhoto.qualityWarning.isNullOrBlank()
                             Surface(
                                 shape = RoundedCornerShape(18.dp),
                                 modifier = Modifier.weight(1f, fill = false),
-                                color = if (activePhoto.isBlurryWarning) {
-                                    IntraColors.WarningAmber.copy(alpha = 0.9f)
+                                color = if (needsRetake) {
+                                    IntraColors.ErrorRed.copy(alpha = 0.92f)
                                 } else {
-                                    IntraColors.EmeraldSuccess.copy(alpha = 0.9f)
+                                    IntraColors.EmeraldSuccess.copy(alpha = 0.92f)
                                 }
                             ) {
                                 Row(
@@ -622,7 +623,7 @@ fun SmartCameraScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(
-                                        imageVector = if (activePhoto.isBlurryWarning) {
+                                        imageVector = if (needsRetake) {
                                             Icons.Rounded.WarningAmber
                                         } else {
                                             Icons.Rounded.CheckCircle
@@ -632,12 +633,19 @@ fun SmartCameraScreen(
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
+                                    val sizeLabel = DateAndTextFormatter.formatBytes(activePhoto.sizeBytes)
+                                    val badgeText = when {
+                                        needsRetake -> "Необходимо переснять ($sizeLabel)"
+                                        activePhoto.wasDeskewed && activePhoto.autoRotatedDegrees != 0 ->
+                                            "Выровнен и повёрнут (${activePhoto.autoRotatedDegrees}°), $sizeLabel"
+                                        activePhoto.wasDeskewed ->
+                                            "Лист выровнен, текст чёткий ($sizeLabel)"
+                                        activePhoto.autoRotatedDegrees != 0 ->
+                                            "Повёрнут (${activePhoto.autoRotatedDegrees}°), $sizeLabel"
+                                        else -> "Текст чёткий ($sizeLabel)"
+                                    }
                                     Text(
-                                        text = if (activePhoto.isBlurryWarning) {
-                                            "Возможна нечёткость - лучше переснять"
-                                        } else {
-                                            "Текст чёткий (${DateAndTextFormatter.formatBytes(activePhoto.sizeBytes)})"
-                                        },
+                                        text = badgeText,
                                         color = Color.White,
                                         style = MaterialTheme.typography.labelMedium
                                     )
@@ -656,21 +664,55 @@ fun SmartCameraScreen(
                             }
                         }
 
+                        val reviewNeedsRetake = activePhoto.isBlurryWarning || !activePhoto.qualityWarning.isNullOrBlank()
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .align(Alignment.BottomCenter)
-                                .background(Color.Black.copy(alpha = 0.8f))
+                                .background(Color.Black.copy(alpha = 0.84f))
                                 .navigationBarsPadding()
                                 .padding(horizontal = 16.dp, vertical = 14.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
+                            if (reviewNeedsRetake) {
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = IntraColors.ErrorRed.copy(alpha = 0.22f),
+                                    border = BorderStroke(1.dp, IntraColors.ErrorRed.copy(alpha = 0.75f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.WarningAmber,
+                                            contentDescription = null,
+                                            tint = Color(0xFFFFB4AB),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = activePhoto.qualityWarning
+                                                ?: "Текст на фото нечитаем или смазан - необходимо перефоткать.",
+                                            color = Color.White,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                }
+                            }
+
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 ReviewModeChip(
-                                    label = "Улучшено (резкий текст)",
+                                    label = if (pair.enhancedPhoto.wasDeskewed) {
+                                        "Выровнено и чётко"
+                                    } else {
+                                        "Улучшено (резкий текст)"
+                                    },
                                     selected = useEnhancedInReview,
                                     onClick = { useEnhancedInReview = true },
                                     modifier = Modifier.weight(1f)
@@ -687,56 +729,103 @@ fun SmartCameraScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                OutlinedButton(
-                                    onClick = {
-                                        scope.launch(Dispatchers.IO) {
-                                            runCatching { pair.enhancedPhoto.file.delete() }
-                                            runCatching { pair.originalPhoto.file.delete() }
-                                            withContext(Dispatchers.Main) {
-                                                reviewPair = null
+                                if (reviewNeedsRetake) {
+                                    Button(
+                                        onClick = {
+                                            scope.launch(Dispatchers.IO) {
+                                                runCatching { pair.enhancedPhoto.file.delete() }
+                                                runCatching { pair.originalPhoto.file.delete() }
+                                                withContext(Dispatchers.Main) {
+                                                    reviewPair = null
+                                                }
                                             }
-                                        }
-                                    },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(50.dp),
-                                    shape = RoundedCornerShape(14.dp),
-                                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.5f))
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Refresh,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Переснять", color = Color.White)
-                                }
+                                        },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(50.dp),
+                                        shape = RoundedCornerShape(14.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = IntraColors.WarningAmber,
+                                            contentColor = Color.White
+                                        )
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Refresh,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Переснять", fontWeight = FontWeight.Bold)
+                                    }
 
-                                Button(
-                                    onClick = {
-                                        val chosen = if (useEnhancedInReview) pair.enhancedPhoto else pair.originalPhoto
-                                        val unused = if (useEnhancedInReview) pair.originalPhoto else pair.enhancedPhoto
-                                        runCatching { unused.file.delete() }
-                                        reviewPair = null
-                                        onPhotoAccepted(chosen)
-                                    },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(50.dp),
-                                    shape = RoundedCornerShape(14.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = IntraColors.EmeraldSuccess,
-                                        contentColor = Color.White
-                                    )
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.CheckCircle,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Прикрепить", fontWeight = FontWeight.Bold)
+                                    OutlinedButton(
+                                        onClick = {
+                                            val chosen = if (useEnhancedInReview) pair.enhancedPhoto else pair.originalPhoto
+                                            val unused = if (useEnhancedInReview) pair.originalPhoto else pair.enhancedPhoto
+                                            runCatching { unused.file.delete() }
+                                            reviewPair = null
+                                            onPhotoAccepted(chosen)
+                                        },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(50.dp),
+                                        shape = RoundedCornerShape(14.dp),
+                                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.45f))
+                                    ) {
+                                        Text("Всё равно прикрепить", color = Color.White.copy(alpha = 0.88f), maxLines = 1)
+                                    }
+                                } else {
+                                    OutlinedButton(
+                                        onClick = {
+                                            scope.launch(Dispatchers.IO) {
+                                                runCatching { pair.enhancedPhoto.file.delete() }
+                                                runCatching { pair.originalPhoto.file.delete() }
+                                                withContext(Dispatchers.Main) {
+                                                    reviewPair = null
+                                                }
+                                            }
+                                        },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(50.dp),
+                                        shape = RoundedCornerShape(14.dp),
+                                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.5f))
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Refresh,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Переснять", color = Color.White)
+                                    }
+
+                                    Button(
+                                        onClick = {
+                                            val chosen = if (useEnhancedInReview) pair.enhancedPhoto else pair.originalPhoto
+                                            val unused = if (useEnhancedInReview) pair.originalPhoto else pair.enhancedPhoto
+                                            runCatching { unused.file.delete() }
+                                            reviewPair = null
+                                            onPhotoAccepted(chosen)
+                                        },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(50.dp),
+                                        shape = RoundedCornerShape(14.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = IntraColors.EmeraldSuccess,
+                                            contentColor = Color.White
+                                        )
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.CheckCircle,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Прикрепить", fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
                         }

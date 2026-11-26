@@ -56,8 +56,17 @@ object ImageCompressor {
         documentType: PhotoDocumentType = PhotoDocumentType.AVR
     ): PendingPhoto = withContext(Dispatchers.IO) {
         val preparedBitmap = decodeAndOrientUri(context, sourceUri)
-        val result = PhotoEnhancerEngine.enhance(preparedBitmap, enhanceMode)
-        if (result.bitmap !== preparedBitmap) {
+        val scanResult = if (enhanceMode == EnhanceMode.TEXT_CLARITY) {
+            DocumentScannerEngine.scanAndFlatten(context, preparedBitmap)
+        } else {
+            null
+        }
+        val enhanceInput = scanResult?.flattenedBitmap ?: preparedBitmap
+        val result = PhotoEnhancerEngine.enhance(enhanceInput, enhanceMode)
+        if (result.bitmap !== enhanceInput) {
+            enhanceInput.recycle()
+        }
+        if (enhanceInput !== preparedBitmap) {
             preparedBitmap.recycle()
         }
 
@@ -77,10 +86,13 @@ object ImageCompressor {
             nameWithoutExt = nameWithoutExt,
             sizeBytes = outFile.length(),
             isEnhanced = result.enhanced,
-            isBlurryWarning = result.isBlurryWarning,
-            sharpnessScore = result.sharpnessScore,
+            isBlurryWarning = result.isBlurryWarning || (scanResult?.needsRetakeWarning == true),
+            sharpnessScore = scanResult?.sharpnessScore ?: result.sharpnessScore,
             documentType = documentType,
-            createdAtEpochMs = System.currentTimeMillis()
+            createdAtEpochMs = System.currentTimeMillis(),
+            qualityWarning = scanResult?.warningMessage,
+            wasDeskewed = scanResult?.wasDeskewed == true,
+            autoRotatedDegrees = scanResult?.autoRotatedDegrees ?: 0
         )
     }
 
@@ -93,6 +105,9 @@ object ImageCompressor {
     ): CameraReviewPair = withContext(Dispatchers.IO) {
         val uri = Uri.fromFile(rawFile)
         val oriented = decodeAndOrientUri(context, uri)
+        val scanResult = DocumentScannerEngine.scanAndFlatten(context, oriented)
+        val flattenedInput = scanResult.flattenedBitmap
+
         val uploadsDir = File(context.cacheDir, "uploads").apply { mkdirs() }
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val origName = "orig_${documentType.filePrefix}_task${taskId}_${stamp}_$index"
@@ -113,19 +128,29 @@ object ImageCompressor {
                 res
             }
             val enhDeferred = async(Dispatchers.Default) {
-                val res = PhotoEnhancerEngine.enhance(oriented, EnhanceMode.TEXT_CLARITY)
+                val res = PhotoEnhancerEngine.enhance(flattenedInput, EnhanceMode.TEXT_CLARITY)
                 FileOutputStream(enhFile).use { out ->
                     res.bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
                 }
-                if (res.bitmap !== oriented) {
+                if (res.bitmap !== flattenedInput) {
                     res.bitmap.recycle()
                 }
                 res
             }
             origDeferred.await() to enhDeferred.await()
         }
+        if (flattenedInput !== oriented) {
+            flattenedInput.recycle()
+        }
         oriented.recycle()
         runCatching { rawFile.delete() }
+
+        val needsRetake = scanResult.needsRetakeWarning || enhancedResultPair.isBlurryWarning
+        val effectiveWarning = scanResult.warningMessage ?: if (enhancedResultPair.isBlurryWarning) {
+            "Текст недостаточно чёткий - необходимо переснять."
+        } else {
+            null
+        }
 
         CameraReviewPair(
             enhancedPhoto = PendingPhoto(
@@ -134,10 +159,13 @@ object ImageCompressor {
                 nameWithoutExt = enhName,
                 sizeBytes = enhFile.length(),
                 isEnhanced = true,
-                isBlurryWarning = enhancedResultPair.isBlurryWarning,
-                sharpnessScore = enhancedResultPair.sharpnessScore,
+                isBlurryWarning = needsRetake,
+                sharpnessScore = scanResult.sharpnessScore,
                 documentType = documentType,
-                createdAtEpochMs = createdEpochMs
+                createdAtEpochMs = createdEpochMs,
+                qualityWarning = effectiveWarning,
+                wasDeskewed = scanResult.wasDeskewed,
+                autoRotatedDegrees = scanResult.autoRotatedDegrees
             ),
             originalPhoto = PendingPhoto(
                 id = UUID.randomUUID().toString(),
@@ -145,10 +173,13 @@ object ImageCompressor {
                 nameWithoutExt = enhName,
                 sizeBytes = origFile.length(),
                 isEnhanced = false,
-                isBlurryWarning = naturalResultPair.isBlurryWarning,
+                isBlurryWarning = naturalResultPair.isBlurryWarning || scanResult.needsRetakeWarning,
                 sharpnessScore = naturalResultPair.sharpnessScore,
                 documentType = documentType,
-                createdAtEpochMs = createdEpochMs
+                createdAtEpochMs = createdEpochMs,
+                qualityWarning = effectiveWarning,
+                wasDeskewed = false,
+                autoRotatedDegrees = 0
             )
         )
     }

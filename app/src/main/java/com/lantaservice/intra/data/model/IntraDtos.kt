@@ -313,7 +313,10 @@ data class PendingPhoto(
     val isBlurryWarning: Boolean = false,
     val sharpnessScore: Double = 0.0,
     val documentType: PhotoDocumentType = PhotoDocumentType.AVR,
-    val createdAtEpochMs: Long = System.currentTimeMillis()
+    val createdAtEpochMs: Long = System.currentTimeMillis(),
+    val qualityWarning: String? = null,
+    val wasDeskewed: Boolean = false,
+    val autoRotatedDegrees: Int = 0
 )
 
 @Immutable
