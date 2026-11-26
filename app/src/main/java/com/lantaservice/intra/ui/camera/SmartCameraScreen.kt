@@ -27,6 +27,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -77,6 +78,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -278,7 +280,7 @@ fun SmartCameraScreen(
                             )
                         }
 
-                        // Alignment corner frame that changes color dynamically with frame readiness
+                        // Portrait A4 document guide frame + Top HUD + Bottom shutter in non-overlapping Column
                         val frameColor by animateColorAsState(
                             targetValue = when {
                                 quality.isOptimalToShoot -> IntraColors.EmeraldSuccess
@@ -288,262 +290,298 @@ fun SmartCameraScreen(
                             },
                             label = "guide_frame_color"
                         )
-                        Canvas(
-                            modifier = Modifier
-                                .align(Alignment.Center)
-                                .fillMaxWidth(0.84f)
-                                .height(280.dp)
-                        ) {
-                            val strokeW = 4.dp.toPx()
-                            val corner = 28.dp.toPx()
-                            val w = size.width
-                            val h = size.height
-
-                            // Top-left
-                            drawLine(frameColor, Offset(0f, 0f), Offset(corner, 0f), strokeW, StrokeCap.Round)
-                            drawLine(frameColor, Offset(0f, 0f), Offset(0f, corner), strokeW, StrokeCap.Round)
-                            // Top-right
-                            drawLine(frameColor, Offset(w, 0f), Offset(w - corner, 0f), strokeW, StrokeCap.Round)
-                            drawLine(frameColor, Offset(w, 0f), Offset(w, corner), strokeW, StrokeCap.Round)
-                            // Bottom-left
-                            drawLine(frameColor, Offset(0f, h), Offset(corner, h), strokeW, StrokeCap.Round)
-                            drawLine(frameColor, Offset(0f, h), Offset(0f, h - corner), strokeW, StrokeCap.Round)
-                            // Bottom-right
-                            drawLine(frameColor, Offset(w, h), Offset(w - corner, h), strokeW, StrokeCap.Round)
-                            drawLine(frameColor, Offset(w, h), Offset(w, h - corner), strokeW, StrokeCap.Round)
-                        }
-
-                        // Top HUD: Close, title & Torch on first row, 3 live condition pills wrapped cleanly below
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .align(Alignment.TopCenter)
-                                .intraHeaderInsetsPadding()
-                                .padding(horizontal = 14.dp, vertical = 10.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            // Top HUD: Close, title & Torch on first row, 3 live condition pills wrapped cleanly below
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .intraHeaderInsetsPadding()
+                                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                IconButton(
-                                    onClick = onDismiss,
-                                    colors = IconButtonDefaults.iconButtonColors(
-                                        containerColor = Color.Black.copy(alpha = 0.55f),
-                                        contentColor = Color.White
-                                    )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Rounded.Close, contentDescription = "Закрыть")
-                                }
-
-                                Surface(
-                                    shape = RoundedCornerShape(50),
-                                    color = Color.Black.copy(alpha = 0.55f),
-                                    modifier = Modifier.weight(1f, fill = false)
-                                ) {
-                                    Text(
-                                        text = "${documentType.shortTitle} - заявка #$taskId",
-                                        color = Color.White,
-                                        style = MaterialTheme.typography.labelLarge,
-                                        textAlign = TextAlign.Center,
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                                    )
-                                }
-
-                                if (hasFlash) {
                                     IconButton(
-                                        onClick = {
-                                            val next = !torchEnabled
-                                            torchEnabled = next
-                                            cameraRef?.cameraControl?.enableTorch(next)
-                                        },
+                                        onClick = onDismiss,
                                         colors = IconButtonDefaults.iconButtonColors(
-                                            containerColor = if (torchEnabled) {
-                                                IntraColors.WarningAmber
-                                            } else {
-                                                Color.Black.copy(alpha = 0.55f)
-                                            },
+                                            containerColor = Color.Black.copy(alpha = 0.55f),
                                             contentColor = Color.White
                                         )
                                     ) {
-                                        Icon(
-                                            imageVector = if (torchEnabled) Icons.Rounded.FlashOn else Icons.Rounded.FlashOff,
-                                            contentDescription = "Фонарик"
+                                        Icon(Icons.Rounded.Close, contentDescription = "Закрыть")
+                                    }
+
+                                    Surface(
+                                        shape = RoundedCornerShape(50),
+                                        color = Color.Black.copy(alpha = 0.55f),
+                                        modifier = Modifier.weight(1f, fill = false)
+                                    ) {
+                                        Text(
+                                            text = "${documentType.shortTitle} - заявка #$taskId",
+                                            color = Color.White,
+                                            style = MaterialTheme.typography.labelLarge,
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                                         )
                                     }
-                                } else {
-                                    Spacer(modifier = Modifier.size(48.dp))
-                                }
-                            }
 
-                            FlowRow(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                ConditionPill(
-                                    icon = Icons.Rounded.WbSunny,
-                                    label = "Свет",
-                                    state = when (quality.light) {
-                                        LightStatus.OK -> PillState.GOOD
-                                        LightStatus.GLARE -> PillState.WARN
-                                        LightStatus.TOO_DARK -> PillState.BAD
-                                    }
-                                )
-                                ConditionPill(
-                                    icon = Icons.Rounded.CenterFocusStrong,
-                                    label = "Чёткость",
-                                    state = if (quality.sharpness == SharpnessStatus.OK) {
-                                        PillState.GOOD
+                                    if (hasFlash) {
+                                        IconButton(
+                                            onClick = {
+                                                val next = !torchEnabled
+                                                torchEnabled = next
+                                                cameraRef?.cameraControl?.enableTorch(next)
+                                            },
+                                            colors = IconButtonDefaults.iconButtonColors(
+                                                containerColor = if (torchEnabled) {
+                                                    IntraColors.WarningAmber
+                                                } else {
+                                                    Color.Black.copy(alpha = 0.55f)
+                                                },
+                                                contentColor = Color.White
+                                            )
+                                        ) {
+                                            Icon(
+                                                imageVector = if (torchEnabled) Icons.Rounded.FlashOn else Icons.Rounded.FlashOff,
+                                                contentDescription = "Фонарик"
+                                            )
+                                        }
                                     } else {
-                                        PillState.WARN
+                                        Spacer(modifier = Modifier.size(48.dp))
                                     }
-                                )
-                                ConditionPill(
-                                    icon = Icons.Rounded.Vibration,
-                                    label = "Стабильно",
-                                    state = if (quality.stability == StabilityStatus.STEADY) {
-                                        PillState.GOOD
-                                    } else {
-                                        PillState.BAD
-                                    }
-                                )
-                            }
-
-                            // Primary live hint pill ("когда лучше фоткать")
-                            Surface(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(14.dp),
-                                color = Color.Black.copy(alpha = 0.68f),
-                                border = BorderStroke(1.dp, frameColor.copy(alpha = 0.7f))
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    Text(
-                                        text = quality.primaryHint,
-                                        color = if (quality.isOptimalToShoot) Color(0xFF8FF5BE) else Color.White,
-                                        style = MaterialTheme.typography.labelLarge,
-                                        textAlign = TextAlign.Center
-                                    )
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = "Держите текст ровно в рамке, без бликов (нажмите на экран для фокуса)",
-                                        color = Color.White.copy(alpha = 0.75f),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        textAlign = TextAlign.Center
-                                    )
                                 }
-                            }
-                        }
 
-                        // Bottom shutter controls
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .align(Alignment.BottomCenter)
-                                .background(Color.Black.copy(alpha = 0.58f))
-                                .navigationBarsPadding()
-                                .padding(horizontal = 20.dp, vertical = 16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Surface(
-                                shape = RoundedCornerShape(50),
-                                color = if (textEnhanceEnabled) {
-                                    IntraColors.EmeraldSuccess.copy(alpha = 0.25f)
-                                } else {
-                                    Color.White.copy(alpha = 0.14f)
-                                },
-                                border = BorderStroke(
-                                    1.dp,
-                                    if (textEnhanceEnabled) IntraColors.EmeraldSuccess else Color.White.copy(alpha = 0.35f)
-                                ),
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(50))
-                                    .clickable { textEnhanceEnabled = !textEnhanceEnabled }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                FlowRow(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.AutoFixHigh,
-                                        contentDescription = null,
-                                        tint = if (textEnhanceEnabled) Color(0xFF8FF5BE) else Color.White,
-                                        modifier = Modifier.size(16.dp)
+                                    ConditionPill(
+                                        icon = Icons.Rounded.WbSunny,
+                                        label = "Свет",
+                                        state = when (quality.light) {
+                                            LightStatus.OK -> PillState.GOOD
+                                            LightStatus.GLARE -> PillState.WARN
+                                            LightStatus.TOO_DARK -> PillState.BAD
+                                        }
                                     )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = if (textEnhanceEnabled) {
-                                            "Усиление четкости текста: ВКЛ"
+                                    ConditionPill(
+                                        icon = Icons.Rounded.CenterFocusStrong,
+                                        label = "Чёткость",
+                                        state = if (quality.sharpness == SharpnessStatus.OK) {
+                                            PillState.GOOD
                                         } else {
-                                            "Усиление четкости текста: ВЫКЛ"
-                                        },
-                                        color = Color.White,
-                                        style = MaterialTheme.typography.labelMedium
+                                            PillState.WARN
+                                        }
                                     )
+                                    ConditionPill(
+                                        icon = Icons.Rounded.Vibration,
+                                        label = "Стабильно",
+                                        state = if (quality.stability == StabilityStatus.STEADY) {
+                                            PillState.GOOD
+                                        } else {
+                                            PillState.BAD
+                                        }
+                                    )
+                                }
+
+                                // Primary live hint pill
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = Color.Black.copy(alpha = 0.68f),
+                                    border = BorderStroke(1.dp, frameColor.copy(alpha = 0.7f))
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text(
+                                            text = quality.primaryHint,
+                                            color = if (quality.isOptimalToShoot) Color(0xFF8FF5BE) else Color.White,
+                                            style = MaterialTheme.typography.labelLarge,
+                                            textAlign = TextAlign.Center
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = "Разместите лист A4 целиком внутри рамки, без бликов (нажмите для фокуса)",
+                                            color = Color.White.copy(alpha = 0.78f),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
                                 }
                             }
 
-                            Box(
+                            // Center A4 sheet viewfinder frame (210:297 portrait / 297:210 landscape)
+                            BoxWithConstraints(
                                 modifier = Modifier
-                                    .size(76.dp)
-                                    .clip(CircleShape)
-                                    .border(
-                                        4.dp,
-                                        if (quality.isOptimalToShoot) IntraColors.EmeraldSuccess else Color.White,
-                                        CircleShape
-                                    )
-                                    .padding(6.dp)
-                                    .clip(CircleShape)
-                                    .background(if (isCapturing) Color.Gray else Color.White)
-                                    .clickable(enabled = !isCapturing) {
-                                        val capture = imageCaptureRef ?: return@clickable
-                                        isCapturing = true
-                                        val (rawFile, _) = ImageCompressor.createTempCameraFile(context, taskId)
-                                        val outputOpts = ImageCapture.OutputFileOptions.Builder(rawFile).build()
-                                        capture.takePicture(
-                                            outputOpts,
-                                            ContextCompat.getMainExecutor(context),
-                                            object : ImageCapture.OnImageSavedCallback {
-                                                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                                                    scope.launch {
-                                                        runCatching {
-                                                            ImageCompressor.prepareCameraReviewPair(
-                                                                context = context,
-                                                                rawFile = rawFile,
-                                                                taskId = taskId,
-                                                                index = photoIndex,
-                                                                documentType = documentType
-                                                            )
-                                                        }.onSuccess { prepared ->
-                                                            useEnhancedInReview = textEnhanceEnabled
-                                                            reviewPair = prepared
-                                                            isCapturing = false
-                                                        }.onFailure {
-                                                            isCapturing = false
-                                                        }
-                                                    }
-                                                }
-
-                                                override fun onError(exception: ImageCaptureException) {
-                                                    isCapturing = false
-                                                    runCatching { rawFile.delete() }
-                                                }
-                                            }
-                                        )
-                                    },
+                                    .weight(1f)
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 18.dp, vertical = 8.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                if (isCapturing) {
-                                    CircularProgressIndicator(
-                                        color = IntraColors.BrandPrimary,
-                                        strokeWidth = 3.dp,
-                                        modifier = Modifier.size(30.dp)
-                                    )
+                                val availW = maxWidth
+                                val availH = maxHeight
+                                val a4AspectRatio = if (availW > availH) 297f / 210f else 210f / 297f
+                                val (frameW, frameH) = if ((availW / availH) > a4AspectRatio) {
+                                    (availH * a4AspectRatio) to availH
+                                } else {
+                                    availW to (availW / a4AspectRatio)
+                                }
+
+                                Box(modifier = Modifier.size(frameW, frameH)) {
+                                    Canvas(modifier = Modifier.fillMaxSize()) {
+                                        val strokeW = 3.5.dp.toPx()
+                                        val corner = 30.dp.toPx()
+                                        val w = size.width
+                                        val h = size.height
+
+                                        // Subtle A4 boundary guide
+                                        drawRect(
+                                            color = Color.White.copy(alpha = 0.28f),
+                                            style = Stroke(width = 1.dp.toPx())
+                                        )
+
+                                        // Top-left
+                                        drawLine(frameColor, Offset(0f, 0f), Offset(corner, 0f), strokeW, StrokeCap.Round)
+                                        drawLine(frameColor, Offset(0f, 0f), Offset(0f, corner), strokeW, StrokeCap.Round)
+                                        // Top-right
+                                        drawLine(frameColor, Offset(w, 0f), Offset(w - corner, 0f), strokeW, StrokeCap.Round)
+                                        drawLine(frameColor, Offset(w, 0f), Offset(w, corner), strokeW, StrokeCap.Round)
+                                        // Bottom-left
+                                        drawLine(frameColor, Offset(0f, h), Offset(corner, h), strokeW, StrokeCap.Round)
+                                        drawLine(frameColor, Offset(0f, h), Offset(0f, h - corner), strokeW, StrokeCap.Round)
+                                        // Bottom-right
+                                        drawLine(frameColor, Offset(w, h), Offset(w - corner, h), strokeW, StrokeCap.Round)
+                                        drawLine(frameColor, Offset(w, h), Offset(w, h - corner), strokeW, StrokeCap.Round)
+                                    }
+
+                                    Surface(
+                                        shape = RoundedCornerShape(50),
+                                        color = Color.Black.copy(alpha = 0.50f),
+                                        modifier = Modifier
+                                            .align(Alignment.TopCenter)
+                                            .padding(top = 8.dp)
+                                    ) {
+                                        Text(
+                                            text = "Формат A4",
+                                            color = Color.White.copy(alpha = 0.90f),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Bottom shutter controls
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color.Black.copy(alpha = 0.58f))
+                                    .navigationBarsPadding()
+                                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(50),
+                                    color = if (textEnhanceEnabled) {
+                                        IntraColors.EmeraldSuccess.copy(alpha = 0.25f)
+                                    } else {
+                                        Color.White.copy(alpha = 0.14f)
+                                    },
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (textEnhanceEnabled) IntraColors.EmeraldSuccess else Color.White.copy(alpha = 0.35f)
+                                    ),
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(50))
+                                        .clickable { textEnhanceEnabled = !textEnhanceEnabled }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.AutoFixHigh,
+                                            contentDescription = null,
+                                            tint = if (textEnhanceEnabled) Color(0xFF8FF5BE) else Color.White,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = if (textEnhanceEnabled) {
+                                                "Усиление четкости текста: ВКЛ"
+                                            } else {
+                                                "Усиление четкости текста: ВЫКЛ"
+                                            },
+                                            color = Color.White,
+                                            style = MaterialTheme.typography.labelMedium
+                                        )
+                                    }
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .size(74.dp)
+                                        .clip(CircleShape)
+                                        .border(
+                                            4.dp,
+                                            if (quality.isOptimalToShoot) IntraColors.EmeraldSuccess else Color.White,
+                                            CircleShape
+                                        )
+                                        .padding(6.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isCapturing) Color.Gray else Color.White)
+                                        .clickable(enabled = !isCapturing) {
+                                            val capture = imageCaptureRef ?: return@clickable
+                                            isCapturing = true
+                                            val (rawFile, _) = ImageCompressor.createTempCameraFile(context, taskId)
+                                            val outputOpts = ImageCapture.OutputFileOptions.Builder(rawFile).build()
+                                            capture.takePicture(
+                                                outputOpts,
+                                                ContextCompat.getMainExecutor(context),
+                                                object : ImageCapture.OnImageSavedCallback {
+                                                    override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                                                        scope.launch {
+                                                            runCatching {
+                                                                ImageCompressor.prepareCameraReviewPair(
+                                                                    context = context,
+                                                                    rawFile = rawFile,
+                                                                    taskId = taskId,
+                                                                    index = photoIndex,
+                                                                    documentType = documentType
+                                                                )
+                                                            }.onSuccess { prepared ->
+                                                                useEnhancedInReview = textEnhanceEnabled
+                                                                reviewPair = prepared
+                                                                isCapturing = false
+                                                            }.onFailure {
+                                                                isCapturing = false
+                                                            }
+                                                        }
+                                                    }
+
+                                                    override fun onError(exception: ImageCaptureException) {
+                                                        isCapturing = false
+                                                        runCatching { rawFile.delete() }
+                                                    }
+                                                }
+                                            )
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isCapturing) {
+                                        CircularProgressIndicator(
+                                            color = IntraColors.BrandPrimary,
+                                            strokeWidth = 3.dp,
+                                            modifier = Modifier.size(30.dp)
+                                        )
+                                    }
                                 }
                             }
                         }

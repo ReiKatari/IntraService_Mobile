@@ -1,5 +1,6 @@
 package com.lantaservice.intra.ui.tasks
 
+import android.content.res.Configuration
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -29,6 +30,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.AttachFile
@@ -52,8 +54,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -67,7 +67,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -105,6 +108,7 @@ fun TaskListScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
     val context = LocalContext.current
+    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     var showLogoutConfirm by remember { mutableStateOf(false) }
 
     // Automatic 1-minute refresh while app is in foreground
@@ -151,21 +155,25 @@ fun TaskListScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .intraHeaderInsetsPadding()
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .padding(
+                        horizontal = if (isLandscape) 14.dp else 16.dp,
+                        vertical = if (isLandscape) 5.dp else 12.dp
+                    )
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(if (isLandscape) 8.dp else 10.dp)
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.weight(1f)
                     ) {
+                        val avatarSize = if (isLandscape) 32.dp else 42.dp
                         Box(contentAlignment = Alignment.BottomEnd) {
                             Box(
                                 modifier = Modifier
-                                    .size(42.dp)
+                                    .size(avatarSize)
                                     .clip(CircleShape)
                                     .background(Color.White.copy(alpha = 0.24f)),
                                 contentAlignment = Alignment.Center
@@ -173,62 +181,117 @@ fun TaskListScreen(
                                 Text(
                                     text = DateAndTextFormatter.initialsOf(session.displayName),
                                     color = Color.White,
-                                    style = MaterialTheme.typography.titleMedium,
+                                    style = if (isLandscape) {
+                                        MaterialTheme.typography.labelLarge
+                                    } else {
+                                        MaterialTheme.typography.titleMedium
+                                    },
                                     fontWeight = FontWeight.Bold
                                 )
                             }
                             Box(
                                 modifier = Modifier
-                                    .size(13.dp)
+                                    .size(if (isLandscape) 10.dp else 13.dp)
                                     .clip(CircleShape)
                                     .background(IntraColors.EmeraldSuccess)
                                     .padding(2.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            Text(
-                                text = session.displayName,
-                                color = Color.White,
-                                style = MaterialTheme.typography.titleMedium,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = session.position?.takeIf { it.isNotBlank() } ?: session.login,
-                                color = Color.White.copy(alpha = 0.88f),
-                                style = MaterialTheme.typography.bodySmall,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Surface(
-                                shape = RoundedCornerShape(50),
-                                color = Color.White.copy(alpha = 0.18f)
+                        Spacer(modifier = Modifier.width(if (isLandscape) 10.dp else 12.dp))
+                        if (isLandscape) {
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.LocationOn,
-                                        contentDescription = null,
-                                        tint = Color(0xFF9AF5C6),
-                                        modifier = Modifier.size(11.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(3.dp))
+                                Column(modifier = Modifier.weight(1f, fill = false)) {
                                     Text(
-                                        text = "GPS",
+                                        text = session.displayName,
                                         color = Color.White,
-                                        style = MaterialTheme.typography.labelSmall
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
+                                    val roleLabel = session.position?.takeIf { it.isNotBlank() } ?: session.login
+                                    Text(
+                                        text = roleLabel,
+                                        color = Color.White.copy(alpha = 0.86f),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Surface(
+                                    shape = RoundedCornerShape(50),
+                                    color = Color.White.copy(alpha = 0.18f)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.LocationOn,
+                                            contentDescription = null,
+                                            tint = Color(0xFF9AF5C6),
+                                            modifier = Modifier.size(11.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text(
+                                            text = "GPS",
+                                            color = Color.White,
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Text(
+                                    text = session.displayName,
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = session.position?.takeIf { it.isNotBlank() } ?: session.login,
+                                    color = Color.White.copy(alpha = 0.88f),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Surface(
+                                    shape = RoundedCornerShape(50),
+                                    color = Color.White.copy(alpha = 0.18f)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.LocationOn,
+                                            contentDescription = null,
+                                            tint = Color(0xFF9AF5C6),
+                                            modifier = Modifier.size(11.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text(
+                                            text = "GPS",
+                                            color = Color.White,
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
 
+                    val btnSize = if (isLandscape) 34.dp else 38.dp
+                    val iconSize = if (isLandscape) 18.dp else 20.dp
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -236,7 +299,7 @@ fun TaskListScreen(
                         if (hasAvailableUpdate) {
                             IconButton(
                                 onClick = onOpenUpdateDialog,
-                                modifier = Modifier.size(38.dp),
+                                modifier = Modifier.size(btnSize),
                                 colors = IconButtonDefaults.iconButtonColors(
                                     containerColor = Color.White.copy(alpha = 0.16f),
                                     contentColor = Color(0xFF9AF5C6)
@@ -245,7 +308,7 @@ fun TaskListScreen(
                                 Icon(
                                     Icons.Rounded.SystemUpdate,
                                     contentDescription = "Обновление",
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(iconSize)
                                 )
                             }
                         }
@@ -254,7 +317,7 @@ fun TaskListScreen(
                                 viewModel.loadTickets(isPullToRefresh = true)
                                 onCheckUpdate()
                             },
-                            modifier = Modifier.size(38.dp),
+                            modifier = Modifier.size(btnSize),
                             colors = IconButtonDefaults.iconButtonColors(
                                 containerColor = Color.White.copy(alpha = 0.16f),
                                 contentColor = Color.White
@@ -263,12 +326,12 @@ fun TaskListScreen(
                             Icon(
                                 Icons.Rounded.Refresh,
                                 contentDescription = "Обновить",
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(iconSize)
                             )
                         }
                         IconButton(
                             onClick = { showLogoutConfirm = true },
-                            modifier = Modifier.size(38.dp),
+                            modifier = Modifier.size(btnSize),
                             colors = IconButtonDefaults.iconButtonColors(
                                 containerColor = Color.White.copy(alpha = 0.16f),
                                 contentColor = Color.White
@@ -277,7 +340,7 @@ fun TaskListScreen(
                             Icon(
                                 Icons.AutoMirrored.Rounded.Logout,
                                 contentDescription = "Выйти",
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(iconSize)
                             )
                         }
                     }
@@ -289,44 +352,50 @@ fun TaskListScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(IntraColors.SurfaceWhite)
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(
+                    horizontal = if (isLandscape) 14.dp else 16.dp,
+                    vertical = if (isLandscape) 6.dp else 10.dp
+                ),
+            verticalArrangement = Arrangement.spacedBy(if (isLandscape) 4.dp else 10.dp)
         ) {
-            OutlinedTextField(
-                value = state.searchQuery,
-                onValueChange = viewModel::onSearchQueryChange,
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Поиск по номеру, названию, сервису...") },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Rounded.Search,
-                        contentDescription = null,
-                        tint = IntraColors.BrandPrimary
+            if (isLandscape) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CompactSearchField(
+                        query = state.searchQuery,
+                        onQueryChange = viewModel::onSearchQueryChange,
+                        compact = true,
+                        modifier = Modifier.weight(1.05f)
                     )
-                },
-                trailingIcon = {
-                    if (state.searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { viewModel.onSearchQueryChange("") }) {
-                            Icon(Icons.Rounded.Close, contentDescription = "Очистить")
-                        }
-                    }
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(14.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = IntraColors.BrandPrimary,
-                    unfocusedBorderColor = IntraColors.SubtleBorder,
-                    focusedContainerColor = IntraColors.SurfaceMuted,
-                    unfocusedContainerColor = IntraColors.SurfaceMuted
+                    TicketTabSwitcher(
+                        selectedTab = state.selectedTab,
+                        countWithoutRepaired = state.countWithoutRepaired,
+                        countHadRepaired = state.countHadRepaired,
+                        compact = true,
+                        onSelectTab = viewModel::selectTab,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            } else {
+                CompactSearchField(
+                    query = state.searchQuery,
+                    onQueryChange = viewModel::onSearchQueryChange,
+                    compact = false,
+                    modifier = Modifier.fillMaxWidth()
                 )
-            )
 
-            TicketTabSwitcher(
-                selectedTab = state.selectedTab,
-                countWithoutRepaired = state.countWithoutRepaired,
-                countHadRepaired = state.countHadRepaired,
-                onSelectTab = viewModel::selectTab
-            )
+                TicketTabSwitcher(
+                    selectedTab = state.selectedTab,
+                    countWithoutRepaired = state.countWithoutRepaired,
+                    countHadRepaired = state.countHadRepaired,
+                    compact = false,
+                    onSelectTab = viewModel::selectTab,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
 
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
@@ -656,22 +725,100 @@ private fun UpdateAvailableBanner(
 }
 
 @Composable
+private fun CompactSearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    compact: Boolean,
+    modifier: Modifier = Modifier
+) {
+    var focused by remember { mutableStateOf(false) }
+    val height = if (compact) 38.dp else 46.dp
+
+    Surface(
+        modifier = modifier.height(height),
+        shape = RoundedCornerShape(if (compact) 12.dp else 14.dp),
+        color = IntraColors.SurfaceMuted,
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (focused) IntraColors.BrandPrimary else IntraColors.SubtleBorder
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = if (compact) 10.dp else 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Search,
+                contentDescription = null,
+                tint = IntraColors.BrandPrimary,
+                modifier = Modifier.size(if (compact) 18.dp else 20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                if (query.isEmpty()) {
+                    Text(
+                        text = "Поиск по номеру, названию, сервису...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = IntraColors.TextTertiary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                BasicTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        color = IntraColors.TextPrimary
+                    ),
+                    cursorBrush = SolidColor(IntraColors.BrandPrimary),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onFocusChanged { focused = it.isFocused }
+                )
+            }
+            if (query.isNotEmpty()) {
+                Spacer(modifier = Modifier.width(6.dp))
+                IconButton(
+                    onClick = { onQueryChange("") },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "Очистить",
+                        tint = IntraColors.TextSecondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun TicketTabSwitcher(
     selectedTab: TicketTab,
     countWithoutRepaired: Int,
     countHadRepaired: Int,
-    onSelectTab: (TicketTab) -> Unit
+    compact: Boolean = false,
+    onSelectTab: (TicketTab) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        modifier = modifier,
+        shape = RoundedCornerShape(if (compact) 12.dp else 16.dp),
         color = IntraColors.BackgroundIce,
         border = BorderStroke(1.dp, IntraColors.SubtleBorder)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(4.dp),
+                .padding(if (compact) 3.dp else 4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             TabSegmentItem(
@@ -679,6 +826,7 @@ private fun TicketTabSwitcher(
                 count = countWithoutRepaired,
                 selected = selectedTab == TicketTab.WITHOUT_REPAIRED,
                 activeColor = IntraColors.BrandPrimary,
+                compact = compact,
                 onClick = { onSelectTab(TicketTab.WITHOUT_REPAIRED) },
                 modifier = Modifier.weight(1f)
             )
@@ -687,6 +835,7 @@ private fun TicketTabSwitcher(
                 count = countHadRepaired,
                 selected = selectedTab == TicketTab.HAD_REPAIRED,
                 activeColor = IntraColors.EmeraldSuccess,
+                compact = compact,
                 onClick = { onSelectTab(TicketTab.HAD_REPAIRED) },
                 modifier = Modifier.weight(1f)
             )
@@ -700,6 +849,7 @@ private fun TabSegmentItem(
     count: Int,
     selected: Boolean,
     activeColor: Color,
+    compact: Boolean = false,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -721,13 +871,16 @@ private fun TabSegmentItem(
 
     Surface(
         modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(if (compact) 9.dp else 12.dp))
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(if (compact) 9.dp else 12.dp),
         color = bgColor
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+            modifier = Modifier.padding(
+                horizontal = 8.dp,
+                vertical = if (compact) 6.dp else 10.dp
+            ),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {

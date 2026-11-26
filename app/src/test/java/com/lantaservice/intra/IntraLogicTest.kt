@@ -737,6 +737,29 @@ class IntraLogicTest {
         assertEquals("52400", resNextLine.value)
         assertEquals(CounterConfidence.HIGH, resNextLine.confidence)
 
+        // Configuration page without counter (Lexmark MX622ade "Повышение чёткости шрифта: 24")
+        val resConfigPage = AvrCounterParser.extractCounterFromLines(
+            listOf(
+                "Меню конфигурации",
+                "Lexmark MX622ade",
+                "Повышение чёткости шрифта: 24",
+                "Повышение четкости шрифта 24",
+                "Разрешение: 600 dpi",
+                "Плотность тонера: 8",
+                "Копий: 1",
+                "Память: 512 МБ"
+            )
+        )
+        assertNull(resConfigPage.value)
+        assertEquals(CounterConfidence.NONE, resConfigPage.confidence)
+
+        // Standalone number with no explicit counter keyword must NEVER be auto-filled
+        val resStandalone = AvrCounterParser.extractCounterFromLines(
+            listOf("Страница диагностики", "24")
+        )
+        assertNull(resStandalone.value)
+        assertEquals(CounterConfidence.NONE, resStandalone.confidence)
+
         // Unreadable / blurry / no counter -> returns NONE so UI prompts manual entry
         val resEmpty = AvrCounterParser.extractCounterFromLines(
             listOf(

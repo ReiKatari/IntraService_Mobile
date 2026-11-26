@@ -381,9 +381,13 @@ class TaskDetailViewModel(
                 AvrCounterRecognizer.recognizeCounterFromFile(context, imageFile)
             }.getOrNull()
 
-            val recognizedDigits = result?.value
-                ?.let { TaskSaveValidator.normalizeCounterDigits(it) }
-                ?.takeIf { TaskSaveValidator.isValidCounter(it) }
+            val recognizedDigits = if (result?.confidence == com.lantaservice.intra.util.CounterConfidence.HIGH) {
+                result.value
+                    ?.let { TaskSaveValidator.normalizeCounterDigits(it) }
+                    ?.takeIf { TaskSaveValidator.isValidCounter(it) }
+            } else {
+                null
+            }
 
             if (recognizedDigits != null) {
                 _uiState.update { state ->

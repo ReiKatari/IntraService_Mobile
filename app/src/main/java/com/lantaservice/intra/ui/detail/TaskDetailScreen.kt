@@ -3,6 +3,7 @@ package com.lantaservice.intra.ui.detail
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.net.Uri
 import android.webkit.MimeTypeMap
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -103,6 +104,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -153,6 +155,7 @@ fun TaskDetailScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val lifecycleOwner = LocalLifecycleOwner.current
     val haptics = LocalHapticFeedback.current
 
@@ -318,7 +321,7 @@ fun TaskDetailScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .intraHeaderInsetsPadding()
-                        .padding(horizontal = 10.dp, vertical = 10.dp),
+                        .padding(horizontal = 10.dp, vertical = if (isLandscape) 4.dp else 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(

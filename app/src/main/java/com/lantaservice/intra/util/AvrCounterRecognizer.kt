@@ -30,8 +30,8 @@ data class CounterParseResult(
 
 /**
  * Pure JVM parser extracting the printer/copier page counter written or printed on an AVR form.
- * Handles Russian labels, English labels, and Latin-OCR homoglyphs of Russian labels,
- * while strictly filtering out dates, times, phone numbers, INN/OGRN, postal codes, and act numbers.
+ * Strictly requires an explicit counter label, ignores printer configuration settings
+ * (e.g. font sharpening / DPI / memory), and never guesses standalone unlabelled numbers.
  */
 object AvrCounterParser {
 
@@ -40,22 +40,44 @@ object AvrCounterParser {
     private val phoneRegex = Regex("(?:\\+7|8)[\\s(-]*\\d{3}[\\s)-]*\\d{3}[\\s-]*\\d{2}[\\s-]*\\d{2}")
     private val moneyRegex = Regex("\\b\\d+(?:[\\s.,]\\d{3})*[.,]\\d{2}\\b")
     private val docNumberRegex = Regex("(?i)(?:№|no\\.?|#)\\s*\\d{1,8}\\b")
-    private val percentRegex = Regex("\\b\\d+\\s*%")
+    private val unitNumberRegex = Regex("(?i)\\b\\d+(?:[.,]\\d+)?\\s*(?:dpi|мм|mm|см|cm|мб|mb|гб|gb|кб|kb|руб|₽|%|сек|мин|hz|гц|вт|°)\\b")
     private val alphaNumSerialRegex = Regex("\\b(?:[A-Za-zА-Яа-я]+\\d+\\w*|\\d+[A-Za-zА-Яа-я]+)\\b")
     private val numberCandidateRegex = Regex("\\b\\d{1,3}(?:[\\s,.']\\d{3})+\\b|\\b\\d{1,8}\\b")
 
-    private val keywordPatterns = listOf(
-        "счетчик", "счётчик", "копий", "копии", "копия", "пробег",
-        "показани", "напечатан", "отпечат", "всего", "итого", "общий",
-        "c4et", "cyet", "chet", "kon", "kop", "npo6", "prob", "pokaz", "nokaz",
-        "bceg", "vseg", "utog", "itog", "o6w", "obsh",
-        "counter", "total", "copies", "meter", "impressions", "page count", "print count"
+    private val strictCounterKeywordRegexes = listOf(
+        // Russian AVR / service counter terms
+        Regex("с[ч4]етчик(?:и|а|ов|у|е)?", RegexOption.IGNORE_CASE),
+        Regex("счётчик(?:и|а|ов|у|е)?", RegexOption.IGNORE_CASE),
+        Regex("пробег(?:\\s+(?:аппарата|принтера|мфу))?", RegexOption.IGNORE_CASE),
+        Regex("кол(?:ичество|-во)?\\s+копий", RegexOption.IGNORE_CASE),
+        Regex("число\\s+копий", RegexOption.IGNORE_CASE),
+        Regex("всего\\s+копий", RegexOption.IGNORE_CASE),
+        Regex("итого\\s+копий", RegexOption.IGNORE_CASE),
+        Regex("копий\\s+(?:всего|итого|напечатано)", RegexOption.IGNORE_CASE),
+        Regex("показания\\s+(?:с[ч4]етчика|счётчика|пробега|аппарата)", RegexOption.IGNORE_CASE),
+        Regex("отпечатк(?:ов|и)", RegexOption.IGNORE_CASE),
+        Regex("напечатано\\s+(?:страниц|копий)", RegexOption.IGNORE_CASE),
+
+        // Exact full-word Latin-OCR homoglyphs of Russian counter labels (e.g. C4ET4WK, CYET4NK)
+        Regex("(?<![a-zа-я])[cс][4чyу][eе][tт][4ч][uиnпwшl1i][kк](?![a-zа-я])", RegexOption.IGNORE_CASE),
+        Regex("(?<![a-zа-я])(?:s?chetchik|probeg|npo6eg)(?![a-zа-я])", RegexOption.IGNORE_CASE),
+
+        // Explicit English printer-report counter labels
+        Regex("(?<![a-z])(?:page\\s*count|total\\s*pages|total\\s*impressions|total\\s*copies|total\\s*count|life\\s*count|meter\\s*reading|print\\s*count|copy\\s*count|counter\\b)", RegexOption.IGNORE_CASE)
     )
 
     private val excludedLineMarkers = listOf(
+        // Device settings / configuration pages (Lexmark, Kyocera, HP, Ricoh, Xerox, Canon)
+        "конфигурац", "меню", "четкост", "чёткост", "шрифт", "резкост",
+        "яркост", "контраст", "плотност", "разрешен", "масштаб", "формат",
+        "лоток", "таймаут", "память", "прошивк", "верси", "настройк", "параметр",
+        "dpi", " мб", " гб", " кб", "font", "enhancement", "sharpness", "darkness",
+        "contrast", "timeout", "memory", "firmware", "configuration", "config",
+        "menu", "setting", "tray", "lexmark", "kyocera", "ricoh", "xerox", "canon", "brother",
+        // Legal / requisites / address / metadata lines
         "инн", "кпп", "огрн", "бик", "р/с", "к/с", "окпо",
-        "тел", "факс", "phone", "индекс", "ул.", "д.", "обл.",
-        "г.", "москва", "санкт", "договор", "заявк", "inn", "ogrn"
+        "тел", "факс", "phone", "индекс", "ул.", "д.",
+        "москва", "санкт", "договор", "заявк", "inn", "ogrn"
     )
 
     fun formatCounterDisplay(digits: String): String {
@@ -76,53 +98,45 @@ object AvrCounterParser {
     fun extractCounterFromLines(lines: List<String>): CounterParseResult {
         if (lines.isEmpty()) return CounterParseResult(null, CounterConfidence.NONE)
 
-        // Pass 1: Look for explicit counter label + number on same line or immediately below/next line
         for (idx in lines.indices) {
             val line = lines[idx].trim()
-            if (line.isEmpty()) continue
-            if (containsKeyword(line)) {
-                val sameLineNum = extractPlausibleNumberFromLine(line, preferRightmost = true)
-                if (sameLineNum != null) {
-                    return CounterParseResult(sameLineNum, CounterConfidence.HIGH, line)
-                }
-                if (idx + 1 < lines.size) {
-                    val nextLine = lines[idx + 1].trim()
-                    if (!isExcludedNonCounterLine(nextLine)) {
-                        val nextLineNum = extractPlausibleNumberFromLine(nextLine, preferRightmost = false)
-                        if (nextLineNum != null) {
-                            return CounterParseResult(nextLineNum, CounterConfidence.HIGH, "$line | $nextLine")
-                        }
+            if (line.isEmpty() || isExcludedNonCounterLine(line)) continue
+
+            val keywordMatch = findKeywordMatch(line) ?: continue
+
+            // Extract number strictly AFTER the counter keyword on the same line
+            val afterKeyword = line.substring((keywordMatch.range.last + 1).coerceAtMost(line.length))
+            val sameLineNum = extractPlausibleNumberFromSegment(afterKeyword, preferRightmost = false)
+            if (sameLineNum != null) {
+                return CounterParseResult(sameLineNum, CounterConfidence.HIGH, line)
+            }
+
+            // Tabular fallback: check immediately following line if it's not a printer setting/metadata line
+            if (idx + 1 < lines.size) {
+                val nextLine = lines[idx + 1].trim()
+                if (nextLine.isNotEmpty() && !isExcludedNonCounterLine(nextLine)) {
+                    val nextLineNum = extractPlausibleNumberFromSegment(nextLine, preferRightmost = false)
+                    if (nextLineNum != null) {
+                        return CounterParseResult(nextLineNum, CounterConfidence.HIGH, "$line | $nextLine")
                     }
                 }
             }
         }
 
-        // Pass 2: Fallback when label wasn't read clearly, but there is a single unambiguous counter-like integer
-        val standalonePool = mutableListOf<Pair<String, String>>()
-        for (line in lines) {
-            val trimmed = line.trim()
-            if (trimmed.isEmpty() || isExcludedNonCounterLine(trimmed)) continue
-            extractPlausibleNumbersInLine(trimmed).forEach { digits ->
-                if (digits.length in 2..8) {
-                    standalonePool += digits to trimmed
-                }
-            }
-        }
-        val distinctValues = standalonePool.map { it.first }.distinct()
-        if (distinctValues.size == 1) {
-            val hit = standalonePool.first()
-            return CounterParseResult(hit.first, CounterConfidence.MEDIUM, hit.second)
-        }
-
+        // Never guess standalone unlabelled numbers; trigger manual input prompt instead
         return CounterParseResult(null, CounterConfidence.NONE)
     }
 
-    private fun containsKeyword(line: String): Boolean {
+    private fun findKeywordMatch(line: String): MatchResult? {
         val lower = line.lowercase(Locale.ROOT)
-        val skeleton = toHomoglyphSkeleton(lower)
-        return keywordPatterns.any { kw ->
-            lower.contains(kw) || skeleton.contains(kw)
+        for (regex in strictCounterKeywordRegexes) {
+            regex.find(lower)?.let { return it }
         }
+        val skeleton = toHomoglyphSkeleton(lower)
+        for (regex in strictCounterKeywordRegexes) {
+            regex.find(skeleton)?.let { return it }
+        }
+        return null
     }
 
     private fun toHomoglyphSkeleton(lower: String): String {
@@ -158,15 +172,15 @@ object AvrCounterParser {
     }
 
     private fun isExcludedNonCounterLine(line: String): Boolean {
-        val skeleton = toHomoglyphSkeleton(line.lowercase(Locale.ROOT))
         val lower = line.lowercase(Locale.ROOT)
+        val skeleton = toHomoglyphSkeleton(lower)
         return excludedLineMarkers.any { marker ->
             lower.contains(marker) || skeleton.contains(marker)
         }
     }
 
-    private fun extractPlausibleNumberFromLine(line: String, preferRightmost: Boolean): String? {
-        val candidates = extractPlausibleNumbersInLine(line)
+    private fun extractPlausibleNumberFromSegment(segment: String, preferRightmost: Boolean): String? {
+        val candidates = extractPlausibleNumbersInLine(segment)
         if (candidates.isEmpty()) return null
         return if (preferRightmost) candidates.last() else candidates.first()
     }
@@ -178,7 +192,7 @@ object AvrCounterParser {
         cleaned = phoneRegex.replace(cleaned, " ")
         cleaned = moneyRegex.replace(cleaned, " ")
         cleaned = docNumberRegex.replace(cleaned, " ")
-        cleaned = percentRegex.replace(cleaned, " ")
+        cleaned = unitNumberRegex.replace(cleaned, " ")
         cleaned = alphaNumSerialRegex.replace(cleaned, " ")
 
         val results = mutableListOf<String>()
