@@ -98,6 +98,7 @@ class MainActivity : ComponentActivity() {
                                 app.geoLocationEngine.warmBreadcrumbAsync()
                             }
                             appUpdateManager.resumePendingInstallIfPermitted()
+                            appUpdateManager.triggerCheckForUpdateAsync(force = false)
                             repository.triggerOutboxSyncAsync()
                         }
                     }
@@ -112,6 +113,7 @@ class MainActivity : ComponentActivity() {
                     val networkCallback = object : ConnectivityManager.NetworkCallback() {
                         override fun onAvailable(network: Network) {
                             repository.triggerOutboxSyncAsync()
+                            appUpdateManager.triggerCheckForUpdateAsync(force = false)
                         }
 
                         override fun onCapabilitiesChanged(
@@ -120,6 +122,7 @@ class MainActivity : ComponentActivity() {
                         ) {
                             if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
                                 repository.triggerOutboxSyncAsync()
+                                appUpdateManager.triggerCheckForUpdateAsync(force = false)
                             }
                         }
                     }

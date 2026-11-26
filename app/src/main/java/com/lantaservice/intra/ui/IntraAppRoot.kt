@@ -97,6 +97,19 @@ fun IntraAppRoot(
         }
     }
 
+    LaunchedEffect(authState) {
+        if (authState is AuthState.Authenticated) {
+            appUpdateManager.checkForUpdateInBackground(
+                force = false,
+                reopenIfAvailable = true
+            )
+            while (true) {
+                delay(5L * 60L * 1000L)
+                appUpdateManager.checkForUpdateInBackground(force = false)
+            }
+        }
+    }
+
     val gate = when (authState) {
         is AuthState.Checking -> RootGate.CHECKING
         is AuthState.Unauthenticated -> RootGate.UNAUTHENTICATED
@@ -196,7 +209,14 @@ fun IntraAppRoot(
                                 session = session,
                                 viewModel = taskListViewModel,
                                 hasAvailableUpdate = updateState !is UpdateUiState.Idle,
+                                updateState = updateState,
                                 onOpenUpdateDialog = appUpdateManager::reopenDialog,
+                                onCheckUpdate = {
+                                    appUpdateManager.triggerCheckForUpdateAsync(
+                                        force = true,
+                                        reopenIfAvailable = true
+                                    )
+                                },
                                 onOpenTicket = { taskId ->
                                     navController.navigate("task/$taskId")
                                 },

@@ -25,7 +25,9 @@ import com.lantaservice.intra.data.storage.PendingOutboxEntry
 import com.lantaservice.intra.data.storage.PendingOutboxLogic
 import com.lantaservice.intra.data.storage.PendingOutboxPhoto
 import com.lantaservice.intra.data.storage.SavedCredentials
+import com.lantaservice.intra.data.update.AppUpdateInfo
 import com.lantaservice.intra.data.update.AppUpdateManager
+import com.lantaservice.intra.data.update.UpdateUiState
 import com.lantaservice.intra.ui.components.ReleaseNoteBlock
 import com.lantaservice.intra.ui.components.parseReleaseNotes
 import com.lantaservice.intra.ui.login.LoginViewModel
@@ -833,5 +835,87 @@ class IntraLogicTest {
             "AVR_task159_26112026_1210_1",
             IntraRepository.buildDeferredPhotoName(159, "26.11.2026 12:10", 0, PhotoDocumentType.AVR)
         )
+    }
+
+    @Test
+    fun updateStateTransitionSurfacesUpdateWhileAuthorizedAndProtectsActiveDownloads() {
+        val v201 = AppUpdateInfo(
+            versionName = "2.0.1",
+            tagName = "v2.0.1",
+            title = "IntraService Mobile 2.0.1",
+            changelog = "Исправлены обновления",
+            downloadUrl = "https://example.com/2.0.1.apk"
+        )
+        val v202 = v201.copy(versionName = "2.0.2", tagName = "v2.0.2")
+
+        // 1. Fresh Idle -> pops up Available dialog
+        val fromIdle = AppUpdateManager.resolveNextUpdateState(
+            currentState = UpdateUiState.Idle,
+            currentlyDismissed = true,
+            found = v201,
+            currentVersion = "2.0.0",
+            skippedVersion = "",
+            reopenIfAlreadyAvailable = false
+        )
+        assertNotNull(fromIdle)
+        assertTrue(fromIdle?.first is UpdateUiState.Available)
+        assertEquals(false, fromIdle?.second)
+
+        // 2. Same version dismissed, auto background poll -> stays dismissed (banner remains visible)
+        val sameAuto = AppUpdateManager.resolveNextUpdateState(
+            currentState = UpdateUiState.Available(v201),
+            currentlyDismissed = true,
+            found = v201,
+            currentVersion = "2.0.0",
+            skippedVersion = "",
+            reopenIfAlreadyAvailable = false
+        )
+        assertEquals(true, sameAuto?.second)
+
+        // 3. Same version dismissed, explicit login/pull check -> reopens dialog
+        val sameReopen = AppUpdateManager.resolveNextUpdateState(
+            currentState = UpdateUiState.Available(v201),
+            currentlyDismissed = true,
+            found = v201,
+            currentVersion = "2.0.0",
+            skippedVersion = "",
+            reopenIfAlreadyAvailable = true
+        )
+        assertEquals(false, sameReopen?.second)
+
+        // 4. Higher version published while logged in -> pops up dialog immediately
+        val newerRelease = AppUpdateManager.resolveNextUpdateState(
+            currentState = UpdateUiState.Available(v201),
+            currentlyDismissed = true,
+            found = v202,
+            currentVersion = "2.0.0",
+            skippedVersion = "",
+            reopenIfAlreadyAvailable = false
+        )
+        assertEquals(v202, (newerRelease?.first as? UpdateUiState.Available)?.info)
+        assertEquals(false, newerRelease?.second)
+
+        // 5. Downloading state is never overwritten back to Available
+        val downloading = UpdateUiState.Downloading(v201, 0.5f, 500L, 1000L)
+        val duringDownload = AppUpdateManager.resolveNextUpdateState(
+            currentState = downloading,
+            currentlyDismissed = false,
+            found = v201,
+            currentVersion = "2.0.0",
+            skippedVersion = "",
+            reopenIfAlreadyAvailable = false
+        )
+        assertNull(duringDownload)
+
+        // 6. Skipped version stays ignored
+        val skipped = AppUpdateManager.resolveNextUpdateState(
+            currentState = UpdateUiState.Idle,
+            currentlyDismissed = false,
+            found = v201,
+            currentVersion = "2.0.0",
+            skippedVersion = "2.0.1",
+            reopenIfAlreadyAvailable = true
+        )
+        assertNull(skipped)
     }
 }

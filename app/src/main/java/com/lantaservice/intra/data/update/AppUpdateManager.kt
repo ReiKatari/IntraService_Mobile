@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -66,7 +68,11 @@ class AppUpdateManager(
 
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val updateScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val checkMutex = Mutex()
     private var downloadJob: Job? = null
+
+    @Volatile
+    private var lastCheckCompletedAtMs: Long = 0L
 
     private val githubClient: OkHttpClient = OkHttpClient.Builder()
         .dns(resilientDns)
@@ -84,18 +90,50 @@ class AppUpdateManager(
 
     private var pendingInstallApk: File? = null
 
+    fun triggerCheckForUpdateAsync(
+        force: Boolean = false,
+        reopenIfAvailable: Boolean = false
+    ) {
+        updateScope.launch {
+            checkForUpdateInBackground(
+                force = force,
+                reopenIfAvailable = reopenIfAvailable
+            )
+        }
+    }
+
     suspend fun checkForUpdateInBackground(
         currentVersion: String = BuildConfig.VERSION_NAME,
-        repo: String = BuildConfig.GITHUB_REPO
+        repo: String = BuildConfig.GITHUB_REPO,
+        force: Boolean = false,
+        reopenIfAvailable: Boolean = false
     ) = withContext(Dispatchers.IO) {
-        val found = runCatching { fetchLatestRelease(repo, currentVersion) }.getOrNull() ?: return@withContext
-        val skippedVersion = prefs.getString(KEY_SKIPPED_VERSION, null).orEmpty()
-        if (skippedVersion.isNotBlank() && compareVersions(found.versionName, skippedVersion) == 0) {
-            return@withContext
-        }
-        if (compareVersions(found.versionName, currentVersion) > 0) {
-            _isDialogDismissed.value = false
-            _state.value = UpdateUiState.Available(found)
+        checkMutex.withLock {
+            val nowMs = System.currentTimeMillis()
+            if (!force && lastCheckCompletedAtMs > 0L && (nowMs - lastCheckCompletedAtMs) < AUTO_RECHECK_COOLDOWN_MS) {
+                if (reopenIfAvailable && _state.value !is UpdateUiState.Idle) {
+                    _isDialogDismissed.value = false
+                }
+                return@withLock
+            }
+
+            val found = runCatching { fetchLatestRelease(repo, currentVersion) }.getOrNull()
+                ?: return@withLock
+            lastCheckCompletedAtMs = System.currentTimeMillis()
+
+            val skippedVersion = prefs.getString(KEY_SKIPPED_VERSION, null).orEmpty()
+            val transition = resolveNextUpdateState(
+                currentState = _state.value,
+                currentlyDismissed = _isDialogDismissed.value,
+                found = found,
+                currentVersion = currentVersion,
+                skippedVersion = skippedVersion,
+                reopenIfAlreadyAvailable = reopenIfAvailable
+            )
+            if (transition != null) {
+                _state.value = transition.first
+                _isDialogDismissed.value = transition.second
+            }
         }
     }
 
@@ -306,7 +344,43 @@ class AppUpdateManager(
     companion object {
         private const val PREFS_NAME = "intra_update_prefs"
         private const val KEY_SKIPPED_VERSION = "skipped_update_version"
+        private const val AUTO_RECHECK_COOLDOWN_MS = 60_000L
         private val updateJson = Json { ignoreUnknownKeys = true }
+
+        fun resolveNextUpdateState(
+            currentState: UpdateUiState,
+            currentlyDismissed: Boolean,
+            found: AppUpdateInfo,
+            currentVersion: String,
+            skippedVersion: String,
+            reopenIfAlreadyAvailable: Boolean
+        ): Pair<UpdateUiState, Boolean>? {
+            if (skippedVersion.isNotBlank() && compareVersions(found.versionName, skippedVersion) == 0) {
+                return null
+            }
+            if (compareVersions(found.versionName, currentVersion) <= 0) {
+                return null
+            }
+
+            return when (currentState) {
+                is UpdateUiState.Downloading,
+                is UpdateUiState.ReadyToInstall -> {
+                    if (reopenIfAlreadyAvailable) currentState to false else null
+                }
+                is UpdateUiState.Available -> {
+                    val isSameVersion = compareVersions(currentState.info.versionName, found.versionName) == 0
+                    if (isSameVersion) {
+                        val nextDismissed = if (reopenIfAlreadyAvailable) false else currentlyDismissed
+                        UpdateUiState.Available(found) to nextDismissed
+                    } else {
+                        // A brand-new higher release arrived -> notify immediately
+                        UpdateUiState.Available(found) to false
+                    }
+                }
+                UpdateUiState.Idle,
+                is UpdateUiState.Error -> UpdateUiState.Available(found) to false
+            }
+        }
 
         fun normalizeVersion(raw: String): String {
             return raw.trim().removePrefix("v").removePrefix("V")

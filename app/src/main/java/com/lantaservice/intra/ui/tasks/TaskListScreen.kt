@@ -80,6 +80,7 @@ import com.lantaservice.intra.data.model.TicketItem
 import com.lantaservice.intra.data.model.UserSession
 import com.lantaservice.intra.data.network.IntraConnectionManager
 import com.lantaservice.intra.data.storage.PendingOutboxEntry
+import com.lantaservice.intra.data.update.UpdateUiState
 import com.lantaservice.intra.ui.components.IntraHeaderBanner
 import com.lantaservice.intra.ui.components.intraHeaderInsetsPadding
 import com.lantaservice.intra.ui.components.PriorityDotAndLabel
@@ -95,7 +96,9 @@ fun TaskListScreen(
     session: UserSession,
     viewModel: TaskListViewModel,
     hasAvailableUpdate: Boolean = false,
+    updateState: UpdateUiState = UpdateUiState.Idle,
     onOpenUpdateDialog: () -> Unit = {},
+    onCheckUpdate: () -> Unit = {},
     onOpenTicket: (Int) -> Unit,
     onExitApp: () -> Unit = {}
 ) {
@@ -247,7 +250,10 @@ fun TaskListScreen(
                             }
                         }
                         IconButton(
-                            onClick = { viewModel.loadTickets(isPullToRefresh = true) },
+                            onClick = {
+                                viewModel.loadTickets(isPullToRefresh = true)
+                                onCheckUpdate()
+                            },
                             modifier = Modifier.size(38.dp),
                             colors = IconButtonDefaults.iconButtonColors(
                                 containerColor = Color.White.copy(alpha = 0.16f),
@@ -352,6 +358,13 @@ fun TaskListScreen(
                     color = if (state.isAutoRefreshing) IntraColors.BrandPrimary else IntraColors.TextTertiary
                 )
             }
+        }
+
+        AnimatedVisibility(visible = updateState !is UpdateUiState.Idle) {
+            UpdateAvailableBanner(
+                state = updateState,
+                onClick = onOpenUpdateDialog
+            )
         }
 
         AnimatedVisibility(visible = state.outboxCount > 0) {
@@ -464,7 +477,10 @@ fun TaskListScreen(
 
         PullToRefreshBox(
             isRefreshing = state.isRefreshing,
-            onRefresh = { viewModel.loadTickets(isPullToRefresh = true) },
+            onRefresh = {
+                viewModel.loadTickets(isPullToRefresh = true)
+                onCheckUpdate()
+            },
             modifier = Modifier.fillMaxSize()
         ) {
             when {
@@ -534,6 +550,110 @@ private fun <T> tweenSpring() = spring<T>(
     dampingRatio = Spring.DampingRatioNoBouncy,
     stiffness = Spring.StiffnessMedium
 )
+
+@Composable
+private fun UpdateAvailableBanner(
+    state: UpdateUiState,
+    onClick: () -> Unit
+) {
+    val isError = state is UpdateUiState.Error
+    val titleText = when (state) {
+        is UpdateUiState.Available -> "Доступно обновление ${state.info.versionName}"
+        is UpdateUiState.Downloading -> {
+            val pct = if (state.progress >= 0f) " (${(state.progress * 100f).toInt()}%)" else ""
+            "Загрузка обновления ${state.info.versionName}$pct"
+        }
+        is UpdateUiState.ReadyToInstall -> "Обновление ${state.info.versionName} готово"
+        is UpdateUiState.Error -> "Ошибка загрузки ${state.info.versionName}"
+        UpdateUiState.Idle -> return
+    }
+    val subtitleText = when (state) {
+        is UpdateUiState.Available -> "Нажмите, чтобы посмотреть изменения и установить"
+        is UpdateUiState.Downloading -> "Нажмите, чтобы открыть ход загрузки"
+        is UpdateUiState.ReadyToInstall -> "Нажмите для запуска установки"
+        is UpdateUiState.Error -> "Нажмите, чтобы повторить загрузку"
+        UpdateUiState.Idle -> ""
+    }
+    val actionLabel = when (state) {
+        is UpdateUiState.ReadyToInstall -> "Установить"
+        is UpdateUiState.Downloading -> "Открыть"
+        is UpdateUiState.Error -> "Повтор"
+        else -> "Обновить"
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        color = if (isError) IntraColors.ErrorTint else IntraColors.EmeraldTint,
+        border = BorderStroke(
+            1.dp,
+            if (isError) IntraColors.ErrorRed.copy(alpha = 0.45f) else IntraColors.EmeraldSuccess.copy(alpha = 0.45f)
+        )
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = if (isError) Icons.Rounded.ErrorOutline else Icons.Rounded.SystemUpdate,
+                        contentDescription = null,
+                        tint = if (isError) IntraColors.ErrorRed else IntraColors.EmeraldDeep,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = titleText,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = IntraColors.TextPrimary
+                        )
+                        Text(
+                            text = subtitleText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = IntraColors.TextSecondary
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = if (isError) IntraColors.ErrorRed else IntraColors.EmeraldSuccess
+                ) {
+                    Text(
+                        text = actionLabel,
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                    )
+                }
+            }
+            if (state is UpdateUiState.Downloading && state.progress >= 0f) {
+                Spacer(modifier = Modifier.height(6.dp))
+                LinearProgressIndicator(
+                    progress = { state.progress.coerceIn(0f, 1f) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(4.dp)),
+                    color = IntraColors.EmeraldSuccess,
+                    trackColor = Color.White.copy(alpha = 0.6f)
+                )
+            }
+        }
+    }
+}
 
 @Composable
 private fun TicketTabSwitcher(
