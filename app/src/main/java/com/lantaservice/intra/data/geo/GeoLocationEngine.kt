@@ -35,13 +35,14 @@ class GeoLocationEngine(
 
     private val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val breadcrumbFile = File(context.filesDir, "last_good_geo.json")
+    private val lastSnapshotFile = File(context.filesDir, "last_geo_snapshot.json")
     private val fileLock = Any()
 
     @Volatile
     private var lastVerifiedCandidate: GeoCandidate? = loadBreadcrumbFromDisk()
 
     @Volatile
-    private var lastSnapshot: GeoAddressSnapshot? = null
+    private var lastSnapshot: GeoAddressSnapshot? = loadSnapshotFromDisk()
 
     fun getCachedSnapshot(): GeoAddressSnapshot? = lastSnapshot
 
@@ -49,51 +50,25 @@ class GeoLocationEngine(
         if (!LocationPermissionHelper.isLocationFullyReady(context)) return
         engineScope.launch {
             runCatching {
-                val collected = collectCandidatesFromProviders(timeoutMs = 3500L)
-                val selected = GeoAntiSpoofSelector.selectBestCandidate(
-                    candidates = collected,
-                    lastVerified = lastVerifiedCandidate
-                )
-                if (selected != null) {
-                    if (!selected.jammerSuspected) {
-                        val src = selected.source
-                        if (src == GeoSource.GPS || src == GeoSource.FUSED || src == GeoSource.NETWORK_WIFI_CELL) {
-                            saveBreadcrumb(selected.candidate)
-                        }
-                    }
-                    val lat = selected.candidate.latitude
-                    val lon = selected.candidate.longitude
-                    val resolvedAddr = reverseGeocoderService.resolveAddress(lat, lon)
-                    val nowText = DateAndTextFormatter.formatLocalDateTime(LocalDateTime.now())
-                    lastSnapshot = GeoAddressSnapshot(
-                        latitude = lat,
-                        longitude = lon,
-                        accuracyMeters = selected.candidate.accuracyMeters,
-                        capturedAtEpochMs = System.currentTimeMillis(),
-                        capturedAtText = nowText,
-                        source = selected.source,
-                        sourceLabel = selected.source.label,
-                        postalCode = resolvedAddr?.postalCode.orEmpty(),
-                        country = resolvedAddr?.country.orEmpty(),
-                        region = resolvedAddr?.region.orEmpty(),
-                        district = resolvedAddr?.district.orEmpty(),
-                        locality = resolvedAddr?.locality.orEmpty(),
-                        street = resolvedAddr?.street.orEmpty(),
-                        houseNumber = resolvedAddr?.houseNumber.orEmpty(),
-                        fullAddress = resolvedAddr?.fullAddress.orEmpty(),
-                        addressResolved = resolvedAddr != null && resolvedAddr.fullAddress.isNotBlank(),
-                        jammerSuspected = selected.jammerSuspected,
-                        warningNote = selected.warningNote
-                    )
-                }
+                captureCurrentLocationProgressive(timeoutMs = 2000L)
             }
         }
     }
 
     suspend fun captureCurrentLocation(
         exifHint: Pair<Double, Double>? = null,
-        timeoutMs: Long = 5000L
+        timeoutMs: Long = 2200L
+    ): GeoAddressSnapshot? = captureCurrentLocationProgressive(
+        exifHint = exifHint,
+        timeoutMs = timeoutMs
+    )
+
+    suspend fun captureCurrentLocationProgressive(
+        exifHint: Pair<Double, Double>? = null,
+        timeoutMs: Long = 2200L,
+        onPreliminary: suspend (GeoAddressSnapshot) -> Unit = {}
     ): GeoAddressSnapshot? = withContext(Dispatchers.IO) {
+        val startedAt = System.currentTimeMillis()
         val exifCandidate = exifHint?.let { (lat, lon) ->
             GeoCandidate(
                 latitude = lat,
@@ -127,31 +102,95 @@ class GeoLocationEngine(
 
         val lat = selected.candidate.latitude
         val lon = selected.candidate.longitude
-        val resolvedAddr = reverseGeocoderService.resolveAddress(lat, lon)
-        val nowText = DateAndTextFormatter.formatLocalDateTime(LocalDateTime.now())
+        val distinctProviders = liveCandidates.map { it.provider.lowercase() }.distinct().size.coerceAtLeast(1)
 
-        val snapshot = GeoAddressSnapshot(
-            latitude = lat,
-            longitude = lon,
+        // Emit instant preliminary snapshot using cached address (or raw coordinates) before network geocoding waits
+        val cachedAddr = reverseGeocoderService.getCachedAddress(lat, lon)
+        val prelimSnapshot = buildSnapshot(
+            selected = selected,
+            addr = cachedAddr,
+            providerCount = distinctProviders,
+            resolveDurationMs = System.currentTimeMillis() - startedAt
+        )
+        lastSnapshot = prelimSnapshot
+        onPreliminary(prelimSnapshot)
+        if (cachedAddr != null && cachedAddr.fullAddress.isNotBlank()) {
+            saveSnapshotToDisk(prelimSnapshot)
+            return@withContext prelimSnapshot
+        }
+
+        val resolvedAddr = reverseGeocoderService.resolveAddress(lat, lon) { fastAddr ->
+            val fastSnap = buildSnapshot(
+                selected = selected,
+                addr = fastAddr,
+                providerCount = distinctProviders,
+                resolveDurationMs = System.currentTimeMillis() - startedAt
+            )
+            lastSnapshot = fastSnap
+            onPreliminary(fastSnap)
+        } ?: lastSnapshot?.takeIf {
+            it.addressResolved &&
+                GeoAntiSpoofSelector.haversineMeters(it.latitude, it.longitude, lat, lon) <= 35.0
+        }?.let { near ->
+            ParsedRussianAddress(
+                postalCode = near.postalCode,
+                country = near.country,
+                region = near.region,
+                district = near.district,
+                locality = near.locality,
+                street = near.street,
+                houseNumber = near.houseNumber,
+                fullAddress = near.fullAddress,
+                suburb = near.suburb,
+                placeName = near.placeName,
+                providerName = near.geocoderProvider
+            )
+        }
+
+        val finalSnapshot = buildSnapshot(
+            selected = selected,
+            addr = resolvedAddr,
+            providerCount = distinctProviders,
+            resolveDurationMs = System.currentTimeMillis() - startedAt
+        )
+        lastSnapshot = finalSnapshot
+        saveSnapshotToDisk(finalSnapshot)
+        finalSnapshot
+    }
+
+    private fun buildSnapshot(
+        selected: SelectedGeoResult,
+        addr: ParsedRussianAddress?,
+        providerCount: Int,
+        resolveDurationMs: Long
+    ): GeoAddressSnapshot {
+        val nowText = DateAndTextFormatter.formatLocalDateTime(LocalDateTime.now())
+        return GeoAddressSnapshot(
+            latitude = selected.candidate.latitude,
+            longitude = selected.candidate.longitude,
             accuracyMeters = selected.candidate.accuracyMeters,
             capturedAtEpochMs = System.currentTimeMillis(),
             capturedAtText = nowText,
             source = selected.source,
             sourceLabel = selected.source.label,
-            postalCode = resolvedAddr?.postalCode.orEmpty(),
-            country = resolvedAddr?.country.orEmpty(),
-            region = resolvedAddr?.region.orEmpty(),
-            district = resolvedAddr?.district.orEmpty(),
-            locality = resolvedAddr?.locality.orEmpty(),
-            street = resolvedAddr?.street.orEmpty(),
-            houseNumber = resolvedAddr?.houseNumber.orEmpty(),
-            fullAddress = resolvedAddr?.fullAddress.orEmpty(),
-            addressResolved = resolvedAddr != null && resolvedAddr.fullAddress.isNotBlank(),
+            postalCode = addr?.postalCode.orEmpty(),
+            country = addr?.country.orEmpty(),
+            region = addr?.region.orEmpty(),
+            district = addr?.district.orEmpty(),
+            locality = addr?.locality.orEmpty(),
+            street = addr?.street.orEmpty(),
+            houseNumber = addr?.houseNumber.orEmpty(),
+            fullAddress = addr?.fullAddress.orEmpty(),
+            addressResolved = addr != null && addr.fullAddress.isNotBlank(),
             jammerSuspected = selected.jammerSuspected,
-            warningNote = selected.warningNote
+            warningNote = selected.warningNote,
+            suburb = addr?.suburb.orEmpty(),
+            placeName = addr?.placeName.orEmpty(),
+            altitudeMeters = selected.candidate.altitudeMeters,
+            providerCount = providerCount,
+            geocoderProvider = addr?.providerName.orEmpty(),
+            resolveDurationMs = resolveDurationMs
         )
-        lastSnapshot = snapshot
-        snapshot
     }
 
     @SuppressLint("MissingPermission")
@@ -185,13 +224,17 @@ class GeoLocationEngine(
             }
         }
 
-        // If we already have both fresh GPS & Network fixes within 20s, skip active waiting
+        // If we already have fresh accurate FUSED/GPS fix (< 25s, <= 40m) or fresh GPS + Net (< 30s), skip waiting
         val freshGps = found[LocationManager.GPS_PROVIDER]
+        val freshFused = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) found[LocationManager.FUSED_PROVIDER] else null
         val freshNet = found[LocationManager.NETWORK_PROVIDER]
-        if (freshGps != null && freshNet != null &&
-            (nowMs - freshGps.timestampMs) <= 20_000L &&
-            (nowMs - freshNet.timestampMs) <= 20_000L
-        ) {
+        val hasImmediateStrongFix = listOfNotNull(freshFused, freshGps).any {
+            (nowMs - it.timestampMs) <= 25_000L && it.accuracyMeters <= 40f
+        }
+        val hasFreshPair = freshGps != null && freshNet != null &&
+            (nowMs - freshGps.timestampMs) <= 30_000L &&
+            (nowMs - freshNet.timestampMs) <= 30_000L
+        if (hasImmediateStrongFix || hasFreshPair) {
             return found.values.toList()
         }
 
@@ -248,18 +291,23 @@ class GeoLocationEngine(
         }
 
         try {
-            val stepMs = 250L
+            val stepMs = 120L
             var elapsed = 0L
             while (elapsed < timeoutMs) {
-                val hasGpsOrFused = found[LocationManager.GPS_PROVIDER]?.let {
-                    it.accuracyMeters <= 35f && it.timestampMs >= nowMs - 10_000L
+                val gpsOrFused = listOfNotNull(
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) found[LocationManager.FUSED_PROVIDER] else null,
+                    found[LocationManager.GPS_PROVIDER]
+                ).firstOrNull { it.timestampMs >= nowMs - 15_000L }
+
+                val hasHighAccGnss = gpsOrFused != null && gpsOrFused.accuracyMeters <= 35f
+                val netFresh = found[LocationManager.NETWORK_PROVIDER]?.let {
+                    it.timestampMs >= nowMs - 15_000L
                 } == true
-                val hasNet = found[LocationManager.NETWORK_PROVIDER]?.let {
-                    it.timestampMs >= nowMs - 10_000L
-                } == true
-                if (hasGpsOrFused && hasNet) {
-                    break
-                }
+
+                if (hasHighAccGnss && netFresh) break
+                if (elapsed >= 600L && gpsOrFused != null && gpsOrFused.accuracyMeters <= 25f) break
+                if (elapsed >= 1100L && found.values.any { it.timestampMs >= nowMs - 15_000L && it.accuracyMeters <= 120f }) break
+
                 delay(stepMs)
                 elapsed += stepMs
             }
@@ -299,8 +347,29 @@ class GeoLocationEngine(
             accuracyMeters = if (hasAccuracy()) accuracy else 100f,
             timestampMs = time.takeIf { it > 0L } ?: System.currentTimeMillis(),
             provider = provider ?: fallbackProvider,
-            isMock = mockFlag
+            isMock = mockFlag,
+            altitudeMeters = if (hasAltitude()) altitude else null
         )
+    }
+
+    private fun loadSnapshotFromDisk(): GeoAddressSnapshot? {
+        synchronized(fileLock) {
+            if (!lastSnapshotFile.exists()) return null
+            val raw = runCatching { lastSnapshotFile.readText(Charsets.UTF_8) }.getOrNull().orEmpty()
+            if (raw.isBlank()) return null
+            return runCatching { json.decodeFromString(GeoAddressSnapshot.serializer(), raw) }.getOrNull()
+        }
+    }
+
+    private fun saveSnapshotToDisk(snapshot: GeoAddressSnapshot) {
+        synchronized(fileLock) {
+            runCatching {
+                lastSnapshotFile.writeText(
+                    json.encodeToString(GeoAddressSnapshot.serializer(), snapshot),
+                    Charsets.UTF_8
+                )
+            }
+        }
     }
 
     private fun loadBreadcrumbFromDisk(): GeoCandidate? {

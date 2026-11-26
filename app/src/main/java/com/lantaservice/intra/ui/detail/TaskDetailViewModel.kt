@@ -20,6 +20,7 @@ import com.lantaservice.intra.data.storage.PendingOutboxEntry
 import com.lantaservice.intra.ui.components.ViewerPhoto
 import com.lantaservice.intra.util.AvrCounterRecognizer
 import com.lantaservice.intra.util.EnhanceMode
+import com.lantaservice.intra.util.EquipmentScanParser
 import com.lantaservice.intra.util.EquipmentScanResult
 import com.lantaservice.intra.util.ImageCompressor
 import com.lantaservice.intra.util.NormalizedRect
@@ -145,12 +146,23 @@ class TaskDetailViewModel(
     ) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoadingGeo = true) }
-            var captured = repository.captureCurrentGeo(exifHint = exifHint)
+            val onPrelim: suspend (GeoAddressSnapshot) -> Unit = { prelim ->
+                _uiState.update { state ->
+                    state.copy(geoSnapshot = prelim)
+                }
+            }
+            var captured = repository.captureCurrentGeoProgressive(
+                exifHint = exifHint,
+                onPreliminary = onPrelim
+            )
             if (captured == null && autoRetry) {
-                val backoffMs = listOf(2500L, 4000L)
+                val backoffMs = listOf(1200L)
                 for (waitMs in backoffMs) {
                     delay(waitMs)
-                    captured = repository.captureCurrentGeo(exifHint = exifHint)
+                    captured = repository.captureCurrentGeoProgressive(
+                        exifHint = exifHint,
+                        onPreliminary = onPrelim
+                    )
                     if (captured != null) break
                 }
             }
@@ -275,6 +287,29 @@ class TaskDetailViewModel(
         _uiState.update {
             it.copy(
                 equipmentScan = result,
+                actionMessage = null
+            )
+        }
+    }
+
+    fun updateEquipmentManual(
+        modelName: String,
+        serialNumber: String,
+        inventoryNumber: String,
+        rawSource: String = "Ручной ввод"
+    ) {
+        val detail = _uiState.value.detail
+        val ticketText = if (detail != null) "${detail.name}\n${detail.description}" else ""
+        val built = EquipmentScanParser.buildManualResult(
+            modelName = modelName,
+            serialNumber = serialNumber,
+            inventoryNumber = inventoryNumber,
+            ticketText = ticketText,
+            rawSource = rawSource
+        )
+        _uiState.update {
+            it.copy(
+                equipmentScan = built,
                 actionMessage = null
             )
         }

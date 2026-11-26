@@ -1,9 +1,11 @@
 package com.lantaservice.intra.ui.camera
 
 import android.annotation.SuppressLint
+import android.view.MotionEvent
 import android.view.ViewGroup
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -23,11 +25,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
@@ -45,6 +50,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -59,9 +66,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
@@ -101,14 +111,85 @@ fun EquipmentScannerScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
 
     var cameraRef by remember { mutableStateOf<Camera?>(null) }
     var imageCaptureRef by remember { mutableStateOf<ImageCapture?>(null) }
     var torchEnabled by remember { mutableStateOf(false) }
+    var zoom2x by remember { mutableStateOf(false) }
     var hasFlash by remember { mutableStateOf(false) }
     var isScanningOcr by remember { mutableStateOf(false) }
+    var ocrHintMessage by remember { mutableStateOf<String?>(null) }
     var liveBarcodeValues by remember { mutableStateOf<List<String>>(emptyList()) }
     var detectedResult by remember { mutableStateOf<EquipmentScanResult?>(null) }
+    var editModel by remember { mutableStateOf("") }
+    var editSerial by remember { mutableStateOf("") }
+    var editInv by remember { mutableStateOf("") }
+
+    val expectedEquipment = remember(ticketText) {
+        EquipmentScanParser.extractExpectedFromTicket(ticketText)
+    }
+
+    fun applyDetectedResult(result: EquipmentScanResult) {
+        detectedResult = result
+        editModel = result.modelName
+        editSerial = result.serialNumber
+        editInv = result.inventoryNumber
+        ocrHintMessage = null
+        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+    }
+
+    fun capturePlateOcr() {
+        val capture = imageCaptureRef ?: return
+        isScanningOcr = true
+        ocrHintMessage = null
+        val (rawFile, _) = ImageCompressor.createTempCameraFile(context, taskId)
+        capture.takePicture(
+            ImageCapture.OutputFileOptions.Builder(rawFile).build(),
+            ContextCompat.getMainExecutor(context),
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                    scope.launch {
+                        val inputImg = runCatching {
+                            withContext(Dispatchers.IO) {
+                                InputImage.fromFilePath(context, android.net.Uri.fromFile(rawFile))
+                            }
+                        }.getOrNull()
+                        val ocrLines = if (inputImg != null) {
+                            val rec = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+                            val txt = suspendCancellableCoroutine { cont ->
+                                rec.process(inputImg)
+                                    .addOnSuccessListener { if (cont.isActive) cont.resume(it) }
+                                    .addOnFailureListener { if (cont.isActive) cont.resume(null) }
+                            }
+                            txt?.textBlocks?.flatMap { b -> b.lines.map { it.text } }.orEmpty()
+                        } else {
+                            emptyList()
+                        }
+                        runCatching { rawFile.delete() }
+                        val parsed = EquipmentScanParser.merge(
+                            existing = detectedResult,
+                            barcodeValues = liveBarcodeValues,
+                            ocrLines = ocrLines,
+                            ticketText = ticketText
+                        )
+                        isScanningOcr = false
+                        if (parsed != null) {
+                            applyDetectedResult(parsed)
+                        } else {
+                            ocrHintMessage = "Текст шильдика не распознан - приблизьте наклейку или включите 2x зум"
+                        }
+                    }
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    isScanningOcr = false
+                    ocrHintMessage = "Ошибка захвата кадра - попробуйте ещё раз"
+                    runCatching { rawFile.delete() }
+                }
+            }
+        )
+    }
 
     val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
     val barcodeScanner = remember {
@@ -145,6 +226,16 @@ fun EquipmentScannerScreen(
                         )
                         scaleType = PreviewView.ScaleType.FILL_CENTER
                         val pv = this
+                        pv.setOnTouchListener { _, event ->
+                            if (event.action == MotionEvent.ACTION_UP) {
+                                val cam = cameraRef ?: return@setOnTouchListener false
+                                val factory = pv.meteringPointFactory
+                                val pt = factory.createPoint(event.x, event.y)
+                                val action = FocusMeteringAction.Builder(pt).build()
+                                runCatching { cam.cameraControl.startFocusAndMetering(action) }
+                            }
+                            true
+                        }
                         val providerFuture = ProcessCameraProvider.getInstance(ctx)
                         providerFuture.addListener({
                             runCatching {
@@ -184,7 +275,7 @@ fun EquipmentScannerScreen(
                                                             ticketText = ticketText
                                                         )
                                                         if (parsed != null && detectedResult == null) {
-                                                            detectedResult = parsed
+                                                            applyDetectedResult(parsed)
                                                         }
                                                     }
                                                 }
@@ -267,25 +358,73 @@ fun EquipmentScannerScreen(
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                         )
                     }
-                    if (hasFlash) {
-                        IconButton(
-                            onClick = {
-                                val next = !torchEnabled
-                                torchEnabled = next
-                                cameraRef?.cameraControl?.enableTorch(next)
-                            },
-                            colors = IconButtonDefaults.iconButtonColors(
-                                containerColor = if (torchEnabled) IntraColors.WarningAmber else Color.Black.copy(alpha = 0.55f),
-                                contentColor = Color.White
-                            )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            modifier = Modifier
+                                .clickable {
+                                    val next = !zoom2x
+                                    zoom2x = next
+                                    runCatching {
+                                        cameraRef?.cameraControl?.setZoomRatio(if (next) 2f else 1f)
+                                    }
+                                },
+                            shape = RoundedCornerShape(50),
+                            color = if (zoom2x) IntraColors.BrandCyan else Color.Black.copy(alpha = 0.55f)
                         ) {
-                            Icon(
-                                imageVector = if (torchEnabled) Icons.Rounded.FlashOn else Icons.Rounded.FlashOff,
-                                contentDescription = "Фонарик"
+                            Text(
+                                text = if (zoom2x) "2x" else "1x",
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
                             )
                         }
-                    } else {
-                        Spacer(modifier = Modifier.size(48.dp))
+                        if (hasFlash) {
+                            IconButton(
+                                onClick = {
+                                    val next = !torchEnabled
+                                    torchEnabled = next
+                                    cameraRef?.cameraControl?.enableTorch(next)
+                                },
+                                colors = IconButtonDefaults.iconButtonColors(
+                                    containerColor = if (torchEnabled) IntraColors.WarningAmber else Color.Black.copy(alpha = 0.55f),
+                                    contentColor = Color.White
+                                )
+                            ) {
+                                Icon(
+                                    imageVector = if (torchEnabled) Icons.Rounded.FlashOn else Icons.Rounded.FlashOff,
+                                    contentDescription = "Фонарик"
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (expectedEquipment != null) {
+                    val expectedLine = listOfNotNull(
+                        expectedEquipment.modelName.takeIf { it.isNotBlank() },
+                        expectedEquipment.serialNumber.takeIf { it.isNotBlank() }?.let { "S/N $it" }
+                    ).joinToString(" - ")
+                    if (expectedLine.isNotBlank()) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = IntraColors.BrandPrimary.copy(alpha = 0.85f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "По заявке: $expectedLine",
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                            )
+                        }
                     }
                 }
 
@@ -295,8 +434,9 @@ fun EquipmentScannerScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "Наведите на штрихкод/DataMatrix или нажмите «Считать шильдик» для чтения модели и S/N",
-                        color = Color.White,
+                        text = ocrHintMessage
+                            ?: "Наведите на штрихкод / DataMatrix (коротко нажмите на экран для фокуса) или считайте текст шильдика",
+                        color = if (ocrHintMessage != null) IntraColors.WarningAmber else Color.White,
                         style = MaterialTheme.typography.labelSmall,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
@@ -304,65 +444,22 @@ fun EquipmentScannerScreen(
                 }
             }
 
-            // Bottom Sheet: either Capture Label OCR button or Result Card
+            // Bottom Sheet: either Capture Label OCR button or Editable Verified Result Card
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter)
-                    .background(Color.Black.copy(alpha = 0.82f))
+                    .background(Color.Black.copy(alpha = 0.86f))
                     .navigationBarsPadding()
+                    .imePadding()
+                    .verticalScroll(rememberScrollState())
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 val res = detectedResult
                 if (res == null) {
                     Button(
-                        onClick = {
-                            val capture = imageCaptureRef ?: return@Button
-                            isScanningOcr = true
-                            val (rawFile, _) = ImageCompressor.createTempCameraFile(context, taskId)
-                            capture.takePicture(
-                                ImageCapture.OutputFileOptions.Builder(rawFile).build(),
-                                ContextCompat.getMainExecutor(context),
-                                object : ImageCapture.OnImageSavedCallback {
-                                    override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                                        scope.launch {
-                                            val inputImg = runCatching {
-                                                withContext(Dispatchers.IO) {
-                                                    InputImage.fromFilePath(context, android.net.Uri.fromFile(rawFile))
-                                                }
-                                            }.getOrNull()
-                                            val ocrLines = if (inputImg != null) {
-                                                val rec = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-                                                val txt = suspendCancellableCoroutine { cont ->
-                                                    rec.process(inputImg)
-                                                        .addOnSuccessListener { if (cont.isActive) cont.resume(it) }
-                                                        .addOnFailureListener { if (cont.isActive) cont.resume(null) }
-                                                }
-                                                txt?.textBlocks?.flatMap { b -> b.lines.map { it.text } }.orEmpty()
-                                            } else {
-                                                emptyList()
-                                            }
-                                            runCatching { rawFile.delete() }
-                                            val parsed = EquipmentScanParser.parse(
-                                                barcodeValues = liveBarcodeValues,
-                                                ocrLines = ocrLines,
-                                                ticketText = ticketText
-                                            )
-                                            isScanningOcr = false
-                                            if (parsed != null) {
-                                                detectedResult = parsed
-                                            }
-                                        }
-                                    }
-
-                                    override fun onError(exception: ImageCaptureException) {
-                                        isScanningOcr = false
-                                        runCatching { rawFile.delete() }
-                                    }
-                                }
-                            )
-                        },
+                        onClick = { capturePlateOcr() },
                         enabled = !isScanningOcr,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -388,6 +485,15 @@ fun EquipmentScannerScreen(
                         }
                     }
                 } else {
+                    val liveVerified = remember(editModel, editSerial, editInv, ticketText, res.rawSource) {
+                        EquipmentScanParser.buildManualResult(
+                            modelName = editModel,
+                            serialNumber = editSerial,
+                            inventoryNumber = editInv,
+                            ticketText = ticketText,
+                            rawSource = res.rawSource
+                        ) ?: res
+                    }
                     Surface(
                         shape = RoundedCornerShape(14.dp),
                         color = IntraColors.SurfaceWhite,
@@ -395,57 +501,90 @@ fun EquipmentScannerScreen(
                     ) {
                         Column(
                             modifier = Modifier.padding(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = when (res.matchesTicket) {
-                                        false -> Icons.Rounded.WarningAmber
-                                        else -> Icons.Rounded.QrCodeScanner
-                                    },
-                                    contentDescription = null,
-                                    tint = when (res.matchesTicket) {
-                                        true -> IntraColors.EmeraldSuccess
-                                        false -> IntraColors.ErrorRed
-                                        null -> IntraColors.BrandPrimary
-                                    },
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Считанные данные",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = IntraColors.TextPrimary
-                                )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = when (liveVerified.matchesTicket) {
+                                            false -> Icons.Rounded.WarningAmber
+                                            else -> Icons.Rounded.QrCodeScanner
+                                        },
+                                        contentDescription = null,
+                                        tint = when (liveVerified.matchesTicket) {
+                                            true -> IntraColors.EmeraldSuccess
+                                            false -> IntraColors.ErrorRed
+                                            null -> IntraColors.BrandPrimary
+                                        },
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Считанные данные",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = IntraColors.TextPrimary
+                                    )
+                                }
+                                if (editModel.isBlank() || editSerial.isBlank()) {
+                                    OutlinedButton(
+                                        onClick = { capturePlateOcr() },
+                                        enabled = !isScanningOcr,
+                                        shape = RoundedCornerShape(10.dp),
+                                        border = BorderStroke(1.dp, IntraColors.BrandPrimary)
+                                    ) {
+                                        Text(
+                                            text = if (isScanningOcr) "Читаю..." else "+ Шильдик OCR",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = IntraColors.BrandPrimary
+                                        )
+                                    }
+                                }
                             }
-                            if (res.modelName.isNotBlank()) {
-                                Text(
-                                    text = "Модель: ${res.modelName}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = IntraColors.TextPrimary
+
+                            OutlinedTextField(
+                                value = editModel,
+                                onValueChange = { editModel = it },
+                                label = { Text("Модель аппарата") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = IntraColors.BrandPrimary,
+                                    unfocusedBorderColor = IntraColors.SubtleBorder
                                 )
-                            }
-                            if (res.serialNumber.isNotBlank()) {
-                                Text(
-                                    text = "Серийный номер (S/N): ${res.serialNumber}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = IntraColors.BrandPrimary
+                            )
+                            OutlinedTextField(
+                                value = editSerial,
+                                onValueChange = { editSerial = it },
+                                label = { Text("Серийный номер (S/N)") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = IntraColors.BrandPrimary,
+                                    unfocusedBorderColor = IntraColors.SubtleBorder
                                 )
-                            }
-                            if (res.inventoryNumber.isNotBlank()) {
-                                Text(
-                                    text = "Инв. номер: ${res.inventoryNumber}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = IntraColors.TextPrimary
+                            )
+                            OutlinedTextField(
+                                value = editInv,
+                                onValueChange = { editInv = it },
+                                label = { Text("Инвентарный номер") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = IntraColors.BrandPrimary,
+                                    unfocusedBorderColor = IntraColors.SubtleBorder
                                 )
-                            }
-                            if (res.matchNote.isNotBlank()) {
+                            )
+
+                            if (liveVerified.matchNote.isNotBlank()) {
                                 Text(
-                                    text = res.matchNote,
+                                    text = liveVerified.matchNote,
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = when (res.matchesTicket) {
+                                    color = when (liveVerified.matchesTicket) {
                                         true -> IntraColors.EmeraldDeep
                                         false -> IntraColors.ErrorRed
                                         null -> IntraColors.TextSecondary
@@ -464,6 +603,9 @@ fun EquipmentScannerScreen(
                             onClick = {
                                 detectedResult = null
                                 liveBarcodeValues = emptyList()
+                                editModel = ""
+                                editSerial = ""
+                                editInv = ""
                             },
                             modifier = Modifier
                                 .weight(1f)
@@ -476,7 +618,7 @@ fun EquipmentScannerScreen(
                             Text("Повторить", color = Color.White)
                         }
                         Button(
-                            onClick = { onResultConfirmed(res) },
+                            onClick = { onResultConfirmed(liveVerified) },
                             modifier = Modifier
                                 .weight(1f)
                                 .height(48.dp),

@@ -35,7 +35,8 @@ data class GeoCandidate(
     val accuracyMeters: Float,
     val timestampMs: Long,
     val provider: String,
-    val isMock: Boolean = false
+    val isMock: Boolean = false,
+    val altitudeMeters: Double? = null
 )
 
 @Immutable
@@ -58,10 +59,23 @@ data class GeoAddressSnapshot(
     val fullAddress: String = "",
     val addressResolved: Boolean = false,
     val jammerSuspected: Boolean = false,
-    val warningNote: String? = null
+    val warningNote: String? = null,
+    val suburb: String = "",
+    val placeName: String = "",
+    val altitudeMeters: Double? = null,
+    val providerCount: Int = 0,
+    val geocoderProvider: String = "",
+    val resolveDurationMs: Long = 0L
 ) {
     fun formatCoordinates(): String {
         return String.format(Locale.US, "%.6f, %.6f", latitude, longitude)
+    }
+
+    fun accuracyQualityLabel(): String = when {
+        accuracyMeters <= 0f -> "не указана"
+        accuracyMeters <= 25f -> "высокая"
+        accuracyMeters <= 80f -> "средняя"
+        else -> "приблизительная"
     }
 
     fun formatSummaryForComment(): String {
@@ -72,7 +86,11 @@ data class GeoAddressSnapshot(
         } else {
             lines += "Геолокация: адрес уточняется (офлайн)"
         }
-        val accText = if (accuracyMeters > 0f) "~${accuracyMeters.roundToInt()} м" else "не указана"
+        val cleanPlace = placeName.trim()
+        if (cleanPlace.isNotEmpty() && !addressPart.contains(cleanPlace, ignoreCase = true)) {
+            lines += "Объект: $cleanPlace"
+        }
+        val accText = if (accuracyMeters > 0f) "~${accuracyMeters.roundToInt()} м (${accuracyQualityLabel()})" else "не указана"
         lines += "Координаты: ${formatCoordinates()} (точность $accText, источник: $sourceLabel, время: $capturedAtText)"
         warningNote?.trim()?.takeIf { it.isNotEmpty() }?.let { note ->
             lines += "Примечание по навигации: $note"

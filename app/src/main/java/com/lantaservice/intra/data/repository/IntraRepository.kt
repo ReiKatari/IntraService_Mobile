@@ -890,6 +890,18 @@ class IntraRepository(
         return runCatching { geoLocationEngine?.captureCurrentLocation(exifHint = exifHint) }.getOrNull()
     }
 
+    suspend fun captureCurrentGeoProgressive(
+        exifHint: Pair<Double, Double>? = null,
+        onPreliminary: suspend (GeoAddressSnapshot) -> Unit = {}
+    ): GeoAddressSnapshot? {
+        return runCatching {
+            geoLocationEngine?.captureCurrentLocationProgressive(
+                exifHint = exifHint,
+                onPreliminary = onPreliminary
+            )
+        }.getOrNull()
+    }
+
     suspend fun saveTicketChanges(
         taskId: Int,
         taskName: String = "",
@@ -1066,6 +1078,9 @@ class IntraRepository(
                                     street = parsed.street,
                                     houseNumber = parsed.houseNumber,
                                     fullAddress = parsed.fullAddress,
+                                    suburb = parsed.suburb,
+                                    placeName = parsed.placeName,
+                                    geocoderProvider = parsed.providerName,
                                     addressResolved = true
                                 )
                             } else {

@@ -4,6 +4,7 @@ import com.lantaservice.intra.data.geo.GeoAddressSnapshot
 import com.lantaservice.intra.data.geo.GeoAntiSpoofSelector
 import com.lantaservice.intra.data.geo.GeoCandidate
 import com.lantaservice.intra.data.geo.GeoSource
+import com.lantaservice.intra.data.geo.ParsedRussianAddress
 import com.lantaservice.intra.data.geo.ReverseGeocoderParser
 import com.lantaservice.intra.data.model.PendingPhoto
 import com.lantaservice.intra.data.model.PhotoDocumentType
@@ -1202,5 +1203,109 @@ class IntraLogicTest {
             thresholdMinutes = 60L
         )
         assertTrue(suppressed.isEmpty())
+    }
+
+    @Test
+    fun reverseGeocoderParserExtractsSuburbPlaceNameAndMergesAddresses() {
+        val nominatimRaw = """
+            {
+              "name": "БЦ Омега Плаза",
+              "address": {
+                "postcode": "115280",
+                "country": "Россия",
+                "state": "Москва",
+                "suburb": "Даниловский район",
+                "city": "Москва",
+                "road": "Ленинская Слобода",
+                "house_number": "19"
+              }
+            }
+        """.trimIndent()
+        val nomParsed = ReverseGeocoderParser.parseNominatimJson(nominatimRaw, json)
+        assertNotNull(nomParsed)
+        assertEquals("Даниловский район", nomParsed!!.suburb)
+        assertEquals("БЦ Омега Плаза", nomParsed.placeName)
+        assertEquals("OpenStreetMap Nominatim", nomParsed.providerName)
+
+        val partialPrimary = ParsedRussianAddress(
+            country = "Россия",
+            region = "Москва",
+            locality = "Москва",
+            street = "Ленинская Слобода",
+            fullAddress = "Москва, Ленинская Слобода",
+            providerName = "Komoot Photon"
+        )
+        val merged = ReverseGeocoderParser.mergeAddresses(partialPrimary, nomParsed)
+        assertNotNull(merged)
+        assertEquals("115280", merged!!.postalCode)
+        assertEquals("19", merged.houseNumber)
+        assertEquals("Даниловский район", merged.suburb)
+        assertEquals("БЦ Омега Плаза", merged.placeName)
+        assertTrue(merged.fullAddress.contains("115280"))
+        assertTrue(merged.fullAddress.contains("д. 19"))
+    }
+
+    @Test
+    fun geoSnapshotAccuracyQualityAndPlaceNameComment() {
+        val snapHigh = GeoAddressSnapshot(
+            latitude = 55.709911,
+            longitude = 37.653411,
+            accuracyMeters = 14f,
+            capturedAtEpochMs = 1L,
+            capturedAtText = "26.11.2026 15:20",
+            source = GeoSource.GPS,
+            fullAddress = "115280, Москва, Ленинская Слобода, д. 19",
+            placeName = "БЦ Омега Плаза",
+            suburb = "Даниловский район",
+            altitudeMeters = 142.0,
+            providerCount = 2,
+            addressResolved = true
+        )
+        assertEquals("высокая", snapHigh.accuracyQualityLabel())
+        val summary = snapHigh.formatSummaryForComment()
+        assertTrue(summary.contains("Геолокация: 115280, Москва, Ленинская Слобода, д. 19"))
+        assertTrue(summary.contains("Объект: БЦ Омега Плаза"))
+        assertTrue(summary.contains("высокая"))
+
+        assertEquals("средняя", snapHigh.copy(accuracyMeters = 52f).accuracyQualityLabel())
+        assertEquals("приблизительная", snapHigh.copy(accuracyMeters = 180f).accuracyQualityLabel())
+    }
+
+    @Test
+    fun equipmentScanParserExtractsExpectedMergesBarcodeWithOcrAndManualEntry() {
+        val ticketText = "Настройка МФУ Lexmark MX622ade, S/N: 70169455511, инв. № INV-908"
+        val expected = EquipmentScanParser.extractExpectedFromTicket(ticketText)
+        assertNotNull(expected)
+        assertTrue(expected!!.modelName.contains("Lexmark", ignoreCase = true))
+        assertEquals("70169455511", expected.serialNumber)
+        assertEquals("INV-908", expected.inventoryNumber)
+
+        val barcodeOnly = EquipmentScanParser.parse(
+            barcodeValues = listOf("S/N: 70169455511"),
+            ocrLines = emptyList(),
+            ticketText = ticketText
+        )
+        assertNotNull(barcodeOnly)
+        val merged = EquipmentScanParser.merge(
+            existing = barcodeOnly,
+            barcodeValues = emptyList(),
+            ocrLines = listOf("Lexmark MX622ade", "Инв. № INV-908"),
+            ticketText = ticketText
+        )
+        assertNotNull(merged)
+        assertEquals("70169455511", merged!!.serialNumber)
+        assertEquals("INV-908", merged.inventoryNumber)
+        assertTrue(merged.modelName.contains("Lexmark", ignoreCase = true))
+        assertEquals(true, merged.matchesTicket)
+
+        val manualWrong = EquipmentScanParser.buildManualResult(
+            modelName = "Kyocera M2040dn",
+            serialNumber = "bad-serial-1",
+            inventoryNumber = "",
+            ticketText = ticketText
+        )
+        assertNotNull(manualWrong)
+        assertEquals("BAD-SERIAL-1", manualWrong!!.serialNumber)
+        assertEquals(false, manualWrong.matchesTicket)
     }
 }

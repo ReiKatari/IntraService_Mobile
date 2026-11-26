@@ -104,12 +104,16 @@ object EquipmentScanParser {
             }
         }
 
-        // Last fallback if OCR captured an uppercase alphanumeric serial token
+        // Last fallback if OCR captured an uppercase alphanumeric serial token (ignoring model/inventory codes)
         if (serialNumber.isEmpty()) {
+            val modelUpper = modelName.uppercase(Locale.ROOT)
+            val invUpper = inventoryNumber.uppercase(Locale.ROOT)
             for (line in cleanOcr) {
                 line.split(Regex("[\\s,;]+")).forEach { tok ->
                     val up = tok.trim().uppercase(Locale.ROOT)
-                    if (standaloneSerialRegex.matches(up) && serialNumber.isEmpty()) {
+                    val isModelToken = modelUpper.isNotEmpty() && modelUpper.contains(up)
+                    val isInvToken = invUpper.isNotEmpty() && up == invUpper
+                    if (!isModelToken && !isInvToken && standaloneSerialRegex.matches(up) && serialNumber.isEmpty()) {
                         serialNumber = up
                     }
                 }
@@ -140,6 +144,112 @@ object EquipmentScanParser {
             inventoryNumber = inventoryNumber,
             modelName = modelName,
             rawSource = src,
+            matchesTicket = matches,
+            matchNote = note
+        )
+    }
+
+    /**
+     * Extracts expected equipment model, serial number, and inventory number mentioned
+     * in a ticket's title/description before scanning, so the engineer knows what to look for.
+     */
+    fun extractExpectedFromTicket(ticketText: String): EquipmentScanResult? {
+        if (ticketText.isBlank()) return null
+        val lines = ticketText.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        var serialNumber = ""
+        var inventoryNumber = ""
+        var modelName = ""
+        for (line in lines) {
+            if (modelName.isEmpty()) {
+                extractModel(line)?.let { modelName = it }
+            }
+            if (serialNumber.isEmpty()) {
+                serialLabelRegex.find(line)?.let { m ->
+                    serialNumber = m.groupValues[1].uppercase(Locale.ROOT).trim()
+                }
+            }
+            if (inventoryNumber.isEmpty()) {
+                invLabelRegex.find(line)?.let { m ->
+                    inventoryNumber = m.groupValues[1].uppercase(Locale.ROOT).trim()
+                }
+            }
+        }
+        if (serialNumber.isEmpty() && inventoryNumber.isEmpty() && modelName.isEmpty()) return null
+        return EquipmentScanResult(
+            serialNumber = serialNumber,
+            inventoryNumber = inventoryNumber,
+            modelName = modelName,
+            rawSource = "Из описания заявки",
+            matchesTicket = null,
+            matchNote = ""
+        )
+    }
+
+    /**
+     * Combines an earlier scan (for example, S/N from barcode) with additional barcode/OCR lines
+     * (for example, model from plate OCR) and re-evaluates the ticket match.
+     */
+    fun merge(
+        existing: EquipmentScanResult?,
+        barcodeValues: List<String>,
+        ocrLines: List<String>,
+        ticketText: String
+    ): EquipmentScanResult? {
+        val fresh = parse(barcodeValues, ocrLines, ticketText)
+        if (existing == null) return fresh
+        if (fresh == null) return existing
+
+        val mergedSerial = existing.serialNumber.ifBlank { fresh.serialNumber }
+        val mergedInv = existing.inventoryNumber.ifBlank { fresh.inventoryNumber }
+        val mergedModel = existing.modelName.ifBlank { fresh.modelName }
+        val (matches, note) = evaluateTicketMatch(
+            normalizedTicket = ticketText.lowercase(Locale.ROOT),
+            modelName = mergedModel,
+            serialNumber = mergedSerial,
+            inventoryNumber = mergedInv
+        )
+        val mergedSource = listOf(existing.rawSource, fresh.rawSource)
+            .filter { it.isNotBlank() }
+            .distinct()
+            .joinToString(" + ")
+
+        return EquipmentScanResult(
+            serialNumber = mergedSerial,
+            inventoryNumber = mergedInv,
+            modelName = mergedModel,
+            rawSource = mergedSource.ifBlank { fresh.rawSource },
+            matchesTicket = matches,
+            matchNote = note
+        )
+    }
+
+    /**
+     * Builds a normalized [EquipmentScanResult] from manual engineer entry or quick edits,
+     * evaluating match against the ticket description.
+     */
+    fun buildManualResult(
+        modelName: String,
+        serialNumber: String,
+        inventoryNumber: String,
+        ticketText: String,
+        rawSource: String = "Ручной ввод"
+    ): EquipmentScanResult? {
+        val cleanModel = modelName.trim()
+        val cleanSerial = serialNumber.trim().uppercase(Locale.ROOT)
+        val cleanInv = inventoryNumber.trim().uppercase(Locale.ROOT)
+        if (cleanModel.isEmpty() && cleanSerial.isEmpty() && cleanInv.isEmpty()) return null
+
+        val (matches, note) = evaluateTicketMatch(
+            normalizedTicket = ticketText.lowercase(Locale.ROOT),
+            modelName = cleanModel,
+            serialNumber = cleanSerial,
+            inventoryNumber = cleanInv
+        )
+        return EquipmentScanResult(
+            serialNumber = cleanSerial,
+            inventoryNumber = cleanInv,
+            modelName = cleanModel,
+            rawSource = rawSource,
             matchesTicket = matches,
             matchNote = note
         )

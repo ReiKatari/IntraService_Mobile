@@ -1,12 +1,16 @@
 package com.lantaservice.intra.ui.detail
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.webkit.MimeTypeMap
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -57,6 +61,7 @@ import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudUpload
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.CropFree
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Description
@@ -69,6 +74,7 @@ import androidx.compose.material.icons.rounded.FactCheck
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Phone
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.Print
@@ -153,6 +159,7 @@ import com.lantaservice.intra.ui.theme.IntraColors
 import com.lantaservice.intra.util.AvrCounterParser
 import com.lantaservice.intra.util.AvrCounterRecognizer
 import com.lantaservice.intra.util.DateAndTextFormatter
+import com.lantaservice.intra.util.EquipmentScanParser
 import com.lantaservice.intra.util.EquipmentScanResult
 import com.lantaservice.intra.util.ImageCompressor
 import com.lantaservice.intra.util.NormalizedRect
@@ -179,6 +186,7 @@ fun TaskDetailScreen(
 
     var showSmartCamera by remember { mutableStateOf(false) }
     var showEquipmentScanner by remember { mutableStateOf(false) }
+    var showEquipmentManualDialog by remember { mutableStateOf(false) }
     var pendingCameraPurpose by remember { mutableStateOf("photo") }
     var smartCameraPhotoIndex by remember { mutableIntStateOf(1) }
     var activePhotoTypeForCapture by rememberSaveable { mutableStateOf(PhotoDocumentType.AVR) }
@@ -189,6 +197,9 @@ fun TaskDetailScreen(
 
     val latestPendingAvr = remember(state.pendingPhotos) {
         state.pendingPhotos.lastOrNull { it.documentType == PhotoDocumentType.AVR }
+    }
+    val expectedEquipment = remember(state.detail?.name, state.detail?.description) {
+        state.detail?.let { EquipmentScanParser.extractExpectedFromTicket("${it.name}\n${it.description}") }
     }
 
     val hasUnlockedPending = remember(state.pendingPhotos, nowEpochMs) {
@@ -379,6 +390,23 @@ fun TaskDetailScreen(
         )
     }
 
+    if (showEquipmentManualDialog) {
+        EquipmentManualInputDialog(
+            initial = state.equipmentScan,
+            expected = expectedEquipment,
+            onDismiss = { showEquipmentManualDialog = false },
+            onSave = { modelName, serialNumber, inventoryNumber ->
+                showEquipmentManualDialog = false
+                viewModel.updateEquipmentManual(
+                    modelName = modelName,
+                    serialNumber = serialNumber,
+                    inventoryNumber = inventoryNumber,
+                    rawSource = state.equipmentScan?.rawSource?.takeIf { it.isNotBlank() } ?: "Ручной ввод"
+                )
+            }
+        )
+    }
+
     if (showSmartCamera) {
         SmartCameraScreen(
             taskId = state.taskId,
@@ -547,7 +575,23 @@ fun TaskDetailScreen(
                         item {
                             GeolocationCard(
                                 snapshot = state.geoSnapshot,
-                                isLoading = state.isLoadingGeo
+                                isLoading = state.isLoadingGeo,
+                                onRefreshGeo = { viewModel.refreshGeolocation() },
+                                onCopyText = { label, text, msg ->
+                                    copyToClipboard(context, label, text, msg)
+                                },
+                                onOpenMap = { lat, lon, label ->
+                                    val encoded = Uri.encode(label.ifBlank { "Заявка #${state.taskId}" })
+                                    val geoUri = Uri.parse("geo:$lat,$lon?q=$lat,$lon($encoded)")
+                                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, geoUri)) }
+                                        .onFailure {
+                                            Toast.makeText(
+                                                context,
+                                                "На устройстве не найдено приложение карт",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                }
                             )
                         }
 
@@ -628,8 +672,13 @@ fun TaskDetailScreen(
                         item {
                             EquipmentScanCard(
                                 equipmentScan = state.equipmentScan,
+                                expectedEquipment = expectedEquipment,
                                 isSaving = state.isSaving,
                                 onScanClick = ::startEquipmentScanner,
+                                onManualInputClick = { showEquipmentManualDialog = true },
+                                onCopySerial = { sn ->
+                                    copyToClipboard(context, "serial", sn, "Серийный номер скопирован")
+                                },
                                 onClear = viewModel::clearEquipmentScan
                             )
                         }
@@ -654,10 +703,94 @@ fun TaskDetailScreen(
     }
 }
 
+private fun copyToClipboard(
+    context: Context,
+    label: String,
+    text: String,
+    toastMessage: String
+) {
+    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
+    cm.setPrimaryClip(ClipData.newPlainText(label, text))
+    Toast.makeText(context, toastMessage, Toast.LENGTH_SHORT).show()
+}
+
+@Composable
+private fun GeoAddressDetailRow(
+    label: String,
+    value: String
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = IntraColors.TextTertiary,
+            modifier = Modifier.width(136.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall,
+            color = IntraColors.TextPrimary,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun GeoMetricTile(
+    title: String,
+    value: String,
+    subtitle: String? = null,
+    valueColor: Color = IntraColors.TextPrimary,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
+        color = IntraColors.BackgroundIce,
+        border = BorderStroke(1.dp, IntraColors.SubtleBorder)
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelSmall,
+                color = IntraColors.TextTertiary
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold,
+                color = valueColor,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = IntraColors.TextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun GeolocationCard(
     snapshot: GeoAddressSnapshot?,
-    isLoading: Boolean
+    isLoading: Boolean,
+    onRefreshGeo: () -> Unit,
+    onCopyText: (label: String, text: String, toastMessage: String) -> Unit,
+    onOpenMap: (lat: Double, lon: Double, label: String) -> Unit
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -671,8 +804,9 @@ private fun GeolocationCard(
     ) {
         Column(
             modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // Card Header + Status Pill + Refresh Button
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -695,88 +829,332 @@ private fun GeolocationCard(
                         color = IntraColors.TextPrimary
                     )
                 }
-                if (isLoading) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(
-                            color = IntraColors.BrandPrimary,
-                            strokeWidth = 2.dp,
-                            modifier = Modifier.size(16.dp)
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = when {
+                            isLoading -> IntraColors.BrandPrimary.copy(alpha = 0.12f)
+                            snapshot?.jammerSuspected == true -> IntraColors.WarningTint
+                            snapshot != null -> IntraColors.EmeraldTint
+                            else -> IntraColors.BackgroundIce
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (isLoading) {
+                                CircularProgressIndicator(
+                                    color = IntraColors.BrandPrimary,
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Spacer(modifier = Modifier.width(5.dp))
+                            }
+                            Text(
+                                text = when {
+                                    isLoading && snapshot == null -> "Поиск..."
+                                    isLoading -> "Уточнение..."
+                                    snapshot?.jammerSuspected == true -> "Помехи GPS"
+                                    snapshot != null -> "Определено"
+                                    else -> "Ожидание"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = when {
+                                    isLoading -> IntraColors.BrandPrimary
+                                    snapshot?.jammerSuspected == true -> IntraColors.WarningAmber
+                                    snapshot != null -> IntraColors.EmeraldDeep
+                                    else -> IntraColors.TextSecondary
+                                }
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = onRefreshGeo,
+                        enabled = !isLoading,
+                        modifier = Modifier.size(32.dp),
+                        colors = IconButtonDefaults.iconButtonColors(
+                            containerColor = IntraColors.BackgroundIce,
+                            contentColor = IntraColors.BrandPrimary
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Автопоиск...",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = IntraColors.BrandPrimary
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Refresh,
+                            contentDescription = "Обновить геолокацию",
+                            modifier = Modifier.size(17.dp)
                         )
                     }
                 }
             }
 
             if (snapshot == null) {
-                Text(
-                    text = if (isLoading) {
-                        "Автоматическое определение координат и полного адреса (GPS + Wi-Fi/сотовая сеть)..."
-                    } else {
-                        "Геолокация фиксируется автоматически при получении сигнала..."
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = IntraColors.TextSecondary
-                )
-            } else {
-                Text(
-                    text = snapshot.fullAddress.ifBlank {
-                        "Координаты зафиксированы (полный адрес уточнится при подключении к сети)"
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = IntraColors.TextPrimary
-                )
-
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = IntraColors.BackgroundIce,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(50),
-                        color = if (snapshot.jammerSuspected) IntraColors.WarningTint else IntraColors.EmeraldTint
-                    ) {
-                        Text(
-                            text = snapshot.sourceLabel,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (snapshot.jammerSuspected) IntraColors.WarningAmber else IntraColors.EmeraldDeep,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                        )
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(50),
-                        color = IntraColors.BackgroundIce
-                    ) {
-                        val accText = if (snapshot.accuracyMeters > 0f) {
-                            "~${snapshot.accuracyMeters.roundToInt()} м"
+                    Text(
+                        text = if (isLoading) {
+                            "Определяем координаты и полный адрес объекта (GPS, Wi-Fi и базовые станции)..."
                         } else {
-                            "точность н/д"
+                            "Геолокация будет определена автоматически при появлении сигнала или нажмите кнопку обновления."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = IntraColors.TextSecondary,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+            } else {
+                // Group 1: Structured Object Address
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = IntraColors.BackgroundIce,
+                    border = BorderStroke(1.dp, IntraColors.SubtleBorder)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Адрес объекта",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = IntraColors.BrandPrimary
+                            )
+                            if (snapshot.fullAddress.isNotBlank()) {
+                                Row(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            onCopyText("address", snapshot.fullAddress, "Адрес скопирован")
+                                        }
+                                        .padding(horizontal = 6.dp, vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.ContentCopy,
+                                        contentDescription = "Копировать адрес",
+                                        tint = IntraColors.BrandPrimary,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Копировать",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = IntraColors.BrandPrimary,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
                         }
+
+                        if (snapshot.placeName.isNotBlank()) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = IntraColors.BrandPrimary.copy(alpha = 0.10f)
+                            ) {
+                                Text(
+                                    text = "Объект: ${snapshot.placeName}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = IntraColors.BrandPrimary,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+
                         Text(
-                            text = "${snapshot.formatCoordinates()} ($accText)",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = IntraColors.TextSecondary,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            text = snapshot.fullAddress.ifBlank {
+                                "Координаты зафиксированы - полный адрес загрузится при подключении к сети"
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = IntraColors.TextPrimary
+                        )
+
+                        val districtCombined = listOf(snapshot.district, snapshot.suburb)
+                            .map { it.trim() }
+                            .filter { it.isNotEmpty() }
+                            .distinctBy { it.lowercase() }
+                            .joinToString(", ")
+
+                        val streetHouseCombined = buildList {
+                            snapshot.street.trim().takeIf { it.isNotEmpty() }?.let { add(it) }
+                            snapshot.houseNumber.trim().takeIf { it.isNotEmpty() }?.let { house ->
+                                add(
+                                    if (house.lowercase().startsWith("д.") || house.lowercase().startsWith("дом")) {
+                                        house
+                                    } else {
+                                        "дом $house"
+                                    }
+                                )
+                            }
+                        }.joinToString(", ")
+
+                        val hasBreakdown = snapshot.postalCode.isNotBlank() ||
+                            snapshot.region.isNotBlank() ||
+                            districtCombined.isNotBlank() ||
+                            snapshot.locality.isNotBlank() ||
+                            streetHouseCombined.isNotBlank()
+
+                        if (hasBreakdown) {
+                            HorizontalDivider(color = IntraColors.SubtleBorder)
+                            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                snapshot.postalCode.takeIf { it.isNotBlank() }?.let {
+                                    GeoAddressDetailRow(label = "Почтовый индекс", value = it)
+                                }
+                                snapshot.region.takeIf { it.isNotBlank() }?.let {
+                                    GeoAddressDetailRow(label = "Регион", value = it)
+                                }
+                                districtCombined.takeIf { it.isNotBlank() }?.let {
+                                    GeoAddressDetailRow(label = "Район / округ", value = it)
+                                }
+                                snapshot.locality.takeIf { it.isNotBlank() }?.let {
+                                    GeoAddressDetailRow(label = "Населённый пункт", value = it)
+                                }
+                                streetHouseCombined.takeIf { it.isNotBlank() }?.let {
+                                    GeoAddressDetailRow(label = "Улица и дом", value = it)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Group 2: Navigation & Accuracy Metrics (2x2 clean grid)
+                val accuracyColor = when {
+                    snapshot.accuracyMeters <= 0f -> IntraColors.TextSecondary
+                    snapshot.accuracyMeters <= 25f -> IntraColors.EmeraldDeep
+                    snapshot.accuracyMeters <= 80f -> IntraColors.BrandPrimary
+                    else -> IntraColors.WarningAmber
+                }
+                val accuracyText = if (snapshot.accuracyMeters > 0f) {
+                    "±${snapshot.accuracyMeters.roundToInt()} м - ${snapshot.accuracyQualityLabel()}"
+                } else {
+                    "Не определена"
+                }
+                val sourceSubtitle = buildList {
+                    if (snapshot.providerCount > 1) add("Источников: ${snapshot.providerCount}")
+                    snapshot.geocoderProvider.takeIf { it.isNotBlank() }?.let { add(it) }
+                }.joinToString(" - ").takeIf { it.isNotBlank() }
+
+                val timeSubtitle = snapshot.altitudeMeters?.let { alt ->
+                    "Высота: ${alt.roundToInt()} м"
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        GeoMetricTile(
+                            title = "Координаты",
+                            value = snapshot.formatCoordinates(),
+                            modifier = Modifier.weight(1f)
+                        )
+                        GeoMetricTile(
+                            title = "Точность",
+                            value = accuracyText,
+                            valueColor = accuracyColor,
+                            modifier = Modifier.weight(1f)
                         )
                     }
-                    Surface(
-                        shape = RoundedCornerShape(50),
-                        color = IntraColors.BackgroundIce
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(
-                            text = snapshot.capturedAtText,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = IntraColors.TextSecondary,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        GeoMetricTile(
+                            title = "Источник сигнала",
+                            value = snapshot.sourceLabel,
+                            subtitle = sourceSubtitle,
+                            valueColor = if (snapshot.jammerSuspected) IntraColors.WarningAmber else IntraColors.EmeraldDeep,
+                            modifier = Modifier.weight(1f)
+                        )
+                        GeoMetricTile(
+                            title = "Время фиксации",
+                            value = snapshot.capturedAtText,
+                            subtitle = timeSubtitle,
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }
 
+                // Quick actions bar
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            onCopyText("coords", snapshot.formatCoordinates(), "Координаты скопированы")
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(38.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, IntraColors.SubtleBorder)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.ContentCopy,
+                            contentDescription = null,
+                            tint = IntraColors.BrandPrimary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Text(
+                            text = "Координаты",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = IntraColors.TextPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            onOpenMap(
+                                snapshot.latitude,
+                                snapshot.longitude,
+                                snapshot.fullAddress.ifBlank { snapshot.placeName }
+                            )
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(38.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, IntraColors.BrandPrimary.copy(alpha = 0.45f))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Map,
+                            contentDescription = null,
+                            tint = IntraColors.BrandPrimary,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Text(
+                            text = "На карте",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = IntraColors.BrandPrimary,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                // Group 3: Navigation Warning / Anti-Jammer Note
                 snapshot.warningNote?.takeIf { it.isNotBlank() }?.let { note ->
                     Surface(
                         shape = RoundedCornerShape(12.dp),
@@ -2475,10 +2853,53 @@ private fun RequirementCheckPill(
 }
 
 @Composable
+private fun EquipmentDetailRow(
+    label: String,
+    value: String,
+    onCopy: (() -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = IntraColors.TextTertiary,
+            modifier = Modifier.width(128.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall,
+            color = IntraColors.TextPrimary,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.weight(1f)
+        )
+        if (onCopy != null) {
+            IconButton(
+                onClick = onCopy,
+                modifier = Modifier.size(28.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.ContentCopy,
+                    contentDescription = "Копировать $label",
+                    tint = IntraColors.BrandPrimary,
+                    modifier = Modifier.size(15.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun EquipmentScanCard(
     equipmentScan: EquipmentScanResult?,
+    expectedEquipment: EquipmentScanResult?,
     isSaving: Boolean,
     onScanClick: () -> Unit,
+    onManualInputClick: () -> Unit,
+    onCopySerial: (String) -> Unit,
     onClear: () -> Unit
 ) {
     Surface(
@@ -2497,7 +2918,7 @@ private fun EquipmentScanCard(
     ) {
         Column(
             modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -2516,40 +2937,115 @@ private fun EquipmentScanCard(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Оборудование (шильдик / ШК)",
+                        text = "Оборудование (шильдик / штрихкод)",
                         style = MaterialTheme.typography.titleMedium,
                         color = IntraColors.TextPrimary
                     )
                 }
 
-                OutlinedButton(
-                    onClick = onScanClick,
-                    enabled = !isSaving,
+                if (equipmentScan != null && !isSaving) {
+                    IconButton(
+                        onClick = onClear,
+                        modifier = Modifier.size(30.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Очистить",
+                            tint = IntraColors.TextSecondary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+
+            if (expectedEquipment != null && equipmentScan == null) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                    border = BorderStroke(1.dp, IntraColors.BrandPrimary)
+                    color = IntraColors.BrandPrimary.copy(alpha = 0.08f)
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.QrCodeScanner,
-                        contentDescription = null,
-                        tint = IntraColors.BrandPrimary,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = if (equipmentScan == null) "Сканировать" else "Ещё раз",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = IntraColors.BrandPrimary
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Print,
+                            contentDescription = null,
+                            tint = IntraColors.BrandPrimary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        val expectedDesc = listOfNotNull(
+                            expectedEquipment.modelName.takeIf { it.isNotBlank() },
+                            expectedEquipment.serialNumber.takeIf { it.isNotBlank() }?.let { "серийный номер $it" },
+                            expectedEquipment.inventoryNumber.takeIf { it.isNotBlank() }?.let { "инвентарный номер $it" }
+                        ).joinToString(" - ")
+                        Text(
+                            text = "Ожидается по заявке: $expectedDesc",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = IntraColors.BrandPrimary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
             }
 
             if (equipmentScan == null) {
                 Text(
-                    text = "Считайте серийный номер (S/N), инвентарный номер или модель с наклейки (DataMatrix / Code128 / QR / текст) для сверки с заявкой.",
+                    text = "Отсканируйте DataMatrix, Code128, QR или текст шильдика на аппарате либо введите данные вручную для сверки с заявкой.",
                     style = MaterialTheme.typography.bodySmall,
                     color = IntraColors.TextSecondary
                 )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = onScanClick,
+                        enabled = !isSaving,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = IntraColors.BrandPrimary,
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.QrCodeScanner,
+                            contentDescription = null,
+                            modifier = Modifier.size(17.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Сканировать", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    OutlinedButton(
+                        onClick = onManualInputClick,
+                        enabled = !isSaving,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                        border = BorderStroke(1.dp, IntraColors.BrandPrimary)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Edit,
+                            contentDescription = null,
+                            tint = IntraColors.BrandPrimary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Ввести вручную",
+                            color = IntraColors.BrandPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
             } else {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
@@ -2560,82 +3056,245 @@ private fun EquipmentScanCard(
                         null -> IntraColors.BackgroundIce
                     }
                 ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = when (equipmentScan.matchesTicket) {
+                                true -> Icons.Rounded.CheckCircle
+                                false -> Icons.Rounded.WarningAmber
+                                null -> Icons.Rounded.Print
+                            },
+                            contentDescription = null,
+                            tint = when (equipmentScan.matchesTicket) {
+                                true -> IntraColors.EmeraldDeep
+                                false -> IntraColors.ErrorRed
+                                null -> IntraColors.BrandPrimary
+                            },
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = equipmentScan.matchNote.ifBlank { "Данные оборудования зафиксированы" },
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = when (equipmentScan.matchesTicket) {
+                                true -> IntraColors.EmeraldDeep
+                                false -> IntraColors.ErrorRed
+                                null -> IntraColors.TextPrimary
+                            }
+                        )
+                    }
+                }
+
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = IntraColors.BackgroundIce,
+                    border = BorderStroke(1.dp, IntraColors.SubtleBorder)
+                ) {
                     Column(
                         modifier = Modifier.padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(
-                                    imageVector = when (equipmentScan.matchesTicket) {
-                                        true -> Icons.Rounded.CheckCircle
-                                        false -> Icons.Rounded.WarningAmber
-                                        null -> Icons.Rounded.Print
-                                    },
-                                    contentDescription = null,
-                                    tint = when (equipmentScan.matchesTicket) {
-                                        true -> IntraColors.EmeraldDeep
-                                        false -> IntraColors.ErrorRed
-                                        null -> IntraColors.BrandPrimary
-                                    },
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = equipmentScan.matchNote.ifBlank { "Данные оборудования считаны" },
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = when (equipmentScan.matchesTicket) {
-                                        true -> IntraColors.EmeraldDeep
-                                        false -> IntraColors.ErrorRed
-                                        null -> IntraColors.TextPrimary
-                                    }
-                                )
-                            }
-                            if (!isSaving) {
-                                IconButton(
-                                    onClick = onClear,
-                                    modifier = Modifier.size(28.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Close,
-                                        contentDescription = "Очистить",
-                                        tint = IntraColors.TextSecondary,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
-                        }
-
                         if (equipmentScan.modelName.isNotBlank()) {
-                            Text(
-                                text = "Модель: ${equipmentScan.modelName}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = IntraColors.TextPrimary,
-                                fontWeight = FontWeight.Medium
+                            EquipmentDetailRow(
+                                label = "Модель",
+                                value = equipmentScan.modelName
                             )
                         }
                         if (equipmentScan.serialNumber.isNotBlank()) {
-                            Text(
-                                text = "S/N: ${equipmentScan.serialNumber}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = IntraColors.TextPrimary
+                            EquipmentDetailRow(
+                                label = "Серийный номер",
+                                value = equipmentScan.serialNumber,
+                                onCopy = { onCopySerial(equipmentScan.serialNumber) }
                             )
                         }
                         if (equipmentScan.inventoryNumber.isNotBlank()) {
-                            Text(
-                                text = "Инв. №: ${equipmentScan.inventoryNumber}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = IntraColors.TextPrimary
+                            EquipmentDetailRow(
+                                label = "Инвентарный номер",
+                                value = equipmentScan.inventoryNumber
                             )
                         }
+                        if (equipmentScan.rawSource.isNotBlank()) {
+                            EquipmentDetailRow(
+                                label = "Источник данных",
+                                value = equipmentScan.rawSource
+                            )
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onScanClick,
+                        enabled = !isSaving,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(40.dp),
+                        shape = RoundedCornerShape(11.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        border = BorderStroke(1.dp, IntraColors.BrandPrimary)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.QrCodeScanner,
+                            contentDescription = null,
+                            tint = IntraColors.BrandPrimary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Пересканировать", color = IntraColors.BrandPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    OutlinedButton(
+                        onClick = onManualInputClick,
+                        enabled = !isSaving,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(40.dp),
+                        shape = RoundedCornerShape(11.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        border = BorderStroke(1.dp, IntraColors.SubtleBorder)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Edit,
+                            contentDescription = null,
+                            tint = IntraColors.TextPrimary,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Редактировать", color = IntraColors.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EquipmentManualInputDialog(
+    initial: EquipmentScanResult?,
+    expected: EquipmentScanResult?,
+    onDismiss: () -> Unit,
+    onSave: (modelName: String, serialNumber: String, inventoryNumber: String) -> Unit
+) {
+    var modelText by remember(initial) { mutableStateOf(initial?.modelName.orEmpty()) }
+    var serialText by remember(initial) { mutableStateOf(initial?.serialNumber.orEmpty()) }
+    var invText by remember(initial) { mutableStateOf(initial?.inventoryNumber.orEmpty()) }
+    val hasAnyInput = modelText.isNotBlank() || serialText.isNotBlank() || invText.isNotBlank()
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(22.dp),
+            color = IntraColors.SurfaceWhite,
+            shadowElevation = 14.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Rounded.Print,
+                        contentDescription = null,
+                        tint = IntraColors.BrandPrimary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Данные оборудования",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = IntraColors.TextPrimary
+                    )
+                }
+
+                if (expected != null && (modelText.isBlank() || serialText.isBlank())) {
+                    OutlinedButton(
+                        onClick = {
+                            if (modelText.isBlank() && expected.modelName.isNotBlank()) {
+                                modelText = expected.modelName
+                            }
+                            if (serialText.isBlank() && expected.serialNumber.isNotBlank()) {
+                                serialText = expected.serialNumber
+                            }
+                            if (invText.isBlank() && expected.inventoryNumber.isNotBlank()) {
+                                invText = expected.inventoryNumber
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, IntraColors.BrandPrimary.copy(alpha = 0.45f))
+                    ) {
+                        Text(
+                            text = "Подставить данные из заявки",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = IntraColors.BrandPrimary
+                        )
+                    }
+                }
+
+                OutlinedTextField(
+                    value = modelText,
+                    onValueChange = { modelText = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Модель (например: Lexmark MX622ade)") },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = IntraColors.BrandPrimary,
+                        unfocusedBorderColor = IntraColors.SubtleBorder
+                    )
+                )
+
+                OutlinedTextField(
+                    value = serialText,
+                    onValueChange = { serialText = it.uppercase() },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Серийный номер") },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = IntraColors.BrandPrimary,
+                        unfocusedBorderColor = IntraColors.SubtleBorder
+                    )
+                )
+
+                OutlinedTextField(
+                    value = invText,
+                    onValueChange = { invText = it.uppercase() },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Инвентарный номер") },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = IntraColors.BrandPrimary,
+                        unfocusedBorderColor = IntraColors.SubtleBorder
+                    )
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Отмена", color = IntraColors.TextSecondary)
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = { onSave(modelText, serialText, invText) },
+                        enabled = hasAnyInput,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = IntraColors.BrandPrimary,
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Text("Сохранить")
                     }
                 }
             }
