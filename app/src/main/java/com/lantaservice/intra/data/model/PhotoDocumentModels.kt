@@ -11,28 +11,32 @@ enum class PhotoDocumentType(
     val fullTitle: String,
     val description: String,
     val filePrefix: String,
-    val isRequired: Boolean
+    val isRequired: Boolean,
+    val captureButtonLabel: String
 ) {
     AVR(
         shortTitle = "АВР",
         fullTitle = "Акт выполненных работ",
         description = "Обязательно. Счётчик копий на бланке определяется автоматически",
         filePrefix = "AVR",
-        isRequired = true
+        isRequired = true,
+        captureButtonLabel = "Снять АВР"
     ),
     TEST_LIST(
         shortTitle = "Тест-лист",
         fullTitle = "Тест-лист печати",
         description = "Обязательно. Подтверждение качества печати после работ",
         filePrefix = "TestList",
-        isRequired = true
+        isRequired = true,
+        captureButtonLabel = "Снять ТЛ"
     ),
     CONFIG_LIST(
         shortTitle = "Лист конфигурации",
         fullTitle = "Лист конфигурации",
         description = "При необходимости. Сетевые и системные параметры устройства",
         filePrefix = "ConfigList",
-        isRequired = false
+        isRequired = false,
+        captureButtonLabel = "Снять ЛК"
     )
 }
 

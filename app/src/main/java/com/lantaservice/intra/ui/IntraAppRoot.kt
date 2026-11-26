@@ -53,6 +53,8 @@ import com.lantaservice.intra.ui.login.LoginScreen
 import com.lantaservice.intra.ui.login.LoginViewModel
 import com.lantaservice.intra.ui.tasks.TaskListScreen
 import com.lantaservice.intra.ui.tasks.TaskListViewModel
+import com.lantaservice.intra.util.LocationAccessStatus
+import com.lantaservice.intra.util.LocationPermissionHelper
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -67,8 +69,10 @@ private enum class RootGate {
 fun IntraAppRoot(
     repository: IntraRepository,
     appUpdateManager: AppUpdateManager,
-    locationGranted: Boolean,
+    locationPermissionGranted: Boolean,
+    locationServiceEnabled: Boolean,
     onRequestLocationAgain: () -> Unit,
+    onOpenLocationSettings: () -> Unit,
     onExitApp: () -> Unit
 ) {
     val authState by repository.authState.collectAsStateWithLifecycle()
@@ -77,6 +81,28 @@ fun IntraAppRoot(
     val scope = rememberCoroutineScope()
     val rootContext = LocalContext.current
     val outboxEntries by repository.outboxEntries.collectAsStateWithLifecycle()
+    val forcedLogoutNotice by repository.forcedLogoutNotice.collectAsStateWithLifecycle()
+
+    val locationStatus = LocationPermissionHelper.evaluateLocationAccess(
+        permissionGranted = locationPermissionGranted,
+        serviceEnabled = locationServiceEnabled
+    )
+
+    LaunchedEffect(authState, locationStatus) {
+        if (authState is AuthState.Authenticated && locationStatus != LocationAccessStatus.READY) {
+            val reason = when (locationStatus) {
+                LocationAccessStatus.SERVICE_DISABLED ->
+                    "Сеанс завершён: геолокация на телефоне отключена. Включите геолокацию на устройстве и выполните вход повторно."
+                LocationAccessStatus.PERMISSION_DENIED ->
+                    "Сеанс завершён: отключён доступ приложения к геолокации. Предоставьте разрешение и выполните вход повторно."
+                LocationAccessStatus.READY -> ""
+            }
+            if (reason.isNotEmpty()) {
+                Toast.makeText(rootContext, reason, Toast.LENGTH_LONG).show()
+                repository.forceLogoutToLogin(reason)
+            }
+        }
+    }
 
     LaunchedEffect(Unit) {
         repository.outboxSyncedEvents.collect { notice ->
@@ -114,7 +140,7 @@ fun IntraAppRoot(
         is AuthState.Checking -> RootGate.CHECKING
         is AuthState.Unauthenticated -> RootGate.UNAUTHENTICATED
         is AuthState.Authenticated -> {
-            if (locationGranted) RootGate.READY else RootGate.LOCATION_REQUIRED
+            if (locationStatus == LocationAccessStatus.READY) RootGate.READY else RootGate.UNAUTHENTICATED
         }
     }
 
@@ -158,15 +184,18 @@ fun IntraAppRoot(
                     }
                 }
 
-                // Strictly show ONLY LoginScreen when unauthenticated
+                // Strictly show ONLY LoginScreen when unauthenticated or when geolocation is disabled
                 RootGate.UNAUTHENTICATED -> {
                     val loginVm: LoginViewModel = viewModel(
                         factory = LoginViewModel.Factory(repository)
                     )
                     LoginScreen(
                         viewModel = loginVm,
-                        locationGranted = locationGranted,
-                        onRequestLocationAgain = onRequestLocationAgain
+                        locationStatus = locationStatus,
+                        forcedLogoutNotice = forcedLogoutNotice,
+                        onDismissForcedLogoutNotice = repository::clearForcedLogoutNotice,
+                        onRequestLocationAgain = onRequestLocationAgain,
+                        onOpenLocationSettings = onOpenLocationSettings
                     )
                 }
 

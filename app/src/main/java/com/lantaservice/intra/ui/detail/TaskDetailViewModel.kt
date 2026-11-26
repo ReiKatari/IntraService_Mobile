@@ -21,6 +21,7 @@ import com.lantaservice.intra.ui.components.ViewerPhoto
 import com.lantaservice.intra.util.AvrCounterRecognizer
 import com.lantaservice.intra.util.EnhanceMode
 import com.lantaservice.intra.util.ImageCompressor
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -85,7 +86,7 @@ class TaskDetailViewModel(
             commentText = initialOutbox?.comment.orEmpty(),
             pendingPhotos = initialQueuedPhotos,
             queuedOutbox = initialOutbox,
-            geoSnapshot = initialOutbox?.geoSnapshot,
+            geoSnapshot = initialOutbox?.geoSnapshot ?: repository.getCachedGeoSnapshot(),
             counterValue = initialOutbox?.counterValue.orEmpty(),
             counterAutoDetected = false
         )
@@ -119,17 +120,26 @@ class TaskDetailViewModel(
             }
         }
         loadDetail()
-        if (_uiState.value.geoSnapshot == null) {
-            refreshGeolocation()
-        }
+        refreshGeolocation(autoRetry = true)
     }
 
     fun nextPhotoIndex(): Int = ++photoCounter
 
-    fun refreshGeolocation(exifHint: Pair<Double, Double>? = null) {
+    fun refreshGeolocation(
+        exifHint: Pair<Double, Double>? = null,
+        autoRetry: Boolean = false
+    ) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoadingGeo = true) }
-            val captured = repository.captureCurrentGeo(exifHint = exifHint)
+            var captured = repository.captureCurrentGeo(exifHint = exifHint)
+            if (captured == null && autoRetry) {
+                val backoffMs = listOf(2500L, 4000L)
+                for (waitMs in backoffMs) {
+                    delay(waitMs)
+                    captured = repository.captureCurrentGeo(exifHint = exifHint)
+                    if (captured != null) break
+                }
+            }
             _uiState.update { state ->
                 state.copy(
                     geoSnapshot = captured ?: state.geoSnapshot,

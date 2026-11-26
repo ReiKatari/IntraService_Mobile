@@ -1,7 +1,5 @@
 package com.lantaservice.intra.ui.components
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,7 +24,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
-import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.CalendarToday
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
@@ -51,7 +48,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -207,7 +203,6 @@ fun UpdateAvailableDialog(
                     changelog = info.changelog,
                     sizeBytes = info.sizeBytes,
                     publishedDateText = info.publishedDateText,
-                    releasePageUrl = info.releasePageUrl,
                     onUpdateNow = onStartDownload,
                     onRemindLater = onRemindLater,
                     onSkipVersion = { onSkipVersion(cleanNew) }
@@ -253,12 +248,10 @@ private fun AvailableUpdateCard(
     changelog: String,
     sizeBytes: Long,
     publishedDateText: String,
-    releasePageUrl: String,
     onUpdateNow: () -> Unit,
     onRemindLater: () -> Unit,
     onSkipVersion: () -> Unit
 ) {
-    val ctx = LocalContext.current
     val parsedBlocks = remember(changelog, cleanNew) {
         parseReleaseNotes(changelog.ifBlank { "IntraService Mobile $cleanNew" })
     }
@@ -558,39 +551,6 @@ private fun AvailableUpdateCard(
                     modifier = Modifier.weight(1f),
                     onClick = onSkipVersion
                 )
-            }
-
-            // Footer Link to Open Release Page
-            if (releasePageUrl.isNotBlank()) {
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable {
-                            runCatching {
-                                ctx.startActivity(
-                                    Intent(Intent.ACTION_VIEW, Uri.parse(releasePageUrl))
-                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                )
-                            }
-                        }
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
-                        contentDescription = null,
-                        tint = IntraColors.BrandPrimary,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Text(
-                        text = "Открыть страницу релиза",
-                        color = IntraColors.BrandPrimary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
             }
         }
     }

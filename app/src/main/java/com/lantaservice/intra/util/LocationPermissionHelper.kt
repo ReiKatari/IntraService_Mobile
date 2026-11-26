@@ -7,12 +7,19 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 
+enum class LocationAccessStatus {
+    READY,
+    PERMISSION_DENIED,
+    SERVICE_DISABLED
+}
+
 /**
- * Verifies runtime location permissions required for engineer ticket access.
+ * Verifies runtime location permissions and system Location toggle required for engineer access.
  */
 object LocationPermissionHelper {
 
@@ -43,9 +50,31 @@ object LocationPermissionHelper {
     fun isLocationServiceEnabled(context: Context): Boolean {
         val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return false
         return runCatching {
-            manager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
-                manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                manager.isLocationEnabled
+            } else {
+                manager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+                    manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+            }
         }.getOrDefault(false)
+    }
+
+    fun evaluateLocationAccess(
+        permissionGranted: Boolean,
+        serviceEnabled: Boolean
+    ): LocationAccessStatus {
+        return when {
+            !permissionGranted -> LocationAccessStatus.PERMISSION_DENIED
+            !serviceEnabled -> LocationAccessStatus.SERVICE_DISABLED
+            else -> LocationAccessStatus.READY
+        }
+    }
+
+    fun isLocationFullyReady(context: Context): Boolean {
+        return evaluateLocationAccess(
+            permissionGranted = hasLocationPermission(context),
+            serviceEnabled = isLocationServiceEnabled(context)
+        ) == LocationAccessStatus.READY
     }
 
     fun openAppSettings(context: Context) {
@@ -53,6 +82,13 @@ object LocationPermissionHelper {
             Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
             Uri.fromParts("package", context.packageName, null)
         ).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+    }
+
+    fun openLocationSettings(context: Context) {
+        val intent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         context.startActivity(intent)

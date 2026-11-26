@@ -36,6 +36,8 @@ import com.lantaservice.intra.util.CounterConfidence
 import com.lantaservice.intra.util.DateAndTextFormatter
 import com.lantaservice.intra.util.FrameQualityAnalyzer
 import com.lantaservice.intra.util.LightStatus
+import com.lantaservice.intra.util.LocationAccessStatus
+import com.lantaservice.intra.util.LocationPermissionHelper
 import com.lantaservice.intra.util.PhotoEnhancerEngine
 import com.lantaservice.intra.util.SharpnessStatus
 import com.lantaservice.intra.util.StabilityStatus
@@ -917,5 +919,32 @@ class IntraLogicTest {
             reopenIfAlreadyAvailable = true
         )
         assertNull(skipped)
+    }
+
+    @Test
+    fun locationAccessRequiresBothAppPermissionAndSystemLocationToggle() {
+        assertEquals(
+            LocationAccessStatus.READY,
+            LocationPermissionHelper.evaluateLocationAccess(permissionGranted = true, serviceEnabled = true)
+        )
+        assertEquals(
+            LocationAccessStatus.SERVICE_DISABLED,
+            LocationPermissionHelper.evaluateLocationAccess(permissionGranted = true, serviceEnabled = false)
+        )
+        assertEquals(
+            LocationAccessStatus.PERMISSION_DENIED,
+            LocationPermissionHelper.evaluateLocationAccess(permissionGranted = false, serviceEnabled = true)
+        )
+        assertEquals(
+            LocationAccessStatus.PERMISSION_DENIED,
+            LocationPermissionHelper.evaluateLocationAccess(permissionGranted = false, serviceEnabled = false)
+        )
+    }
+
+    @Test
+    fun photoDocumentTypeCaptureButtonsHaveExpectedShortLabels() {
+        assertEquals("Снять АВР", PhotoDocumentType.AVR.captureButtonLabel)
+        assertEquals("Снять ТЛ", PhotoDocumentType.TEST_LIST.captureButtonLabel)
+        assertEquals("Снять ЛК", PhotoDocumentType.CONFIG_LIST.captureButtonLabel)
     }
 }

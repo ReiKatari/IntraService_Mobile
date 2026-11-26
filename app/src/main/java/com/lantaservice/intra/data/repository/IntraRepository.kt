@@ -133,6 +133,9 @@ class IntraRepository(
     private val _outboxSyncedEvents = MutableSharedFlow<OutboxSyncNotice>(extraBufferCapacity = 16)
     val outboxSyncedEvents: SharedFlow<OutboxSyncNotice> = _outboxSyncedEvents.asSharedFlow()
 
+    private val _forcedLogoutNotice = MutableStateFlow<String?>(null)
+    val forcedLogoutNotice: StateFlow<String?> = _forcedLogoutNotice.asStateFlow()
+
     private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val outboxSyncMutex = Mutex()
     private val statusesById = ConcurrentHashMap<Int, TaskStatusDto>()
@@ -198,6 +201,17 @@ class IntraRepository(
         repoScope.launch {
             ImageCompressor.cleanupCacheDirs(context)
         }
+    }
+
+    fun clearForcedLogoutNotice() {
+        _forcedLogoutNotice.value = null
+    }
+
+    fun forceLogoutToLogin(reason: String) {
+        credentialsProvider.clearSession()
+        resetInMemoryCaches()
+        _forcedLogoutNotice.value = reason
+        _authState.value = AuthState.Unauthenticated
     }
 
     fun handleUnauthorized() {
@@ -299,6 +313,7 @@ class IntraRepository(
         rememberMe: Boolean
     ): Result<UserSession> = withContext(Dispatchers.IO) {
         try {
+            _forcedLogoutNotice.value = null
             val cleanInput = login.trim()
             if (cleanInput.isEmpty() || password.isEmpty()) {
                 return@withContext Result.failure(IllegalArgumentException("Введите логин или E-mail и пароль"))
@@ -860,6 +875,8 @@ class IntraRepository(
             Result.failure(toIntraException(t))
         }
     }
+
+    fun getCachedGeoSnapshot(): GeoAddressSnapshot? = geoLocationEngine?.getCachedSnapshot()
 
     suspend fun captureCurrentGeo(exifHint: Pair<Double, Double>? = null): GeoAddressSnapshot? {
         return runCatching { geoLocationEngine?.captureCurrentLocation(exifHint = exifHint) }.getOrNull()

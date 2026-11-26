@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lantaservice.intra.data.repository.IntraNetworkException
 import com.lantaservice.intra.data.repository.IntraRepository
+import com.lantaservice.intra.util.LocationAccessStatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -99,19 +100,26 @@ class LoginViewModel(
         }
     }
 
-    fun clearLocationBlockErrorIfNeeded(locationGranted: Boolean) {
-        if (locationGranted && _uiState.value.errorMessage?.contains("геолокац", ignoreCase = true) == true) {
+    fun clearLocationBlockErrorIfNeeded(locationStatus: LocationAccessStatus) {
+        if (locationStatus == LocationAccessStatus.READY &&
+            _uiState.value.errorMessage?.contains("геолокац", ignoreCase = true) == true
+        ) {
             _uiState.update { it.copy(errorMessage = null) }
         }
     }
 
-    fun submit(locationGranted: Boolean = true) {
+    fun submit(locationStatus: LocationAccessStatus = LocationAccessStatus.READY) {
         val state = _uiState.value
         if (state.isLoading) return
-        if (!locationGranted) {
+        if (locationStatus != LocationAccessStatus.READY) {
+            val blockMsg = when (locationStatus) {
+                LocationAccessStatus.SERVICE_DISABLED -> LOCATION_SERVICE_DISABLED_ERROR
+                LocationAccessStatus.PERMISSION_DENIED -> LOCATION_REQUIRED_ERROR
+                LocationAccessStatus.READY -> ""
+            }
             _uiState.update {
                 it.copy(
-                    errorMessage = LOCATION_REQUIRED_ERROR,
+                    errorMessage = blockMsg,
                     showVpnSettingsHint = false
                 )
             }
@@ -191,6 +199,8 @@ class LoginViewModel(
     companion object {
         const val LOCATION_REQUIRED_ERROR =
             "Авторизация заблокирована: необходимо разрешить доступ к геолокации."
+        const val LOCATION_SERVICE_DISABLED_ERROR =
+            "Авторизация заблокирована: включите геолокацию на телефоне."
 
         fun resolvePostLoginFields(
             login: String,

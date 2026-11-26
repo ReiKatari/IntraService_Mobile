@@ -80,12 +80,16 @@ import com.lantaservice.intra.R
 import com.lantaservice.intra.data.network.IntraConnectionManager
 import com.lantaservice.intra.ui.components.IntraWaveBackground
 import com.lantaservice.intra.ui.theme.IntraColors
+import com.lantaservice.intra.util.LocationAccessStatus
 
 @Composable
 fun LoginScreen(
     viewModel: LoginViewModel,
-    locationGranted: Boolean,
-    onRequestLocationAgain: () -> Unit
+    locationStatus: LocationAccessStatus,
+    forcedLogoutNotice: String? = null,
+    onDismissForcedLogoutNotice: () -> Unit = {},
+    onRequestLocationAgain: () -> Unit,
+    onOpenLocationSettings: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
@@ -97,8 +101,11 @@ fun LoginScreen(
         viewModel.syncSavedCredentialsIfNeeded()
     }
 
-    LaunchedEffect(locationGranted) {
-        viewModel.clearLocationBlockErrorIfNeeded(locationGranted)
+    LaunchedEffect(locationStatus) {
+        viewModel.clearLocationBlockErrorIfNeeded(locationStatus)
+        if (locationStatus == LocationAccessStatus.READY && forcedLogoutNotice != null) {
+            onDismissForcedLogoutNotice()
+        }
     }
 
     DisposableEffect(lifecycleOwner) {
@@ -260,7 +267,7 @@ fun LoginScreen(
                         keyboardActions = KeyboardActions(
                             onDone = {
                                 focusManager.clearFocus()
-                                viewModel.submit(locationGranted)
+                                viewModel.submit(locationStatus)
                             }
                         )
                     )
@@ -287,10 +294,45 @@ fun LoginScreen(
                     }
 
                     AnimatedVisibility(
-                        visible = !locationGranted,
+                        visible = !forcedLogoutNotice.isNullOrBlank(),
                         enter = fadeIn() + expandVertically(),
                         exit = fadeOut() + shrinkVertically()
                     ) {
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = IntraColors.ErrorTint,
+                            border = BorderStroke(1.dp, IntraColors.ErrorRed.copy(alpha = 0.55f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.ErrorOutline,
+                                    contentDescription = null,
+                                    tint = IntraColors.ErrorRed,
+                                    modifier = Modifier
+                                        .padding(top = 1.dp)
+                                        .size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = forcedLogoutNotice.orEmpty(),
+                                    color = IntraColors.ErrorRed,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
+
+                    AnimatedVisibility(
+                        visible = locationStatus != LocationAccessStatus.READY,
+                        enter = fadeIn() + expandVertically(),
+                        exit = fadeOut() + shrinkVertically()
+                    ) {
+                        val isServiceDisabled = locationStatus == LocationAccessStatus.SERVICE_DISABLED
                         Surface(
                             shape = RoundedCornerShape(14.dp),
                             color = IntraColors.WarningTint,
@@ -310,19 +352,27 @@ fun LoginScreen(
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "Требуется доступ к геолокации",
+                                        text = if (isServiceDisabled) {
+                                            "Геолокация на телефоне отключена"
+                                        } else {
+                                            "Требуется доступ к геолокации"
+                                        },
                                         color = IntraColors.TextPrimary,
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
                                 Text(
-                                    text = "Авторизация заблокирована до подтверждения геолокации. Предоставьте доступ к местоположению, чтобы войти в приложение.",
+                                    text = if (isServiceDisabled) {
+                                        "Авторизация заблокирована до включения геолокации на устройстве. Включите местоположение в настройках телефона или в шторке быстрых настроек."
+                                    } else {
+                                        "Авторизация заблокирована до подтверждения геолокации. Предоставьте доступ к местоположению, чтобы войти в приложение."
+                                    },
                                     color = IntraColors.TextSecondary,
                                     style = MaterialTheme.typography.bodySmall
                                 )
                                 OutlinedButton(
-                                    onClick = onRequestLocationAgain,
+                                    onClick = if (isServiceDisabled) onOpenLocationSettings else onRequestLocationAgain,
                                     modifier = Modifier.fillMaxWidth(),
                                     shape = RoundedCornerShape(10.dp),
                                     border = BorderStroke(1.dp, IntraColors.WarningAmber)
@@ -335,7 +385,7 @@ fun LoginScreen(
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = "Разрешить геолокацию",
+                                        text = if (isServiceDisabled) "Включить геолокацию" else "Разрешить геолокацию",
                                         color = IntraColors.WarningAmber,
                                         style = MaterialTheme.typography.labelMedium,
                                         fontWeight = FontWeight.SemiBold
@@ -402,9 +452,9 @@ fun LoginScreen(
                     Button(
                         onClick = {
                             focusManager.clearFocus()
-                            viewModel.submit(locationGranted)
+                            viewModel.submit(locationStatus)
                         },
-                        enabled = !state.isLoading && locationGranted,
+                        enabled = !state.isLoading && locationStatus == LocationAccessStatus.READY,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(52.dp),

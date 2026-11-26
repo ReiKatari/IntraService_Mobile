@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -453,8 +454,7 @@ fun TaskDetailScreen(
                         item {
                             GeolocationCard(
                                 snapshot = state.geoSnapshot,
-                                isLoading = state.isLoadingGeo,
-                                onRefreshGeo = { viewModel.refreshGeolocation() }
+                                isLoading = state.isLoadingGeo
                             )
                         }
 
@@ -552,8 +552,7 @@ fun TaskDetailScreen(
 @Composable
 private fun GeolocationCard(
     snapshot: GeoAddressSnapshot?,
-    isLoading: Boolean,
-    onRefreshGeo: () -> Unit
+    isLoading: Boolean
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -592,23 +591,18 @@ private fun GeolocationCard(
                     )
                 }
                 if (isLoading) {
-                    CircularProgressIndicator(
-                        color = IntraColors.BrandPrimary,
-                        strokeWidth = 2.dp,
-                        modifier = Modifier.size(18.dp)
-                    )
-                } else {
-                    TextButton(
-                        onClick = onRefreshGeo,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Refresh,
-                            contentDescription = null,
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(
+                            color = IntraColors.BrandPrimary,
+                            strokeWidth = 2.dp,
                             modifier = Modifier.size(16.dp)
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Уточнить", style = MaterialTheme.typography.labelMedium)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Автопоиск...",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = IntraColors.BrandPrimary
+                        )
                     }
                 }
             }
@@ -616,9 +610,9 @@ private fun GeolocationCard(
             if (snapshot == null) {
                 Text(
                     text = if (isLoading) {
-                        "Определение точных координат и адреса (GPS + Wi-Fi/сотовая сеть)..."
+                        "Автоматическое определение координат и полного адреса (GPS + Wi-Fi/сотовая сеть)..."
                     } else {
-                        "Нажмите «Уточнить», чтобы определить полный адрес и координаты"
+                        "Геолокация фиксируется автоматически при получении сигнала..."
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = IntraColors.TextSecondary
@@ -1017,15 +1011,18 @@ private fun TicketInfoCard(
                         .clip(RoundedCornerShape(10.dp))
                         .clickable { onCallPhone(detail.creatorPhone) }
                         .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = "Телефон",
                         style = MaterialTheme.typography.bodySmall,
-                        color = IntraColors.TextTertiary
+                        color = IntraColors.TextTertiary,
+                        modifier = Modifier.width(104.dp)
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Icon(
                             imageVector = Icons.Rounded.Phone,
                             contentDescription = null,
@@ -1573,18 +1570,35 @@ private fun PhotoCategoryBlock(
                 }
 
                 if (canAttachFiles) {
-                    TextButton(
+                    Spacer(modifier = Modifier.width(10.dp))
+                    val btnColor = when (docType) {
+                        PhotoDocumentType.AVR -> IntraColors.BrandPrimary
+                        PhotoDocumentType.TEST_LIST -> IntraColors.EmeraldSuccess
+                        PhotoDocumentType.CONFIG_LIST -> IntraColors.BrandCyan
+                    }
+                    Button(
                         onClick = onQuickCapture,
                         enabled = !isSaving,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 9.dp),
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = btnColor,
+                            contentColor = Color.White
+                        ),
+                        modifier = Modifier.heightIn(min = 42.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.CameraAlt,
                             contentDescription = null,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(18.dp)
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Снять", style = MaterialTheme.typography.labelMedium)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = docType.captureButtonLabel,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
@@ -2196,8 +2210,8 @@ private fun SaveStickyBottomBar(
             if (!state.isSaving) {
                 FlowRow(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     RequirementCheckPill(label = "АВР", satisfied = readiness.hasAvr)
                     RequirementCheckPill(label = "Тест-лист", satisfied = readiness.hasTestList)
@@ -2261,23 +2275,32 @@ private fun RequirementCheckPill(
     satisfied: Boolean
 ) {
     Surface(
-        shape = RoundedCornerShape(50),
-        color = if (satisfied) IntraColors.EmeraldTint else IntraColors.WarningTint
+        shape = RoundedCornerShape(12.dp),
+        color = if (satisfied) IntraColors.EmeraldTint else IntraColors.WarningTint,
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (satisfied) {
+                IntraColors.EmeraldSuccess.copy(alpha = 0.55f)
+            } else {
+                IntraColors.WarningAmber.copy(alpha = 0.55f)
+            }
+        ),
+        shadowElevation = 1.dp
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+            modifier = Modifier.padding(horizontal = 13.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = if (satisfied) Icons.Rounded.CheckCircle else Icons.Rounded.WarningAmber,
                 contentDescription = null,
                 tint = if (satisfied) IntraColors.EmeraldDeep else IntraColors.WarningAmber,
-                modifier = Modifier.size(13.dp)
+                modifier = Modifier.size(16.dp)
             )
-            Spacer(modifier = Modifier.width(4.dp))
+            Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = if (satisfied) IntraColors.EmeraldDeep else IntraColors.WarningAmber
             )

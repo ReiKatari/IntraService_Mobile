@@ -1,12 +1,18 @@
 package com.lantaservice.intra
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Color
+import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
+import androidx.core.content.ContextCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -42,8 +48,11 @@ class MainActivity : ComponentActivity() {
         setContent {
             IntraTheme {
                 val lifecycleOwner = LocalLifecycleOwner.current
-                var locationGranted by remember {
+                var locationPermissionGranted by remember {
                     mutableStateOf(LocationPermissionHelper.hasLocationPermission(this))
+                }
+                var locationServiceEnabled by remember {
+                    mutableStateOf(LocationPermissionHelper.isLocationServiceEnabled(this))
                 }
                 var pendingManualRetry by remember { mutableStateOf(false) }
                 var shouldShowBeforeRetry by remember { mutableStateOf(false) }
@@ -52,8 +61,10 @@ class MainActivity : ComponentActivity() {
                     contract = ActivityResultContracts.RequestMultiplePermissions()
                 ) {
                     val grantedNow = LocationPermissionHelper.hasLocationPermission(this)
-                    locationGranted = grantedNow
-                    if (grantedNow) {
+                    val serviceNow = LocationPermissionHelper.isLocationServiceEnabled(this)
+                    locationPermissionGranted = grantedNow
+                    locationServiceEnabled = serviceNow
+                    if (grantedNow && serviceNow) {
                         app.geoLocationEngine.warmBreadcrumbAsync()
                     }
                     if (!grantedNow && pendingManualRetry) {
@@ -74,7 +85,7 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(Unit) {
                     if (!LocationPermissionHelper.hasLocationPermission(this@MainActivity)) {
                         locationLauncher.launch(LocationPermissionHelper.LOCATION_PERMISSIONS)
-                    } else {
+                    } else if (LocationPermissionHelper.isLocationServiceEnabled(this@MainActivity)) {
                         app.geoLocationEngine.warmBreadcrumbAsync()
                     }
                 }
@@ -93,8 +104,10 @@ class MainActivity : ComponentActivity() {
                     val observer = LifecycleEventObserver { _, event ->
                         if (event == Lifecycle.Event.ON_RESUME) {
                             val hasLoc = LocationPermissionHelper.hasLocationPermission(this@MainActivity)
-                            locationGranted = hasLoc
-                            if (hasLoc) {
+                            val svcEnabled = LocationPermissionHelper.isLocationServiceEnabled(this@MainActivity)
+                            locationPermissionGranted = hasLoc
+                            locationServiceEnabled = svcEnabled
+                            if (hasLoc && svcEnabled) {
                                 app.geoLocationEngine.warmBreadcrumbAsync()
                             }
                             appUpdateManager.resumePendingInstallIfPermitted()
@@ -105,6 +118,35 @@ class MainActivity : ComponentActivity() {
                     lifecycleOwner.lifecycle.addObserver(observer)
                     onDispose {
                         lifecycleOwner.lifecycle.removeObserver(observer)
+                    }
+                }
+
+                // Live listener for Android Location switch toggle while app is active
+                DisposableEffect(Unit) {
+                    val locationReceiver = object : BroadcastReceiver() {
+                        override fun onReceive(ctx: Context?, intent: Intent?) {
+                            val hasPerm = LocationPermissionHelper.hasLocationPermission(this@MainActivity)
+                            val svcEnabled = LocationPermissionHelper.isLocationServiceEnabled(this@MainActivity)
+                            locationPermissionGranted = hasPerm
+                            locationServiceEnabled = svcEnabled
+                            if (hasPerm && svcEnabled) {
+                                app.geoLocationEngine.warmBreadcrumbAsync()
+                            }
+                        }
+                    }
+                    val filter = IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION).apply {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                            addAction(LocationManager.MODE_CHANGED_ACTION)
+                        }
+                    }
+                    ContextCompat.registerReceiver(
+                        this@MainActivity,
+                        locationReceiver,
+                        filter,
+                        ContextCompat.RECEIVER_NOT_EXPORTED
+                    )
+                    onDispose {
+                        runCatching { unregisterReceiver(locationReceiver) }
                     }
                 }
 
@@ -140,11 +182,15 @@ class MainActivity : ComponentActivity() {
                 IntraAppRoot(
                     repository = repository,
                     appUpdateManager = appUpdateManager,
-                    locationGranted = locationGranted,
+                    locationPermissionGranted = locationPermissionGranted,
+                    locationServiceEnabled = locationServiceEnabled,
                     onRequestLocationAgain = {
                         shouldShowBeforeRetry = LocationPermissionHelper.shouldShowRationale(this)
                         pendingManualRetry = true
                         locationLauncher.launch(LocationPermissionHelper.LOCATION_PERMISSIONS)
+                    },
+                    onOpenLocationSettings = {
+                        LocationPermissionHelper.openLocationSettings(this)
                     },
                     onExitApp = {
                         repository.logoutImmediate()

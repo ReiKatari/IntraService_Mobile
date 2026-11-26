@@ -7,7 +7,9 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Build
 import android.os.Bundle
+import android.os.CancellationSignal
 import android.os.Looper
+import androidx.core.content.ContextCompat
 import com.lantaservice.intra.util.DateAndTextFormatter
 import com.lantaservice.intra.util.LocationPermissionHelper
 import kotlinx.coroutines.CoroutineScope
@@ -41,20 +43,48 @@ class GeoLocationEngine(
     @Volatile
     private var lastSnapshot: GeoAddressSnapshot? = null
 
+    fun getCachedSnapshot(): GeoAddressSnapshot? = lastSnapshot
+
     fun warmBreadcrumbAsync() {
-        if (!LocationPermissionHelper.hasLocationPermission(context)) return
+        if (!LocationPermissionHelper.isLocationFullyReady(context)) return
         engineScope.launch {
             runCatching {
-                val collected = collectCandidatesFromProviders(timeoutMs = 2500L)
+                val collected = collectCandidatesFromProviders(timeoutMs = 3500L)
                 val selected = GeoAntiSpoofSelector.selectBestCandidate(
                     candidates = collected,
                     lastVerified = lastVerifiedCandidate
                 )
-                if (selected != null && !selected.jammerSuspected) {
-                    val src = selected.source
-                    if (src == GeoSource.GPS || src == GeoSource.FUSED || src == GeoSource.NETWORK_WIFI_CELL) {
-                        saveBreadcrumb(selected.candidate)
+                if (selected != null) {
+                    if (!selected.jammerSuspected) {
+                        val src = selected.source
+                        if (src == GeoSource.GPS || src == GeoSource.FUSED || src == GeoSource.NETWORK_WIFI_CELL) {
+                            saveBreadcrumb(selected.candidate)
+                        }
                     }
+                    val lat = selected.candidate.latitude
+                    val lon = selected.candidate.longitude
+                    val resolvedAddr = reverseGeocoderService.resolveAddress(lat, lon)
+                    val nowText = DateAndTextFormatter.formatLocalDateTime(LocalDateTime.now())
+                    lastSnapshot = GeoAddressSnapshot(
+                        latitude = lat,
+                        longitude = lon,
+                        accuracyMeters = selected.candidate.accuracyMeters,
+                        capturedAtEpochMs = System.currentTimeMillis(),
+                        capturedAtText = nowText,
+                        source = selected.source,
+                        sourceLabel = selected.source.label,
+                        postalCode = resolvedAddr?.postalCode.orEmpty(),
+                        country = resolvedAddr?.country.orEmpty(),
+                        region = resolvedAddr?.region.orEmpty(),
+                        district = resolvedAddr?.district.orEmpty(),
+                        locality = resolvedAddr?.locality.orEmpty(),
+                        street = resolvedAddr?.street.orEmpty(),
+                        houseNumber = resolvedAddr?.houseNumber.orEmpty(),
+                        fullAddress = resolvedAddr?.fullAddress.orEmpty(),
+                        addressResolved = resolvedAddr != null && resolvedAddr.fullAddress.isNotBlank(),
+                        jammerSuspected = selected.jammerSuspected,
+                        warningNote = selected.warningNote
+                    )
                 }
             }
         }
@@ -75,7 +105,7 @@ class GeoLocationEngine(
             )
         }
 
-        val liveCandidates = if (LocationPermissionHelper.hasLocationPermission(context)) {
+        val liveCandidates = if (LocationPermissionHelper.isLocationFullyReady(context)) {
             collectCandidatesFromProviders(timeoutMs = timeoutMs)
         } else {
             emptyList()
@@ -128,7 +158,7 @@ class GeoLocationEngine(
     private suspend fun collectCandidatesFromProviders(timeoutMs: Long): List<GeoCandidate> {
         val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
             ?: return emptyList()
-        if (!LocationPermissionHelper.hasLocationPermission(context)) return emptyList()
+        if (!LocationPermissionHelper.isLocationFullyReady(context)) return emptyList()
 
         val nowMs = System.currentTimeMillis()
         val found = ConcurrentHashMap<String, GeoCandidate>()
@@ -165,15 +195,34 @@ class GeoLocationEngine(
             return found.values.toList()
         }
 
-        // 2. Request live simultaneous updates from GPS, Network, and Fused providers
+        // 2. Request live simultaneous updates + one-shot getCurrentLocation (API 30+)
         val activeProviders = providers.filter { it != LocationManager.PASSIVE_PROVIDER }
         val listeners = mutableListOf<Pair<String, LocationListener>>()
+        val cancellationSignals = mutableListOf<CancellationSignal>()
+        val mainExecutor = ContextCompat.getMainExecutor(context)
 
         withContext(Dispatchers.Main) {
             activeProviders.forEach { providerName ->
                 runCatching {
                     val enabled = runCatching { manager.isProviderEnabled(providerName) }.getOrDefault(false)
                     if (!enabled && providerName != LocationManager.FUSED_PROVIDER) return@runCatching
+
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        val signal = CancellationSignal()
+                        cancellationSignals += signal
+                        manager.getCurrentLocation(
+                            providerName,
+                            signal,
+                            mainExecutor
+                        ) { loc ->
+                            if (loc != null) {
+                                val actualProvider = loc.provider ?: providerName
+                                found[actualProvider] = loc.toGeoCandidate(actualProvider)
+                                found[providerName] = loc.toGeoCandidate(providerName)
+                            }
+                        }
+                    }
+
                     val listener = object : LocationListener {
                         override fun onLocationChanged(location: Location) {
                             val actualProvider = location.provider ?: providerName
@@ -215,6 +264,7 @@ class GeoLocationEngine(
                 elapsed += stepMs
             }
         } finally {
+            cancellationSignals.forEach { sig -> runCatching { sig.cancel() } }
             withContext(Dispatchers.Main) {
                 listeners.forEach { (_, listener) ->
                     runCatching { manager.removeUpdates(listener) }
