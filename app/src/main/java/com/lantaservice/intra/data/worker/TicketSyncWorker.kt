@@ -127,9 +127,10 @@ class TicketSyncWorker(
         val items = body.tasks
             .filter { task ->
                 val st = task.statusId?.let { statusesById[it] }
+                val stName = task.statusName?.takeIf { it.isNotBlank() } ?: st?.name ?: ""
                 val isFinal = (st?.isFinal == true) || (task.statusIsFinal == true)
                 val isClosed = !task.closed.isNullOrBlank()
-                !isFinal && !isClosed
+                !isFinal && !isClosed && IntraRepository.isAllowedListStatusName(stName)
             }
             .map { task ->
                 val st = task.statusId?.let { statusesById[it] }

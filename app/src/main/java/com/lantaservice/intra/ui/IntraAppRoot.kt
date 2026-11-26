@@ -150,7 +150,7 @@ fun IntraAppRoot(
         AnimatedContent(
             targetState = gate,
             transitionSpec = {
-                fadeIn(tween(260)) togetherWith fadeOut(tween(220))
+                fadeIn(tween(140)) togetherWith fadeOut(tween(110))
             },
             label = "root_gate_transition"
         ) { currentGate ->

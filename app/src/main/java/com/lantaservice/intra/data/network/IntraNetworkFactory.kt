@@ -73,6 +73,10 @@ object IntraNetworkFactory {
 
         val authAndFailoverInterceptor = Interceptor { chain ->
             val original = chain.request()
+            if (original.header("X-Intra-Prewarm") == "1") {
+                val warmReq = original.newBuilder().removeHeader("X-Intra-Prewarm").build()
+                return@Interceptor chain.proceed(warmReq)
+            }
             val explicitAuth = original.header("Authorization")
             val session = credentialsProvider.currentSession()
 
@@ -119,12 +123,12 @@ object IntraNetworkFactory {
         }
 
         val dispatcher = Dispatcher().apply {
-            maxRequests = 32
-            maxRequestsPerHost = 10
+            maxRequests = 48
+            maxRequestsPerHost = 16
         }
         return OkHttpClient.Builder()
             .dispatcher(dispatcher)
-            .connectionPool(ConnectionPool(8, 5, TimeUnit.MINUTES))
+            .connectionPool(ConnectionPool(12, 5, TimeUnit.MINUTES))
             .dns(resilientDns)
             .protocols(listOf(Protocol.HTTP_1_1))
             .connectionSpecs(listOf(ConnectionSpec.MODERN_TLS, ConnectionSpec.COMPATIBLE_TLS))

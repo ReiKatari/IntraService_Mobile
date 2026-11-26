@@ -20,6 +20,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -56,6 +57,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -78,17 +80,20 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.lantaservice.intra.ui.components.PrinterModelDropdownField
 import com.lantaservice.intra.ui.components.intraHeaderInsetsPadding
 import com.lantaservice.intra.ui.theme.IntraColors
 import com.lantaservice.intra.util.EquipmentScanParser
 import com.lantaservice.intra.util.EquipmentScanResult
 import com.lantaservice.intra.util.ImageCompressor
+import com.lantaservice.intra.util.PrinterModelCatalog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -112,6 +117,11 @@ fun EquipmentScannerScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
+    val catalogEntries by PrinterModelCatalog.entries.collectAsStateWithLifecycle()
+
+    LaunchedEffect(context) {
+        PrinterModelCatalog.ensureLoaded(context)
+    }
 
     var cameraRef by remember { mutableStateOf<Camera?>(null) }
     var imageCaptureRef by remember { mutableStateOf<ImageCapture?>(null) }
@@ -171,7 +181,8 @@ fun EquipmentScannerScreen(
                             existing = detectedResult,
                             barcodeValues = liveBarcodeValues,
                             ocrLines = ocrLines,
-                            ticketText = ticketText
+                            ticketText = ticketText,
+                            catalogEntries = catalogEntries
                         )
                         isScanningOcr = false
                         if (parsed != null) {
@@ -265,17 +276,31 @@ fun EquipmentScannerScreen(
                                             )
                                             barcodeScanner.process(inputImg)
                                                 .addOnSuccessListener { barcodes ->
-                                                    val vals = barcodes.mapNotNull { it.rawValue?.trim() }
+                                                    val oneDFormats = setOf(
+                                                        Barcode.FORMAT_CODE_128,
+                                                        Barcode.FORMAT_CODE_39,
+                                                        Barcode.FORMAT_CODE_93,
+                                                        Barcode.FORMAT_ITF,
+                                                        Barcode.FORMAT_CODABAR
+                                                    )
+                                                    val vals = barcodes
+                                                        .sortedBy { if (it.format in oneDFormats) 0 else 1 }
+                                                        .mapNotNull { it.rawValue?.trim() }
                                                         .filter { it.isNotEmpty() }
                                                     if (vals.isNotEmpty()) {
                                                         liveBarcodeValues = vals
                                                         val parsed = EquipmentScanParser.parse(
                                                             barcodeValues = vals,
                                                             ocrLines = emptyList(),
-                                                            ticketText = ticketText
+                                                            ticketText = ticketText,
+                                                            catalogEntries = catalogEntries
                                                         )
                                                         if (parsed != null && detectedResult == null) {
                                                             applyDetectedResult(parsed)
+                                                        } else if (parsed == null && detectedResult == null) {
+                                                            EquipmentScanParser.findRejectedBarcodeLabel(vals)?.let { skipped ->
+                                                                ocrHintMessage = "Пропущен служебный код ($skipped) - наведите на S/N или нажмите «Считать текст шильдика (OCR)»"
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -546,16 +571,12 @@ fun EquipmentScannerScreen(
                                 }
                             }
 
-                            OutlinedTextField(
+                            PrinterModelDropdownField(
                                 value = editModel,
                                 onValueChange = { editModel = it },
-                                label = { Text("Модель аппарата") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = IntraColors.BrandPrimary,
-                                    unfocusedBorderColor = IntraColors.SubtleBorder
-                                )
+                                catalogEntries = catalogEntries,
+                                label = "Модель аппарата",
+                                modifier = Modifier.fillMaxWidth()
                             )
                             OutlinedTextField(
                                 value = editSerial,
@@ -568,6 +589,33 @@ fun EquipmentScannerScreen(
                                     unfocusedBorderColor = IntraColors.SubtleBorder
                                 )
                             )
+                            if (res.candidateSerials.size > 1) {
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    res.candidateSerials.forEach { candidate ->
+                                        val isChosen = editSerial.equals(candidate, ignoreCase = true)
+                                        Surface(
+                                            modifier = Modifier.clickable { editSerial = candidate },
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = if (isChosen) IntraColors.BrandPrimary else IntraColors.BackgroundIce,
+                                            border = BorderStroke(
+                                                1.dp,
+                                                if (isChosen) IntraColors.BrandPrimary else IntraColors.SubtleBorder
+                                            )
+                                        ) {
+                                            Text(
+                                                text = candidate,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = if (isChosen) Color.White else IntraColors.TextPrimary,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                             OutlinedTextField(
                                 value = editInv,
                                 onValueChange = { editInv = it },

@@ -152,6 +152,7 @@ import com.lantaservice.intra.ui.camera.EquipmentScannerScreen
 import com.lantaservice.intra.ui.camera.SmartCameraScreen
 import com.lantaservice.intra.ui.components.FullscreenPhotoViewer
 import com.lantaservice.intra.ui.components.IntraHeaderBanner
+import com.lantaservice.intra.ui.components.PrinterModelDropdownField
 import com.lantaservice.intra.ui.components.StatusPill
 import com.lantaservice.intra.ui.components.ViewerPhoto
 import com.lantaservice.intra.ui.components.intraHeaderInsetsPadding
@@ -163,6 +164,7 @@ import com.lantaservice.intra.util.EquipmentScanParser
 import com.lantaservice.intra.util.EquipmentScanResult
 import com.lantaservice.intra.util.ImageCompressor
 import com.lantaservice.intra.util.NormalizedRect
+import com.lantaservice.intra.util.PrinterModelCatalog
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
@@ -3181,6 +3183,12 @@ private fun EquipmentManualInputDialog(
     onDismiss: () -> Unit,
     onSave: (modelName: String, serialNumber: String, inventoryNumber: String) -> Unit
 ) {
+    val context = LocalContext.current
+    val catalogEntries by PrinterModelCatalog.entries.collectAsStateWithLifecycle()
+    LaunchedEffect(context) {
+        PrinterModelCatalog.ensureLoaded(context)
+    }
+
     var modelText by remember(initial) { mutableStateOf(initial?.modelName.orEmpty()) }
     var serialText by remember(initial) { mutableStateOf(initial?.serialNumber.orEmpty()) }
     var invText by remember(initial) { mutableStateOf(initial?.inventoryNumber.orEmpty()) }
@@ -3238,17 +3246,12 @@ private fun EquipmentManualInputDialog(
                     }
                 }
 
-                OutlinedTextField(
+                PrinterModelDropdownField(
                     value = modelText,
                     onValueChange = { modelText = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    label = { Text("Модель (например: Lexmark MX622ade)") },
-                    shape = RoundedCornerShape(14.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = IntraColors.BrandPrimary,
-                        unfocusedBorderColor = IntraColors.SubtleBorder
-                    )
+                    catalogEntries = catalogEntries,
+                    label = "Модель (поиск или выбор из списка)",
+                    modifier = Modifier.fillMaxWidth()
                 )
 
                 OutlinedTextField(

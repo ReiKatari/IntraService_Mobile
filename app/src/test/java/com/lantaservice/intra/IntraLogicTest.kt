@@ -47,6 +47,7 @@ import com.lantaservice.intra.util.LightStatus
 import com.lantaservice.intra.util.LocationAccessStatus
 import com.lantaservice.intra.util.LocationPermissionHelper
 import com.lantaservice.intra.util.PhotoEnhancerEngine
+import com.lantaservice.intra.util.PrinterModelCatalogEngine
 import com.lantaservice.intra.util.SharpnessStatus
 import com.lantaservice.intra.util.StabilityStatus
 import kotlinx.serialization.json.Json
@@ -1307,5 +1308,97 @@ class IntraLogicTest {
         assertNotNull(manualWrong)
         assertEquals("BAD-SERIAL-1", manualWrong!!.serialNumber)
         assertEquals(false, manualWrong.matchesTicket)
+    }
+
+    @Test
+    fun equipmentScanParserSkipsOemStickerPartCodesAndImdaAndExtractsRealSerial() {
+        // Barcode containing only OEM sticker P/N code (like QR 36S2890-004 on back label) must NOT lock as S/N
+        val barcodeOnlyRejected = EquipmentScanParser.parse(
+            barcodeValues = listOf("36S2890-004"),
+            ocrLines = emptyList(),
+            ticketText = "",
+            catalogEntries = emptyList()
+        )
+        assertNull(barcodeOnlyRejected)
+        assertEquals("36S2890-004", EquipmentScanParser.findRejectedBarcodeLabel(listOf("36S2890-004")))
+
+        // Full sticker OCR with IMDA approval DA102160, QR P/N 36S2890-004, and actual serial CCAI18F10040T4
+        val res = EquipmentScanParser.parse(
+            barcodeValues = listOf("36S2890-004"),
+            ocrLines = listOf(
+                "Complies with",
+                "IMDA Standards",
+                "DA102160",
+                "36S2890-004",
+                "CCAI18F10040T4"
+            ),
+            ticketText = "Заявка Lexmark MX622ade S/N CCAI18F10040T4",
+            catalogEntries = emptyList()
+        )
+        assertNotNull(res)
+        assertEquals("CCAI18F10040T4", res!!.serialNumber)
+        assertEquals(true, res.matchesTicket)
+        assertTrue(res.skippedCodes.contains("36S2890-004"))
+        assertTrue(res.skippedCodes.contains("DA102160"))
+    }
+
+    @Test
+    fun bundledOfficialPrinterCatalogParsesSearchesAndMatchesModels() {
+        val candidates = listOf(
+            File("app/src/main/assets/printer_models_catalog.json"),
+            File("src/main/assets/printer_models_catalog.json")
+        )
+        val assetFile = candidates.firstOrNull { it.exists() }
+        assertNotNull("Expected bundled printer_models_catalog.json", assetFile)
+        val raw = assetFile!!.readText(Charsets.UTF_8)
+        val entries = PrinterModelCatalogEngine.parseCatalogJson(raw, json)
+        assertTrue("Expected at least 500 official models, got ${entries.size}", entries.size >= 500)
+
+        val indexed = PrinterModelCatalogEngine.buildIndex(entries)
+        val lexmarkHits = PrinterModelCatalogEngine.search(indexed, "mx622")
+        assertTrue(lexmarkHits.any { it.fullName.equals("Lexmark MX622ade", ignoreCase = true) })
+
+        val katyushaHits = PrinterModelCatalogEngine.search(indexed, "катюша 247")
+        assertTrue(katyushaHits.any { it.brand == "Катюша" && it.model.contains("247") })
+
+        val kyoceraHits = PrinterModelCatalogEngine.search(indexed, "2040", brandFilter = "Kyocera")
+        assertTrue(kyoceraHits.any { it.model.contains("2040", ignoreCase = true) })
+
+        val hpHits = PrinterModelCatalogEngine.search(indexed, "m404dn")
+        assertTrue(hpHits.any { it.brand == "HP" && it.model.contains("M404dn", ignoreCase = true) })
+
+        val zebraHits = PrinterModelCatalogEngine.search(indexed, "zd421")
+        assertTrue(zebraHits.any { it.brand == "Zebra" && it.model.contains("ZD421", ignoreCase = true) })
+
+        assertEquals(
+            "Lexmark MX622ade",
+            PrinterModelCatalogEngine.matchModelFromText(entries, "Меню конфигурации MX622ade версия")
+        )
+    }
+
+    @Test
+    fun ticketListStatusWhitelistAllowsOnlyThreeTargetStatuses() {
+        assertTrue(IntraRepository.isAllowedListStatusName("Принят СП"))
+        assertTrue(IntraRepository.isAllowedListStatusName("  принят   сп "))
+        assertTrue(IntraRepository.isAllowedListStatusName("Назначен СИ"))
+        assertTrue(IntraRepository.isAllowedListStatusName("Эскалация Исполнителю"))
+        assertTrue(IntraRepository.isAllowedListStatusName("эскалация исполнителю"))
+
+        assertFalse(IntraRepository.isAllowedListStatusName("Принята в работу"))
+        assertFalse(IntraRepository.isAllowedListStatusName("Открыта"))
+        assertFalse(IntraRepository.isAllowedListStatusName("Ожидание Согаз"))
+        assertFalse(IntraRepository.isAllowedListStatusName("Починил"))
+        assertFalse(IntraRepository.isAllowedListStatusName("Закрыта"))
+        assertFalse(IntraRepository.isAllowedListStatusName(null))
+
+        val statuses = listOf(
+            TaskStatusDto(id = 10, name = "Открыта", isFinal = false),
+            TaskStatusDto(id = 11, name = "Принят СП", isFinal = false),
+            TaskStatusDto(id = 12, name = "Назначен СИ", isFinal = false),
+            TaskStatusDto(id = 13, name = "Эскалация Исполнителю", isFinal = false),
+            TaskStatusDto(id = 26, name = "Починил", isFinal = false),
+            TaskStatusDto(id = 30, name = "Закрыта", isFinal = true)
+        )
+        assertEquals(setOf(11, 12, 13), IntraRepository.findAllowedListStatusIds(statuses))
     }
 }

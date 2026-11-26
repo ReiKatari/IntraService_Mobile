@@ -1,0 +1,6702 @@
+[
+  {
+    "brand": "Avision",
+    "model": "AM3061N",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Avision",
+    "model": "AM30A",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Avision",
+    "model": "AM3140i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Avision",
+    "model": "AM40A",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Avision",
+    "model": "AM5550",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Avision",
+    "model": "AM7630i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Avision",
+    "model": "AM7640i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Avision",
+    "model": "AP3061N",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Avision",
+    "model": "AP30A",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Avision",
+    "model": "AP40A",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Bixolon",
+    "model": "SLP-DX220",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Bixolon",
+    "model": "SLP-DX420",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Bixolon",
+    "model": "SLP-TX220",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Bixolon",
+    "model": "SLP-TX400",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Bixolon",
+    "model": "SLP-TX403",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Bixolon",
+    "model": "SRP-330II",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Bixolon",
+    "model": "SRP-350III",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Bixolon",
+    "model": "SRP-350plusIII",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Bixolon",
+    "model": "SRP-E300",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Bixolon",
+    "model": "XD3-40d",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Bixolon",
+    "model": "XD3-40t",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Bixolon",
+    "model": "XD5-40d",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Bixolon",
+    "model": "XD5-40t",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Bixolon",
+    "model": "XT5-40",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Brother",
+    "model": "DCP-1510R",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "DCP-1512R",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "DCP-1602R",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "DCP-1610WR",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "DCP-1612WR",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "DCP-1623WR",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "DCP-L2500DR",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "DCP-L2520DWR",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "DCP-L2540DNR",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "DCP-L2560DWR",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "DCP-L3510CDW",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "DCP-L3550CDW",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "DCP-L5500DN",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "DCP-T220",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "DCP-T420W",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "DCP-T520W",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "DCP-T720DW",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "HL-1110R",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Brother",
+    "model": "HL-1112R",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Brother",
+    "model": "HL-1202R",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Brother",
+    "model": "HL-1210WR",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Brother",
+    "model": "HL-1223WR",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Brother",
+    "model": "HL-L2300DR",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Brother",
+    "model": "HL-L2340DWR",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Brother",
+    "model": "HL-L2360DNR",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Brother",
+    "model": "HL-L2365DWR",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Brother",
+    "model": "HL-L3210CW",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Brother",
+    "model": "HL-L3230CDW",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Brother",
+    "model": "HL-L3270CDW",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Brother",
+    "model": "HL-L5000D",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Brother",
+    "model": "HL-L5100DN",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Brother",
+    "model": "HL-L5200DW",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Brother",
+    "model": "HL-L6300DW",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Brother",
+    "model": "HL-L6400DW",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Brother",
+    "model": "HL-L8260CDW",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Brother",
+    "model": "HL-L8360CDW",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Brother",
+    "model": "MFC-L2700DNR",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "MFC-L2700DWR",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "MFC-L2720DWR",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "MFC-L2740DWR",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "MFC-L3710CW",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "MFC-L3750CDW",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "MFC-L3770CDW",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "MFC-L5700DN",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "MFC-L5750DW",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "MFC-L6800DW",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "MFC-L6900DW",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "MFC-L8690CDW",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "MFC-L8900CDW",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Brother",
+    "model": "MFC-T920DW",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Bulat",
+    "model": "M1025DN",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Bulat",
+    "model": "M1030DW",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Bulat",
+    "model": "M1035DN",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Bulat",
+    "model": "M2040DN",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Bulat",
+    "model": "M2045DN",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Bulat",
+    "model": "P1020DN",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Bulat",
+    "model": "P1035DW",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Bulat",
+    "model": "P1040DN",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Bulat",
+    "model": "P2045DN",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Bulat",
+    "model": "P2055DN",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS LBP112",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS LBP113w",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS LBP122dw",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS LBP162dw",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS LBP223dw",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS LBP226dw",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS LBP228x",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS LBP233dw",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS LBP236dw",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS LBP243dw",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS LBP246dw",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS LBP312x",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS LBP325x",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS LBP351x",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS LBP352x",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS LBP6030",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS LBP6030B",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS LBP6030w",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS LBP621Cw",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS LBP623Cdw",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS LBP631Cw",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS LBP633Cdw",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS LBP663Cdw",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS LBP664Cx",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS LBP673Cdw",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS LBP712Cx",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS LBP722Cdw",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF112",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF113w",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF231",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF232w",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF237w",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF264dw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF267dw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF269dw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF272dw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF275dw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF3010",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF421dw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF426dw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF443dw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF445dw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF446x",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF449x",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF453dw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF455dw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF463dw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF465dw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF522x",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF525x",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF542x",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF543x",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF552dw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF553dw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF641Cw",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF643Cdw",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF645Cx",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF651Cw",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF655Cdw",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF657Cdw",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF742Cdw",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF744Cdw",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF746Cx",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF752Cdw",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF754Cdw",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "i-SENSYS MF832Cdw",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imagePROGRAF PRO-2100",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "Canon",
+    "model": "imagePROGRAF PRO-4100",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "Canon",
+    "model": "imagePROGRAF TA-20",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "Canon",
+    "model": "imagePROGRAF TA-30",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "Canon",
+    "model": "imagePROGRAF TM-200",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "Canon",
+    "model": "imagePROGRAF TM-205",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "Canon",
+    "model": "imagePROGRAF TM-240",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "Canon",
+    "model": "imagePROGRAF TM-300",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "Canon",
+    "model": "imagePROGRAF TM-305",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "Canon",
+    "model": "imagePROGRAF TM-340",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "Canon",
+    "model": "imagePROGRAF TM-350",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "Canon",
+    "model": "imagePROGRAF TX-3000",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "Canon",
+    "model": "imagePROGRAF TX-3100",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "Canon",
+    "model": "imagePROGRAF TX-4000",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "Canon",
+    "model": "imagePROGRAF TX-4100",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER 1643i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER 1643iF",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER 2206",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER 2206iF",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER 2206N",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER 2224",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER 2224i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER 2425",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER 2425i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER 2625i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER 2630i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER 2645i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER ADVANCE DX 4725i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER ADVANCE DX 4735i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER ADVANCE DX 4745i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER ADVANCE DX 4825i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER ADVANCE DX 4835i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER ADVANCE DX 6855i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER ADVANCE DX 6870i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER ADVANCE DX C3725i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER ADVANCE DX C3730i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER ADVANCE DX C3826i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER ADVANCE DX C3830i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER ADVANCE DX C3835i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER ADVANCE DX C3926i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER ADVANCE DX C3935i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER ADVANCE DX C5735i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER ADVANCE DX C5740i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER ADVANCE DX C5840i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER ADVANCE DX C5860i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER C3125i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER C3226i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "imageRUNNER C3326i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "MAXIFY GX6040",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "MAXIFY GX7040",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "PIXMA G1411",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "PIXMA G2411",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "PIXMA G3411",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Canon",
+    "model": "PIXMA G3420",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Citizen",
+    "model": "CL-E300",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Citizen",
+    "model": "CL-E321",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Citizen",
+    "model": "CL-E720",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Citizen",
+    "model": "CL-S300",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Citizen",
+    "model": "CL-S321",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Citizen",
+    "model": "CL-S521",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Citizen",
+    "model": "CL-S621",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Citizen",
+    "model": "CL-S631",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Citizen",
+    "model": "CL-S700",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Citizen",
+    "model": "CT-S310II",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Develop",
+    "model": "ineo 185e",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Develop",
+    "model": "ineo 226i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Develop",
+    "model": "ineo 227",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Develop",
+    "model": "ineo 287",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Develop",
+    "model": "ineo 300i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Develop",
+    "model": "ineo 360i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Develop",
+    "model": "ineo 450i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Develop",
+    "model": "ineo 550i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Develop",
+    "model": "ineo+ 226i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Develop",
+    "model": "ineo+ 250i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Develop",
+    "model": "ineo+ 258",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Develop",
+    "model": "ineo+ 300i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Develop",
+    "model": "ineo+ 360i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Develop",
+    "model": "ineo+ 450i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Develop",
+    "model": "ineo+ 550i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Dymo",
+    "model": "LabelWriter 450",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Dymo",
+    "model": "LabelWriter 450 Turbo",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Dymo",
+    "model": "LabelWriter 4XL",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Dymo",
+    "model": "LabelWriter 550",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Dymo",
+    "model": "LabelWriter 550 Turbo",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Dymo",
+    "model": "LabelWriter 5XL",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Epson",
+    "model": "EcoTank L11160",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Epson",
+    "model": "EcoTank M1100",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Epson",
+    "model": "EcoTank M1120",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Epson",
+    "model": "EcoTank M1140",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Epson",
+    "model": "EcoTank M1170",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Epson",
+    "model": "EcoTank M1180",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Epson",
+    "model": "EcoTank M15140",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "EcoTank M15180",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "EcoTank M2120",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "EcoTank M2140",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "EcoTank M2170",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "EcoTank M3140",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "EcoTank M3170",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "EcoTank M3180",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "L121",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Epson",
+    "model": "L1250",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Epson",
+    "model": "L14150",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "L15150",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "L15160",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "L1800",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Epson",
+    "model": "L18050",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Epson",
+    "model": "L3150",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "L3210",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "L3250",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "L3251",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "L3256",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "L3260",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "L4260",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "L5290",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "L6270",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "L6290",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "L6460",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "L6490",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "L805",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Epson",
+    "model": "L8050",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Epson",
+    "model": "L8180",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "SureColor SC-T2100",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "Epson",
+    "model": "SureColor SC-T3100",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "Epson",
+    "model": "SureColor SC-T3405",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "Epson",
+    "model": "SureColor SC-T5100",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "Epson",
+    "model": "SureColor SC-T5405",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "Epson",
+    "model": "SureColor SC-T7700D",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "Epson",
+    "model": "WorkForce AL-M310DN",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Epson",
+    "model": "WorkForce AL-M320DN",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Epson",
+    "model": "WorkForce Pro WF-C5290DW",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Epson",
+    "model": "WorkForce Pro WF-C5390DW",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Epson",
+    "model": "WorkForce Pro WF-C5790DWF",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "WorkForce Pro WF-C5890DWF",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "WorkForce Pro WF-C8190DW",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Epson",
+    "model": "WorkForce Pro WF-C878R",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "WorkForce Pro WF-C879R",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Epson",
+    "model": "WorkForce Pro WF-M5299DW",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Epson",
+    "model": "WorkForce Pro WF-M5799DWF",
+    "category": "МФУ"
+  },
+  {
+    "brand": "F+ imaging",
+    "model": "M2040",
+    "category": "МФУ"
+  },
+  {
+    "brand": "F+ imaging",
+    "model": "M3145",
+    "category": "МФУ"
+  },
+  {
+    "brand": "F+ imaging",
+    "model": "MC2500",
+    "category": "МФУ"
+  },
+  {
+    "brand": "F+ imaging",
+    "model": "MC3500",
+    "category": "МФУ"
+  },
+  {
+    "brand": "F+ imaging",
+    "model": "P2040",
+    "category": "Принтер"
+  },
+  {
+    "brand": "F+ imaging",
+    "model": "P3150",
+    "category": "Принтер"
+  },
+  {
+    "brand": "F+ imaging",
+    "model": "PC3000",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Godex",
+    "model": "DT2x",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Godex",
+    "model": "DT4x",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Godex",
+    "model": "EZ120",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Godex",
+    "model": "EZ130",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Godex",
+    "model": "EZ520",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Godex",
+    "model": "EZ530",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Godex",
+    "model": "G500",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Godex",
+    "model": "G530",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Godex",
+    "model": "GE300",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Godex",
+    "model": "GE330",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Godex",
+    "model": "RT200",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Godex",
+    "model": "RT200i",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Godex",
+    "model": "RT700i",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Godex",
+    "model": "RT730i",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Godex",
+    "model": "ZX1200i",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Godex",
+    "model": "ZX1300i",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Godex",
+    "model": "ZX420",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Godex",
+    "model": "ZX420i",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Honeywell",
+    "model": "PC42d",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Honeywell",
+    "model": "PC42t",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Honeywell",
+    "model": "PC42t Plus",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Honeywell",
+    "model": "PC43d",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Honeywell",
+    "model": "PC43t",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Honeywell",
+    "model": "PC45t",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Honeywell",
+    "model": "PD43",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Honeywell",
+    "model": "PD45",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Honeywell",
+    "model": "PD45S",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Honeywell",
+    "model": "PM42",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Honeywell",
+    "model": "PM43",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Honeywell",
+    "model": "PM45",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Honeywell",
+    "model": "PX4ie",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Honeywell",
+    "model": "PX6ie",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Honeywell",
+    "model": "PX940",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Honeywell",
+    "model": "RP2",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Honeywell",
+    "model": "RP4",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "HP",
+    "model": "Color LaserJet Enterprise M554dn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "Color LaserJet Enterprise M555dn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "Color LaserJet Enterprise M578dn",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "Color LaserJet Enterprise M652dn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "Color LaserJet Enterprise M653dn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "Color LaserJet Enterprise M681dh",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "Color LaserJet Enterprise M751dn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "Color LaserJet Enterprise M856dn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "Color LaserJet Managed E78323dn",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "Color LaserJet Managed E78330dn",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "Color LaserJet Managed E87640du",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "Color LaserJet Pro 4203dn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "Color LaserJet Pro 4303fdn",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "Color LaserJet Pro 4303fdw",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "Color LaserJet Pro M182n",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "Color LaserJet Pro M183fw",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "Color LaserJet Pro M254dw",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "Color LaserJet Pro M255dw",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "Color LaserJet Pro M282nw",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "Color LaserJet Pro M283fdn",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "Color LaserJet Pro M283fdw",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "Color LaserJet Pro M452dn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "Color LaserJet Pro M454dn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "Color LaserJet Pro M454dw",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "Color LaserJet Pro M477fdn",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "Color LaserJet Pro M479fdn",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "Color LaserJet Pro M479fdw",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "DesignJet T125",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "HP",
+    "model": "DesignJet T130",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "HP",
+    "model": "DesignJet T1600",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "HP",
+    "model": "DesignJet T1700",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "HP",
+    "model": "DesignJet T230",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "HP",
+    "model": "DesignJet T250",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "HP",
+    "model": "DesignJet T2600 MFP",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "HP",
+    "model": "DesignJet T630",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "HP",
+    "model": "DesignJet T650",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "HP",
+    "model": "DesignJet T730",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "HP",
+    "model": "DesignJet T830 MFP",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "HP",
+    "model": "DesignJet Z6",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "HP",
+    "model": "DesignJet Z9+",
+    "category": "Плоттер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet 1010",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet 1018",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet 1020",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet 1320",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Enterprise M406dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Enterprise M430f",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Enterprise M507dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Enterprise M507n",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Enterprise M507x",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Enterprise M528dn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Enterprise M528f",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Enterprise M528z",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Enterprise M607dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Enterprise M607n",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Enterprise M608dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Enterprise M608n",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Enterprise M608x",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Enterprise M610dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Enterprise M611dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Enterprise M611x",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Enterprise M612dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Enterprise M612x",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Enterprise M634h",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Enterprise M635fht",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Enterprise M636fh",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Enterprise M712dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Enterprise M725dn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Enterprise M725z",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Enterprise M806dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Enterprise M830z",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet M110w",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet M110we",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet M140w",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet M141a",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet M141w",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet M211d",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Managed E42540f",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Managed E52645dn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Managed E62655dn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Managed M436dn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Managed M436n",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Managed M436nda",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet P1102",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet P1102w",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet P2035",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet P2055d",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet P2055dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro 3103fdn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro 3103fdw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro 4003dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro 4003dw",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro 4003n",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro 4103dw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro 4103fdn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro 4103fdw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M102a",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M102w",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M104a",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M104w",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M1132",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M1212nf",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M125a",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M125rnw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M127fn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M127fw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M130a",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M130fn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M130fw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M130nw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M132a",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M132fn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M132fw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M132nw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M15a",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M15w",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M203dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M203dw",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M227fdn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M227fdw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M227sdn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M236d",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M236dw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M236sdn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M236sdw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M28a",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M28w",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M304a",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M305d",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M402dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M402dw",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M402n",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M404dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M404dw",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M404n",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M426fdn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M426fdw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M428fdn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M428fdw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro M701n",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Pro P1606dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Tank 2504dw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "LaserJet Tank MFP 2604sdw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "Neverstop Laser 1000a",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "Neverstop Laser 1000w",
+    "category": "Принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "Neverstop Laser 1200a",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "Neverstop Laser 1200w",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "OfficeJet Pro 8023",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "OfficeJet Pro 9013",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "OfficeJet Pro 9023",
+    "category": "МФУ"
+  },
+  {
+    "brand": "HP",
+    "model": "PageWide Enterprise Color 556dn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "HP",
+    "model": "PageWide Pro 452dw",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "AccurioPrint C4065",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "AccurioPrint C4065P",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 185",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 185e",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 205i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 206",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 225i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 226",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 227",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 245i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 266",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 266i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 287",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 300i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 308",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 308e",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 3300P",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 3301P",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 3320",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 360i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 3622",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 367",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 368e",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 4000i",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 4000P",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 4020",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 4020i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 4020P",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 4050",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 4052",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 4402P",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 4422",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 450i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 4700P",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 4750",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 4752",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 5000i",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 5020i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 550i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 650i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 658e",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 750i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub 758",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C224e",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C226",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C226i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C227",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C250i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C258",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C266",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C266i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C287",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C300i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C308",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C3300i",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C3320i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C3350i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C3351",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C360i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C368",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C3850",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C3851",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C4000i",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C4050i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C450i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C458",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C550i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C558",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C650i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C658",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Konica Minolta",
+    "model": "bizhub C750i",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M2040dn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M2135dn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M2235dn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M2540dn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M2540dw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M2635dn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M2640idw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M2735dn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M2735dw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M2835dw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M3145dn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M3145idn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M3645dn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M3645idn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M3655idn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M3660idn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M3860idn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M4125idn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M4132idn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M5521cdn",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M5521cdw",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M5526cdn",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M5526cdw",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M6230cidn",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M6235cidn",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M6630cidn",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M6635cidn",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M8124cidn",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS M8130cidn",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS MA2000",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS MA2000w",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS MA2100cfx",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS MA2600cfx",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS MA3500cifx",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS MA4000cifx",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS MA4500fx",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS MA4500ifx",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS MA4500ix",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS MA4500x",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS MA5500ifx",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS MA6000ifx",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS P2040dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS P2040dw",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS P2235dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS P2235dw",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS P2335d",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS P2335dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS P3145dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS P3150dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS P3155dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS P3160dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS P4040dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS P4060dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS P5021cdn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS P5021cdw",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS P5026cdn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS P5026cdw",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS P6230cdn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS P6235cdn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS P7240cdn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS P8060cdn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS PA2100cx",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS PA2600cwx",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS PA3500cx",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS PA4000cx",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS PA4500x",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS PA5000x",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS PA5500x",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "ECOSYS PA6000x",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "FS-1020MFP",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "FS-1025MFP",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "FS-1030MFP",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "FS-1035MFP",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "FS-1040",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "FS-1060DN",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "FS-1120MFP",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "FS-1125MFP",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "FS-1135MFP",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "FS-2100DN",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "FS-4100DN",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "FS-4200DN",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "FS-4300DN",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 1800",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 1801",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 2020",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 2200",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 2201",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 2320",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 2321",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 2460ci",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 2470ci",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 2520i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 2552ci",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 2553ci",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 2554ci",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 3212i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 3252ci",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 3253ci",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 3554ci",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 4002i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 4012i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 4020i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 4053ci",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 4054ci",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 5002i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 5003i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 5004i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 5053ci",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 5054ci",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 6002i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 6003i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 6004i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 6053ci",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 6054ci",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 7004i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 7054ci",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 8003i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa 9003i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa MZ3200i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Kyocera",
+    "model": "TASKalfa MZ4000i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "B2236dw",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "B2338dw",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "B2442dw",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "B2546dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "B2650dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "B2865dw",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "B3340dw",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "B3442dw",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "C2325dw",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "C2425dw",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "C2535dw",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "C3224dw",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "C3326dw",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "C3426dw",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "C4150",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "C4342",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "C4352",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CS317dn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CS331dw",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CS417dn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CS421dn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CS431dw",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CS517de",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CS521dn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CS531dw",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CS622de",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CS720de",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CS725de",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CS730de",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CS735de",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CS820de",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CS921de",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CS923de",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CX317dn",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CX331adwe",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CX417de",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CX421adn",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CX431adw",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CX517de",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CX522ade",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CX532adwe",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CX622ade",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CX625ade",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CX635adwe",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CX725de",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CX730de",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CX735adse",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CX820de",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CX825de",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CX860de",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CX921de",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "CX923de",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "M1242",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "M1246",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "M3250",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "M5255",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "M5270",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MB2236adw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MB2236i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MB2338adw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MB2442adwe",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MB2546ade",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MB2650ade",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MB2770adhwe",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MB3442adw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MC2325adw",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MC2425adw",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MC2535adwe",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MC2640adwe",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MC3224adwe",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MC3326adwe",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MC3426adw",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MS317dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MS321dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MS331dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MS417dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MS421dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MS431dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MS431dw",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MS517dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MS521dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MS531dw",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MS610dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MS617dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MS621dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MS622de",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MS631dw",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MS632dwe",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MS725dvn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MS821n",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MS822de",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MS823dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MS826de",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MX317dn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MX321adn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MX321adw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MX331adn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MX417de",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MX421ade",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MX431adn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MX431adw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MX432adwe",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MX517de",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MX521ade",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MX521de",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MX522adhe",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MX532adwe",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MX611de",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MX617de",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MX622ade",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MX622adhe",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MX632adwe",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MX721ade",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MX722ade",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MX722adhe",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MX822ade",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "MX826ade",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "XM1242",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "XM1246",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "XM3250",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "XM5365",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "XM7355",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Lexmark",
+    "model": "XM7370",
+    "category": "МФУ"
+  },
+  {
+    "brand": "OKI",
+    "model": "B412dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "OKI",
+    "model": "B432dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "OKI",
+    "model": "B512dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "OKI",
+    "model": "B721dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "OKI",
+    "model": "B731dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "OKI",
+    "model": "B820n",
+    "category": "Принтер"
+  },
+  {
+    "brand": "OKI",
+    "model": "B840dn",
+    "category": "Принтер"
+  },
+  {
+    "brand": "OKI",
+    "model": "C332dn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "OKI",
+    "model": "C532dn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "OKI",
+    "model": "C542dn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "OKI",
+    "model": "C612dn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "OKI",
+    "model": "C650dn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "OKI",
+    "model": "C712dn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "OKI",
+    "model": "C824dn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "OKI",
+    "model": "C834dn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "OKI",
+    "model": "C844dn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "OKI",
+    "model": "C911dn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "OKI",
+    "model": "C931dn",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "OKI",
+    "model": "MB472dnw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "OKI",
+    "model": "MB492dn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "OKI",
+    "model": "MB562dnw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "OKI",
+    "model": "MB760dn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "OKI",
+    "model": "MB770dn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "OKI",
+    "model": "MC363dn",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "OKI",
+    "model": "MC563dn",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "OKI",
+    "model": "MC573dn",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "OKI",
+    "model": "MC853dn",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "OKI",
+    "model": "MC873dn",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "OKI",
+    "model": "MC883dn",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "BM2300",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "BM2300AW",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "BM2300W",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "BM4200ADN",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "BM4200ADW",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "BM5100ADN",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "BM5100ADW",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "BM5100FDN",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "BM5100FDW",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "BP2300",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Pantum",
+    "model": "BP2300W",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Pantum",
+    "model": "BP4200DN",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Pantum",
+    "model": "BP4200DW",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Pantum",
+    "model": "BP5100DN",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Pantum",
+    "model": "BP5100DW",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Pantum",
+    "model": "CM1100ADW",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "CM1100DW",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "CM2100ADW",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "CM2200FDW",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "CM7000FDN",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "CP1100",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Pantum",
+    "model": "CP1100DW",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Pantum",
+    "model": "CP2100",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Pantum",
+    "model": "CP2200DW",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Pantum",
+    "model": "M6500",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "M6500NW",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "M6500W",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "M6507",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "M6507W",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "M6550NW",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "M6557NW",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "M6607NW",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "M6700D",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "M6700DW",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "M6800FDW",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "M7100DN",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "M7100DW",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "M7105DN",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "M7105DW",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "M7200FD",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "M7200FDN",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "M7200FDW",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "M7300FDN",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "M7300FDW",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "M7310DW",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Pantum",
+    "model": "P2200",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Pantum",
+    "model": "P2207",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Pantum",
+    "model": "P2500",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Pantum",
+    "model": "P2500W",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Pantum",
+    "model": "P2502",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Pantum",
+    "model": "P2507",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Pantum",
+    "model": "P2516",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Pantum",
+    "model": "P2518",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Pantum",
+    "model": "P3010D",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Pantum",
+    "model": "P3010DW",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Pantum",
+    "model": "P3300DN",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Pantum",
+    "model": "P3300DW",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Pantum",
+    "model": "P3305DN",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Pantum",
+    "model": "P3305DW",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "IM 2500",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "IM 2702",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "IM 3000",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "IM 3500",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "IM 350F",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "IM 4000",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "IM 430F",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "IM 5000",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "IM 6000",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "IM 7000",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "IM 8000",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "IM 9000",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "IM C2000",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "IM C2010",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "IM C2500",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "IM C2510",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "IM C3000",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "IM C3010",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "IM C3500",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "IM C3510",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "IM C4500",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "IM C4510",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "IM C5500",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "IM C6000",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "IM C6010",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "M 2700",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "M 2701",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "M 320F",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "M C250FW",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "M C251FW",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "MP 2014",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "MP 2014AD",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "MP 2014D",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "MP 2501SP",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "MP 2554SP",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "MP 2555SP",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "MP 3054SP",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "MP 3055SP",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "MP 3555SP",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "MP 4055SP",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "MP 5055SP",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "MP 6055SP",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "MP C2004",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "MP C2004ex",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "MP C2504",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "MP C2504ex",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "MP C3004",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "MP C3504",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "MP C4504",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "MP C5504",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "MP C6004",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "P 311",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "P 501",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "P 502",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "P 800",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "P 801",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "P C300W",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "P C301W",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "P C600",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "SP 150",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "SP 150SU",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "SP 210",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "SP 210SU",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "SP 212SUw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "SP 220Nw",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "SP 230DNw",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "SP 230SFNw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "SP 311DN",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "SP 311SFN",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "SP 325DNw",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "SP 325SFNw",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "SP 330DN",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "SP 330SFN",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "SP 3710DN",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "SP 3710SF",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "SP 4510DN",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "SP 4510SF",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "SP C261DNw",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "SP C261SFNw",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "SP C262DNw",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "SP C262SFNw",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "SP C360DNw",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Ricoh",
+    "model": "SP C360SFNw",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "RISO",
+    "model": "ComColor FT5230",
+    "category": "Ризограф / Дупликатор"
+  },
+  {
+    "brand": "RISO",
+    "model": "ComColor FW5230",
+    "category": "Ризограф / Дупликатор"
+  },
+  {
+    "brand": "RISO",
+    "model": "EZ200",
+    "category": "Ризограф / Дупликатор"
+  },
+  {
+    "brand": "RISO",
+    "model": "EZ201",
+    "category": "Ризограф / Дупликатор"
+  },
+  {
+    "brand": "RISO",
+    "model": "EZ370",
+    "category": "Ризограф / Дупликатор"
+  },
+  {
+    "brand": "RISO",
+    "model": "MZ1070",
+    "category": "Ризограф / Дупликатор"
+  },
+  {
+    "brand": "RISO",
+    "model": "MZ770",
+    "category": "Ризограф / Дупликатор"
+  },
+  {
+    "brand": "RISO",
+    "model": "SF5030",
+    "category": "Ризограф / Дупликатор"
+  },
+  {
+    "brand": "RISO",
+    "model": "SF5230",
+    "category": "Ризограф / Дупликатор"
+  },
+  {
+    "brand": "RISO",
+    "model": "SF5330",
+    "category": "Ризограф / Дупликатор"
+  },
+  {
+    "brand": "RISO",
+    "model": "SF5350",
+    "category": "Ризограф / Дупликатор"
+  },
+  {
+    "brand": "RISO",
+    "model": "SF9350",
+    "category": "Ризограф / Дупликатор"
+  },
+  {
+    "brand": "Rongta",
+    "model": "RP326",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Rongta",
+    "model": "RP328",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Rongta",
+    "model": "RP330",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Rongta",
+    "model": "RP400",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Rongta",
+    "model": "RP410",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Rongta",
+    "model": "RP421",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Rongta",
+    "model": "RP422",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Rongta",
+    "model": "RP850",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Samsung",
+    "model": "ML-1660",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Samsung",
+    "model": "ML-1665",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Samsung",
+    "model": "ML-1860",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Samsung",
+    "model": "ML-2160",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Samsung",
+    "model": "ML-2165",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Samsung",
+    "model": "ML-2525",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Samsung",
+    "model": "MultiXpress K2200",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "MultiXpress K3250NR",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "MultiXpress K4300LX",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "MultiXpress K7400LX",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "MultiXpress M5360RX",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "MultiXpress X3220NR",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "MultiXpress X4220RX",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "MultiXpress X7400LX",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "ProXpress C2620DW",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Samsung",
+    "model": "ProXpress C2670FW",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "ProXpress C3010ND",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Samsung",
+    "model": "ProXpress C3060FR",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "ProXpress M3320ND",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Samsung",
+    "model": "ProXpress M3370FD",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "ProXpress M3820DW",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Samsung",
+    "model": "ProXpress M3820ND",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Samsung",
+    "model": "ProXpress M3870FD",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "ProXpress M4020ND",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Samsung",
+    "model": "ProXpress M4070FR",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "ProXpress M4072FD",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "ProXpress M4580FX",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "SCX-3200",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "SCX-3400",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "SCX-3405",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "SCX-4200",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "SCX-4300",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "SCX-4650N",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "SCX-4729FD",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "SCX-4833FD",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "Xpress C1810W",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Samsung",
+    "model": "Xpress C1860FW",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "Xpress C430",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Samsung",
+    "model": "Xpress C430W",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Samsung",
+    "model": "Xpress C480",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "Xpress C480FW",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "Xpress C480W",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "Xpress M2020",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Samsung",
+    "model": "Xpress M2020W",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Samsung",
+    "model": "Xpress M2070",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "Xpress M2070FW",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "Xpress M2070W",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "Xpress M2620",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Samsung",
+    "model": "Xpress M2670FN",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "Xpress M2820",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Samsung",
+    "model": "Xpress M2835DW",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Samsung",
+    "model": "Xpress M2870FD",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Samsung",
+    "model": "Xpress M2885FW",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "AR-6020",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "AR-6020D",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "AR-6020N",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "AR-6023D",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "AR-6026N",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "AR-6031N",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "BP-20M22",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "BP-20M24",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "BP-30C25",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "BP-30M28",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "BP-30M31",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "BP-30M35",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "BP-50C26",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "BP-50C31",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "BP-50C36",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "BP-50C45",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "BP-50C55",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "BP-50C65",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "BP-50M26",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "BP-50M36",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "BP-50M45",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "BP-50M55",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "BP-50M65",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "BP-70C31",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "BP-70C45",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "MX-2630N",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "MX-2651",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "MX-3051",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "MX-3071",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "MX-3551",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "MX-4051",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "MX-4071",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "MX-5071",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "MX-6071",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "MX-B355W",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "MX-B455W",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "MX-C303W",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "MX-M266N",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "MX-M3070",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "MX-M3570",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "MX-M4070",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "MX-M5070",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sharp",
+    "model": "MX-M6070",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sindoh",
+    "model": "A610dn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sindoh",
+    "model": "A612dn",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sindoh",
+    "model": "D310",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Sindoh",
+    "model": "D320",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Sindoh",
+    "model": "D410",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Sindoh",
+    "model": "D420",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Sindoh",
+    "model": "D710",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Sindoh",
+    "model": "M411",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sindoh",
+    "model": "N410",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sindoh",
+    "model": "N411",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sindoh",
+    "model": "N510",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sindoh",
+    "model": "N610",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sindoh",
+    "model": "N611",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Sindoh",
+    "model": "N612",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 2010AC",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 2020AC",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 2303A",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 2309A",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 2323AM",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 2510AC",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 2515AC",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 2518A",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 2520AC",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 2525AC",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 2528A",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 2809A",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 2823AM",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 2829A",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 3015AC",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 3018A",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 3025AC",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 3028A",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 330AC",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 3515AC",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 3518A",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 3525AC",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 3528A",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 400AC",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 409S",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 4515AC",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 4518A",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 4525AC",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 4528A",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 478S",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 5015AC",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 5018A",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 5525AC",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 5528A",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 6525AC",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Toshiba",
+    "model": "e-STUDIO 6528A",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Triumph-Adler",
+    "model": "3262i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Triumph-Adler",
+    "model": "4062i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Triumph-Adler",
+    "model": "5057i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Triumph-Adler",
+    "model": "6057i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Triumph-Adler",
+    "model": "P-4020 MFP",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Triumph-Adler",
+    "model": "P-4531 MFP",
+    "category": "МФУ"
+  },
+  {
+    "brand": "TSC",
+    "model": "DA210",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "TSC",
+    "model": "DA220",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "TSC",
+    "model": "DA310",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "TSC",
+    "model": "DA320",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "TSC",
+    "model": "MB240",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "TSC",
+    "model": "MB240T",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "TSC",
+    "model": "MB340",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "TSC",
+    "model": "MH240",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "TSC",
+    "model": "MH241T",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "TSC",
+    "model": "MH340",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "TSC",
+    "model": "TDP-225",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "TSC",
+    "model": "TDP-247",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "TSC",
+    "model": "TDP-345",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "TSC",
+    "model": "TE200",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "TSC",
+    "model": "TE210",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "TSC",
+    "model": "TE300",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "TSC",
+    "model": "TE310",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "TSC",
+    "model": "TTP-244 Pro",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "TSC",
+    "model": "TTP-247",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "TSC",
+    "model": "TTP-345",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "TSC",
+    "model": "TX200",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "TSC",
+    "model": "TX210",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "TSC",
+    "model": "TX300",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "TSC",
+    "model": "TX600",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "UTAX",
+    "model": "3207ci",
+    "category": "МФУ"
+  },
+  {
+    "brand": "UTAX",
+    "model": "4007ci",
+    "category": "МФУ"
+  },
+  {
+    "brand": "UTAX",
+    "model": "5007ci",
+    "category": "МФУ"
+  },
+  {
+    "brand": "UTAX",
+    "model": "6007ci",
+    "category": "МФУ"
+  },
+  {
+    "brand": "UTAX",
+    "model": "P-4020 MFP",
+    "category": "МФУ"
+  },
+  {
+    "brand": "UTAX",
+    "model": "P-4531 MFP",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "AltaLink B8045",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "AltaLink B8055",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "AltaLink B8065",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "AltaLink B8075",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "AltaLink B8145",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "AltaLink B8155",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "AltaLink B8170",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "AltaLink C8030",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "AltaLink C8035",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "AltaLink C8045",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "AltaLink C8055",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "AltaLink C8070",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "AltaLink C8130",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "AltaLink C8135",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "AltaLink C8145",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "AltaLink C8155",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "AltaLink C8170",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "B205",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "B210",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "B215",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "B225",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "B230",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "B235",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "B305",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "B310",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "B315",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "B410",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "B415",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "C230",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "C235",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "C310",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "C315",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "C320",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "C325",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "C410",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "C415",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "Phaser 3020",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "Phaser 3020BI",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "Phaser 3260",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "Phaser 3260DI",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "Phaser 3260DNI",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "Phaser 3330",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "Phaser 6510",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "PrimeLink C9065",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "PrimeLink C9070",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink B400",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink B400DN",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink B400N",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink B405",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink B405DN",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink B410",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink B415",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink B600",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink B605",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink B610",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink B615",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink B620",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink B625",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink B7025",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink B7030",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink B7035",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink B7125",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink B7130",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink B7135",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink C400",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink C405",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink C500",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink C505",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink C600",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink C605",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink C625",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink C7000",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink C7020",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink C7025",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink C7030",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink C7120",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink C7125",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink C7130",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink C8000",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "VersaLink C9000",
+    "category": "Цветной принтер"
+  },
+  {
+    "brand": "Xerox",
+    "model": "WorkCentre 3025",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "WorkCentre 3025BI",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "WorkCentre 3025NI",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "WorkCentre 3215",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "WorkCentre 3225",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "WorkCentre 3335",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "WorkCentre 3345",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "WorkCentre 3655i",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "WorkCentre 5019",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "WorkCentre 5021",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "WorkCentre 5022",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "WorkCentre 5024",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "WorkCentre 5325",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "WorkCentre 5330",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "WorkCentre 5335",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "WorkCentre 5845",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "WorkCentre 5855",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "WorkCentre 6515",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "WorkCentre 7220",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "WorkCentre 7225",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "WorkCentre 7830",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "WorkCentre 7835",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "WorkCentre 7845",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xerox",
+    "model": "WorkCentre 7855",
+    "category": "Цветное МФУ"
+  },
+  {
+    "brand": "Xprinter",
+    "model": "XP-365B",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Xprinter",
+    "model": "XP-370B",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Xprinter",
+    "model": "XP-420B",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Xprinter",
+    "model": "XP-460B",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Xprinter",
+    "model": "XP-470B",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Xprinter",
+    "model": "XP-58IIH",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Xprinter",
+    "model": "XP-Q200",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Xprinter",
+    "model": "XP-Q800",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Xprinter",
+    "model": "XP-T58K",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "GK420d",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "GK420t",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "GT800",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "GX420d",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "GX420t",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "GX430t",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZD220d",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZD220t",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZD230d",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZD230t",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZD410",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZD411",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZD420d",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZD420t",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZD421d",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZD421t",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZD500",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZD620",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZD621",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZQ220",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZQ310",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZQ320",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZQ511",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZQ521",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZQ610",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZQ620",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZQ630",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZT111",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZT220",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZT230",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZT231",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZT410",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZT411",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZT421",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZT510",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZT610",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Zebra",
+    "model": "ZT620",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "АТОЛ",
+    "model": "BP21",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "АТОЛ",
+    "model": "BP41",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "АТОЛ",
+    "model": "RP-326",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "АТОЛ",
+    "model": "TT41",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "АТОЛ",
+    "model": "TT42",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "АТОЛ",
+    "model": "TT43",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "АТОЛ",
+    "model": "TT44",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "АТОЛ",
+    "model": "TT642",
+    "category": "Термопринтер / Этикетки"
+  },
+  {
+    "brand": "Катюша",
+    "model": "M130",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Катюша",
+    "model": "M151",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Катюша",
+    "model": "M240",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Катюша",
+    "model": "M247",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Катюша",
+    "model": "M248",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Катюша",
+    "model": "M348",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Катюша",
+    "model": "M360",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Катюша",
+    "model": "M448",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Катюша",
+    "model": "M548",
+    "category": "МФУ"
+  },
+  {
+    "brand": "Катюша",
+    "model": "P130",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Катюша",
+    "model": "P247",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Катюша",
+    "model": "P248",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Катюша",
+    "model": "P348",
+    "category": "Принтер"
+  },
+  {
+    "brand": "Катюша",
+    "model": "P448",
+    "category": "Принтер"
+  }
+]

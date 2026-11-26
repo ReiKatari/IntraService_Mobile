@@ -15,11 +15,13 @@ import com.lantaservice.intra.data.repository.IntraRepository
 import com.lantaservice.intra.data.storage.PendingOutboxStorage
 import com.lantaservice.intra.data.storage.SecureSessionStorage
 import com.lantaservice.intra.data.update.AppUpdateManager
+import com.lantaservice.intra.util.PrinterModelCatalog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
+import okhttp3.Request
 
 /**
  * Application entry point providing network failover, resilient DNS,
@@ -115,9 +117,20 @@ class IntraApplication : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
-        // Pre-warm DNS resolution for intra.lantaservice.com in background
+        // Pre-warm printer catalog, disk ticket caches, DNS, and keep-alive TLS socket in background
         appScope.launch {
+            runCatching { PrinterModelCatalog.ensureLoaded(applicationContext) }
+            runCatching { repository.prewarmDiskCachesAsync() }
             runCatching { resilientDns.lookup(IntraResilientDns.FIXED_HOST) }
+            runCatching {
+                val warmReq = Request.Builder()
+                    .url(com.lantaservice.intra.data.network.SessionCredentialsProvider.FIXED_BASE_URL)
+                    .header("X-Intra-Prewarm", "1")
+                    .head()
+                    .build()
+                okHttpClient.newCall(warmReq).execute().close()
+            }
+            runCatching { PrinterModelCatalog.refreshCatalogInBackgroundAsync(applicationContext, resilientDns) }
         }
     }
 

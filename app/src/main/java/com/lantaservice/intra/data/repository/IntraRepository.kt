@@ -52,6 +52,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
@@ -138,7 +139,16 @@ class IntraRepository(
     private val _forcedLogoutNotice = MutableStateFlow<String?>(null)
     val forcedLogoutNotice: StateFlow<String?> = _forcedLogoutNotice.asStateFlow()
 
+    private class LivePrefetch(
+        val userId: Int,
+        val latestSnapshot: MutableStateFlow<TicketListSnapshot?>,
+        val completion: Deferred<Result<TicketListSnapshot>>
+    )
+
     private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val perfPrefs by lazy {
+        context.getSharedPreferences("intra_perf_hints", Context.MODE_PRIVATE)
+    }
     private val outboxSyncMutex = Mutex()
     private val statusesById = ConcurrentHashMap<Int, TaskStatusDto>()
     private val prioritiesById = ConcurrentHashMap<Int, TaskPriorityDto>()
@@ -146,11 +156,27 @@ class IntraRepository(
     @Volatile
     private var statusesLastLoadedAtMs: Long = 0L
     @Volatile
-    private var activePrefetchJob: Pair<Int, Deferred<Result<TicketListSnapshot>>>? = null
+    private var prewarmedUserId: Int = -1
+    @Volatile
+    private var activePrefetchJob: LivePrefetch? = null
     private val repairedHistoryCache = ConcurrentHashMap<String, Boolean>()
     private val locallyRepairedTaskIds = ConcurrentHashMap.newKeySet<Int>()
     private val ticketItemCache = ConcurrentHashMap<Int, TicketItem>()
     private val detailCache = ConcurrentHashMap<Int, TicketDetail>()
+
+    fun prewarmDiskCachesAsync() {
+        repoScope.launch {
+            runCatching {
+                if (statusesById.isEmpty()) {
+                    loadDiskStatusCatalog().forEach { statusesById[it.id] = it }
+                }
+                val lastUserId = perfPrefs.getInt("last_user_id", -1)
+                if (lastUserId > 0) {
+                    warmCachesFromDisk(lastUserId)
+                }
+            }
+        }
+    }
 
     fun serverDisplayHost(): String = SessionCredentialsProvider.FIXED_BASE_URL
         .removePrefix("https://")
@@ -174,12 +200,13 @@ class IntraRepository(
     }
 
     private fun resetInMemoryCaches() {
-        activePrefetchJob?.second?.cancel()
+        activePrefetchJob?.completion?.cancel()
         activePrefetchJob = null
         statusesById.clear()
         prioritiesById.clear()
         servicesById.clear()
         statusesLastLoadedAtMs = 0L
+        prewarmedUserId = -1
         repairedHistoryCache.clear()
         locallyRepairedTaskIds.clear()
         ticketItemCache.clear()
@@ -224,17 +251,18 @@ class IntraRepository(
 
     fun getCachedTicketsForCurrentUser(): List<TicketItem> {
         val session = credentialsProvider.currentSession() ?: return emptyList()
-        if (ticketItemCache.isNotEmpty()) {
-            return ticketItemCache.values.sortedByDescending { it.id }
+        if (prewarmedUserId == session.userId && ticketItemCache.isNotEmpty()) {
+            return ticketItemCache.values
+                .filter { isAllowedListStatusName(it.statusName) }
+                .sortedByDescending { it.id }
         }
-        val file = File(context.filesDir, "cache_tickets_${session.userId}.json")
-        if (!file.exists()) return emptyList()
-        val loaded = runCatching {
-            val raw = file.readText(Charsets.UTF_8)
-            json.decodeFromString(ListSerializer(TicketItem.serializer()), raw)
-        }.getOrNull().orEmpty()
-        loaded.forEach { ticketItemCache[it.id] = it }
-        return loaded
+        warmCachesFromDisk(session.userId)
+        if (ticketItemCache.isNotEmpty()) {
+            return ticketItemCache.values
+                .filter { isAllowedListStatusName(it.statusName) }
+                .sortedByDescending { it.id }
+        }
+        return emptyList()
     }
 
     fun getCachedDetailPreview(taskId: Int): TicketDetail? {
@@ -322,10 +350,30 @@ class IntraRepository(
             }
 
             val fixedUrl = SessionCredentialsProvider.FIXED_BASE_URL
-            if (rememberMe) {
-                saveRememberedCredentials(cleanInput, password, true)
-            } else {
-                saveRememberedCredentials("", "", false)
+            val authHintKey = "auth_hint_${cleanInput.lowercase()}"
+            val hintedLogin = perfPrefs.getString(authHintKey, null)?.takeIf { it.isNotBlank() }
+
+            // Fast path: if we already resolved the server login for this input/email before, try it in 1 round-trip
+            if (!hintedLogin.isNullOrBlank() && !hintedLogin.equals(cleanInput, ignoreCase = true)) {
+                val hintedHeader = SessionCredentialsProvider.buildBasicAuthHeader(hintedLogin, password)
+                val hintedResp = api.getCurrentUserInfo(
+                    getCurrentUserInfo = true,
+                    explicitAuthHeader = hintedHeader
+                )
+                if (hintedResp.isSuccessful) {
+                    val user = hintedResp.body()
+                    if (user != null) {
+                        return@withContext completeLoginSession(
+                            user = user,
+                            authLogin = user.login?.takeIf { it.isNotBlank() } ?: hintedLogin,
+                            storedLoginInput = cleanInput,
+                            password = password,
+                            cookieHeader = null,
+                            fixedUrl = fixedUrl,
+                            rememberMe = rememberMe
+                        )
+                    }
+                }
             }
 
             // Stage 1: Direct Basic Auth with user input
@@ -460,20 +508,32 @@ class IntraRepository(
         )
 
         credentialsProvider.setSession(session)
-        sessionStorage.save(
-            SavedCredentials(
-                baseUrl = fixedUrl,
-                login = storedLoginInput,
-                password = password,
-                rememberMe = rememberMe
-            )
-        )
         warmCachesFromDisk(session.userId)
         refreshOutboxFlowForUser(session.userId)
-        _authState.value = AuthState.Authenticated(session)
+        // Start live streaming ticket fetch immediately BEFORE switching Compose navigation gate
         startPrefetchOpenTickets(session.userId)
-        if (_outboxEntries.value.isNotEmpty()) {
-            repoScope.launch { syncPendingOutboxNow() }
+        _authState.value = AuthState.Authenticated(session)
+
+        repoScope.launch {
+            runCatching {
+                sessionStorage.save(
+                    SavedCredentials(
+                        baseUrl = fixedUrl,
+                        login = storedLoginInput,
+                        password = password,
+                        rememberMe = rememberMe
+                    )
+                )
+            }
+            runCatching {
+                perfPrefs.edit()
+                    .putInt("last_user_id", session.userId)
+                    .putString("auth_hint_${storedLoginInput.lowercase()}", authLogin)
+                    .apply()
+            }
+            if (_outboxEntries.value.isNotEmpty()) {
+                syncPendingOutboxNow()
+            }
         }
         return Result.success(session)
     }
@@ -482,21 +542,31 @@ class IntraRepository(
         if (statusesById.isEmpty()) {
             loadDiskStatusCatalog().forEach { statusesById[it.id] = it }
         }
+        if (prewarmedUserId != userId) {
+            repairedHistoryCache.clear()
+            ticketItemCache.clear()
+            prewarmedUserId = userId
+        }
         if (repairedHistoryCache.isEmpty()) {
             loadRepairedHistoryDiskCache(userId).forEach { (k, v) -> repairedHistoryCache[k] = v }
         }
         if (ticketItemCache.isEmpty()) {
-            loadTicketListCacheFromDisk(userId).forEach { ticketItemCache[it.id] = it }
+            loadTicketListCacheFromDisk(userId)
+                .filter { isAllowedListStatusName(it.statusName) }
+                .forEach { ticketItemCache[it.id] = it }
         }
     }
 
     private fun startPrefetchOpenTickets(userId: Int) {
         val current = activePrefetchJob
-        if (current != null && current.first == userId && current.second.isActive) return
+        if (current != null && current.userId == userId && current.completion.isActive) return
+        val latestSnap = MutableStateFlow<TicketListSnapshot?>(null)
         val deferred = repoScope.async {
-            executeOpenTicketsFetch {}
+            executeOpenTicketsFetch { snap ->
+                latestSnap.value = snap
+            }
         }
-        activePrefetchJob = userId to deferred
+        activePrefetchJob = LivePrefetch(userId, latestSnap, deferred)
     }
 
     suspend fun loadOpenTicketsProgressive(
@@ -508,9 +578,18 @@ class IntraRepository(
             return@withContext Result.failure(toIntraException(t))
         }
         val inFlight = activePrefetchJob
-        if (inFlight != null && inFlight.first == session.userId) {
+        if (inFlight != null && inFlight.userId == session.userId) {
             activePrefetchJob = null
-            val prefetched = inFlight.second.await()
+            val prefetched = coroutineScope {
+                val forwarder = launch {
+                    inFlight.latestSnapshot.filterNotNull().collect { snap ->
+                        onProgress(snap)
+                    }
+                }
+                val res = inFlight.completion.await()
+                forwarder.cancel()
+                res
+            }
             if (prefetched.isSuccess) {
                 prefetched.getOrNull()?.let { onProgress(it) }
                 return@withContext prefetched
@@ -526,19 +605,50 @@ class IntraRepository(
             val session = requireAuthenticatedSession()
             warmCachesFromDisk(session.userId)
 
-            val statuses = if (statusesById.isNotEmpty()) {
-                if ((System.currentTimeMillis() - statusesLastLoadedAtMs) >= STATUS_CACHE_TTL_MS) {
-                    repoScope.launch { runCatching { refreshStatusCatalog(forceRefresh = true) } }
-                }
-                statusesById.values.toList()
-            } else {
-                refreshStatusCatalog()
+            val haveCachedStatuses = statusesById.isNotEmpty()
+            val cachedStatuses = statusesById.values.toList()
+            if (haveCachedStatuses && (System.currentTimeMillis() - statusesLastLoadedAtMs) >= STATUS_CACHE_TTL_MS) {
+                repoScope.launch { runCatching { refreshStatusCatalog(forceRefresh = true) } }
             }
+
+            val allowedStatusIdsCsv = if (haveCachedStatuses) {
+                findAllowedListStatusIds(cachedStatuses)
+                    .takeIf { it.isNotEmpty() }
+                    ?.joinToString(",")
+            } else {
+                null
+            }
+
+            val statuses: List<TaskStatusDto>
+            val page1Resp: Response<com.lantaservice.intra.data.model.TaskListResponseDto>
+            if (haveCachedStatuses) {
+                statuses = cachedStatuses
+                page1Resp = api.getTasks(
+                    executorIds = session.userId.toString(),
+                    statusIds = allowedStatusIdsCsv,
+                    pageSize = 200,
+                    page = 1
+                )
+            } else {
+                val pair = coroutineScope {
+                    val catDeferred = async { runCatching { refreshStatusCatalog() }.getOrDefault(emptyList()) }
+                    val tasksDeferred = async {
+                        api.getTasks(
+                            executorIds = session.userId.toString(),
+                            statusIds = null,
+                            pageSize = 200,
+                            page = 1
+                        )
+                    }
+                    catDeferred.await() to tasksDeferred.await()
+                }
+                statuses = pair.first
+                page1Resp = pair.second
+            }
+
             val repairedIds = findRepairedStatusIds(statuses)
-            val openStatusIdsCsv = statuses
-                .filter { !it.isFinal }
-                .takeIf { it.isNotEmpty() && it.size <= 80 }
-                ?.joinToString(",") { it.id.toString() }
+            val effectiveStatusFilterCsv = allowedStatusIdsCsv
+                ?: findAllowedListStatusIds(statuses).takeIf { it.isNotEmpty() }?.joinToString(",")
 
             val collectedTasks = mutableListOf<TaskSummaryDto>()
             val mergedStatuses = LinkedHashMap<Int, TaskStatusDto>().apply {
@@ -547,12 +657,6 @@ class IntraRepository(
             val mergedPriorities = LinkedHashMap<Int, TaskPriorityDto>(prioritiesById)
             val mergedServices = LinkedHashMap<Int, String>(servicesById)
 
-            val page1Resp = api.getTasks(
-                executorIds = session.userId.toString(),
-                statusIds = openStatusIdsCsv,
-                pageSize = 200,
-                page = 1
-            )
             if (!page1Resp.isSuccessful) {
                 throw IllegalStateException(parseErrorMessage(page1Resp))
             }
@@ -581,7 +685,7 @@ class IntraRepository(
                             async {
                                 api.getTasks(
                                     executorIds = session.userId.toString(),
-                                    statusIds = openStatusIdsCsv,
+                                    statusIds = effectiveStatusFilterCsv,
                                     pageSize = 200,
                                     page = p
                                 )
@@ -618,17 +722,19 @@ class IntraRepository(
 
             val needHistoryCheck = initialItems.filter { !it.isLifetimeChecked }
             if (needHistoryCheck.isEmpty()) {
-                runCatching {
-                    TicketNotificationHelper.processTicketsAndNotify(context, session.userId, initialItems)
-                }
                 val finalSnap = TicketListSnapshot(initialItems, isResolvingHistory = false)
                 onProgress(finalSnap)
+                repoScope.launch {
+                    runCatching {
+                        TicketNotificationHelper.processTicketsAndNotify(context, session.userId, initialItems)
+                    }
+                }
                 return@withContext Result.success(finalSnap)
             }
 
             onProgress(TicketListSnapshot(initialItems, isResolvingHistory = true))
 
-            val semaphore = Semaphore(8)
+            val semaphore = Semaphore(12)
             val resolvedMap = ConcurrentHashMap<Int, Boolean>()
 
             coroutineScope {
@@ -656,15 +762,17 @@ class IntraRepository(
                     )
                 }
             }
-            saveTicketListCache(session.userId, updatedItems)
-            if (resolvedMap.isNotEmpty()) {
-                saveRepairedHistoryDiskCache(session.userId)
-            }
-            runCatching {
-                TicketNotificationHelper.processTicketsAndNotify(context, session.userId, updatedItems)
-            }
             val finalSnap = TicketListSnapshot(updatedItems, isResolvingHistory = false)
             onProgress(finalSnap)
+            saveTicketListCache(session.userId, updatedItems)
+            if (resolvedMap.isNotEmpty()) {
+                repoScope.launch { saveRepairedHistoryDiskCache(session.userId) }
+            }
+            repoScope.launch {
+                runCatching {
+                    TicketNotificationHelper.processTicketsAndNotify(context, session.userId, updatedItems)
+                }
+            }
             Result.success(finalSnap)
         } catch (t: Throwable) {
             Result.failure(toIntraException(t))
@@ -680,9 +788,10 @@ class IntraRepository(
     ): List<TicketItem> {
         val openTasks = collectedTasks.distinctBy { it.id }.filter { task ->
             val status = task.statusId?.let { mergedStatuses[it] }
+            val resolvedStatusName = task.statusName?.takeIf { it.isNotBlank() } ?: status?.name
             val isFinal = (status?.isFinal == true) || (task.statusIsFinal == true)
             val isClosed = !task.closed.isNullOrBlank()
-            !isFinal && !isClosed
+            !isFinal && !isClosed && isAllowedListStatusName(resolvedStatusName)
         }
 
         return openTasks.map { task ->
@@ -1420,7 +1529,30 @@ class IntraRepository(
         const val REPAIRED_STATUS_NAME = "Починил"
         const val REPAIRED_STATUS_KEYWORD = "починил"
 
+        val ALLOWED_LIST_STATUS_NAMES = setOf(
+            "принят сп",
+            "назначен си",
+            "эскалация исполнителю"
+        )
+
+        private val whitespaceRegex = Regex("\\s+")
         private const val STATUS_CACHE_TTL_MS = 15L * 60L * 1000L
+
+        fun isAllowedListStatusName(statusName: String?): Boolean {
+            val normalized = statusName
+                ?.trim()
+                ?.replace(whitespaceRegex, " ")
+                ?.lowercase()
+                .orEmpty()
+            return normalized in ALLOWED_LIST_STATUS_NAMES
+        }
+
+        fun findAllowedListStatusIds(statuses: Iterable<TaskStatusDto>): Set<Int> {
+            return statuses
+                .filter { isAllowedListStatusName(it.name) }
+                .map { it.id }
+                .toSet()
+        }
 
         fun isRecoverableOutboxFailure(t: Throwable, httpCode: Int? = (t as? IntraHttpException)?.httpCode): Boolean {
             if (httpCode != null) {
