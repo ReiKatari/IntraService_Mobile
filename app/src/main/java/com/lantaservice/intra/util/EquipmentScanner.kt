@@ -44,7 +44,11 @@ object EquipmentScanParser {
         "(?iu)\\b(Lexmark|Kyocera|Hewlett[\\s-]?Packard|HP|Ricoh|Xerox|Canon|Brother|Konica\\s+Minolta|Pantum|Epson|Samsung|Sharp|Oki|Toshiba|Sindoh|Avision|Bulat|Develop|Zebra|Honeywell|Godex|Bixolon|Citizen|Dymo|Xprinter|Rongta|АТОЛ|Katyusha|Катюша)\\b([A-Za-zА-Яа-я0-9\\s/-]{1,28})?"
     )
     private val serialLabelRegex = Regex(
-        "(?iu)(?:s\\s*/\\s*n|sn|serial(?:\\s+(?:no\\.?|number))?(?:\\s+(?:of\\s+)?(?:product|device|printer))?|сер\\.?\\s*№?|серийный(?:\\s*номер)?(?:\\s+(?:продукта|изделия|аппарата|принтера|устройства|мфу|машины))?|зав\\.?\\s*№?)\\s*[:#=-]?\\s*([A-Z0-9-]{6,24})"
+        "(?iu)(?:s\\s*/\\s*n|sn|ser\\.?\\s*no\\.?|" +
+            "(?:engine|machine|device|printer|product)\\s+serial(?:\\s+(?:no\\.?|number))?|" +
+            "serial(?:\\s+(?:no\\.?|number))?(?:\\s+(?:of\\s+)?(?:product|device|printer|engine|machine))?|" +
+            "сер\\.?\\s*№?|серийный(?:\\s*номер)?(?:\\s+(?:продукта|изделия|аппарата|принтера|устройства|мфу|машины))?|" +
+            "заводской(?:\\s*номер)?|зав\\.?\\s*№?|номер\\s+(?:аппарата|устройства))\\s*[:#=-]?\\s*([A-Z0-9-]{6,24})"
     )
     private val invLabelRegex = Regex(
         "(?iu)(?:инв\\.?\\s*№\\s*|инв\\.?\\s*[:#=]\\s*|инв\\.?\\s+|inv(?:entory)?(?:\\s*no\\.?)?\\s*[:#=]\\s*|inv(?:entory)?(?:\\s*no\\.?)?\\s+|asset\\s*(?:id|tag)?\\s*[:#=]?\\s*)([A-Z0-9-]{4,20})"
@@ -84,21 +88,24 @@ object EquipmentScanParser {
             "форматер", "formatter", "идентиф", "код даты", "date code", "firmware", "версия", "ip"
         )
         val combinedCandidates = ArrayList<String>(lines.size * 2)
-        for (i in lines.indices) {
+        // Evaluate single lines first so an adjacent metadata row cannot reject or shadow a clean serial row
+        for (raw in lines) {
+            val cur = raw.trim()
+            if (cur.isNotEmpty()) combinedCandidates += cur
+        }
+        for (i in 0 until lines.lastIndex) {
             val cur = lines[i].trim()
-            if (cur.isEmpty()) continue
-            combinedCandidates += cur
-            if (i + 1 < lines.size) {
-                val nxt = lines[i + 1].trim()
-                if (nxt.isNotEmpty()) {
-                    combinedCandidates += "$cur $nxt"
-                }
+            val nxt = lines[i + 1].trim()
+            if (cur.isNotEmpty() && nxt.isNotEmpty()) {
+                combinedCandidates += "$cur $nxt"
             }
         }
 
         val cyrSerialLabelRegex = Regex(
-            "(?iu)(?:сери[а-яa-z0-9]{1,7}\\s+[нnhп][оo0]м[еe]р|сер\\.?\\s*[нnhп]?[оo0]?м[еe]р|зав\\.?\\s*№)" +
-                "(?:\\s+(?:[а-яa-z]{3,14}))?\\s*[:#=-]?\\s*"
+            "(?iu)(?:се[рг][а-яa-z0-9]{2,9}\\s+[нnhп][о0o][мm][еe][ргp]|" +
+                "сер\\.?\\s*(?:№|[нnhп][о0o][мm][еe][ргp])|" +
+                "зав(?:од\\w*)?\\.?\\s*(?:№|[нnhп][о0o][мm][еe][ргp]))" +
+                "(?:\\s+[^\\s:=#-]{2,18})?\\s*[:#=-]?\\s*"
         )
         val postLabelTokenRegex = Regex("[A-Za-z0-9][A-Za-z0-9-]{5,23}")
         val yyyymmddDateRegex = Regex("^(?:19|20)\\d{6}$")
@@ -106,7 +113,6 @@ object EquipmentScanParser {
         for (rawLine in combinedCandidates) {
             val skeleton = toCyrillicLookalike(rawLine)
             if (excludedFieldMarkers.any { skeleton.contains(it) || rawLine.lowercase(Locale.ROOT).contains(it) }) {
-                // Only reject if line doesn't ALSO contain explicit serial phrase
                 if (!serialLabelRegex.containsMatchIn(rawLine) && !cyrSerialLabelRegex.containsMatchIn(skeleton)) {
                     continue
                 }
@@ -141,13 +147,48 @@ object EquipmentScanParser {
                 }
             }
         }
+
+        // Fallback on verified printer configuration/status pages when label text blurred away
+        val joined = lines.joinToString("\n").lowercase(Locale.ROOT)
+        val skeletonJoined = toCyrillicLookalike(joined)
+        val configReportCues = listOf(
+            "конфигурац", "самопроверк", "сведения о продукте", "количество страниц",
+            "configuration", "status page", "self test", "formatter", "firmware",
+            "laserjet", "kyocera", "ricoh", "xerox", "canon", "brother", "lexmark", "pantum", "epson"
+        )
+        if (configReportCues.any { joined.contains(it) || skeletonJoined.contains(it) }) {
+            val knownPrinterSerialRegex = Regex("^(?:CN|JP|VN|PH|MX|BR|US|SG|TH|MY|CZ|HU|TW|VR|L5|Q7|Z9|E7)[A-Z0-9]{8,13}$")
+            val tokenSplit = Regex("[\\s,;:=()]+")
+            for (line in lines) {
+                val lower = line.lowercase(Locale.ROOT)
+                val skel = toCyrillicLookalike(line)
+                if (excludedFieldMarkers.any { lower.contains(it) || skel.contains(it) }) continue
+                for (tok in line.split(tokenSplit)) {
+                    val norm = normalizePrinterSerial(tok)
+                    if (norm.length !in 10..15) continue
+                    if (!knownPrinterSerialRegex.matches(norm)) continue
+                    val letters = norm.count { it.isLetter() }
+                    val digits = norm.count { it.isDigit() }
+                    if (letters >= 3 && digits >= 3 &&
+                        !yyyymmddDateRegex.matches(norm) &&
+                        !isNonSerialLabelCode(norm, line)
+                    ) {
+                        return norm
+                    }
+                }
+            }
+        }
+
         return null
     }
 
     private fun toCyrillicLookalike(raw: String): String {
         val lower = raw.lowercase(Locale.ROOT)
         val sb = StringBuilder(lower.length)
-        for (ch in lower) {
+        for (i in lower.indices) {
+            val ch = lower[i]
+            val prevIsLetter = i > 0 && lower[i - 1].isLetter()
+            val nextIsLetter = i + 1 < lower.length && lower[i + 1].isLetter()
             val mapped = when (ch) {
                 'a' -> 'а'
                 'b' -> 'в'
@@ -165,8 +206,14 @@ object EquipmentScanParser {
                 'r' -> 'г'
                 't' -> 'т'
                 'u' -> 'и'
+                'v' -> 'в'
+                'w' -> 'ш'
                 'x' -> 'х'
                 'y' -> 'у'
+                '0' -> if (prevIsLetter || nextIsLetter) 'о' else ch
+                '1' -> if (prevIsLetter || nextIsLetter) 'и' else ch
+                '4' -> if (prevIsLetter || nextIsLetter) 'ч' else ch
+                '6' -> if (prevIsLetter || nextIsLetter) 'б' else ch
                 else -> ch
             }
             sb.append(mapped)

@@ -241,7 +241,8 @@ object DocumentGeometry {
                 light == LightStatus.LOW_LIGHT -> "Мало света - включите фонарик или добавьте света"
                 light == LightStatus.GLARE -> "Сильный блик - слегка измените угол съёмки"
                 stability == StabilityStatus.MOVING -> "Держите телефон неподвижно"
-                sharpness == SharpnessStatus.BLURRY -> "Наведите на лист и коснитесь экрана для фокуса"
+                sharpness == SharpnessStatus.BLURRY -> "Кадр размыт - удерживайте телефон ровно и нажмите на текст"
+                sharpness == SharpnessStatus.SOFT -> "Слабая резкость - коснитесь текста для фокуса"
                 else -> "Поместите лист A4 целиком в рамку"
             }
             return LiveSheetGuidance(normalizedQuad = null, isSheetAligned = false, hint = fallbackHint)
@@ -302,7 +303,10 @@ object DocumentGeometry {
                 norm, false, "Держите телефон неподвижно"
             )
             sharpness == SharpnessStatus.BLURRY -> LiveSheetGuidance(
-                norm, false, "Нет резкости - коснитесь текста для фокуса"
+                norm, false, "Кадр размыт - удерживайте телефон ровно и нажмите на текст"
+            )
+            sharpness == SharpnessStatus.SOFT -> LiveSheetGuidance(
+                norm, false, "Слабая резкость - коснитесь текста для фокуса"
             )
             else -> LiveSheetGuidance(
                 norm, true, "Лист ровно в рамке - можно снимать"

@@ -46,6 +46,7 @@ data class TaskDetailUiState(
     val isLoadingGeo: Boolean = false,
     val counterValue: String = "",
     val counterAutoDetected: Boolean = false,
+    val detectedCounterRoi: NormalizedRect? = null,
     val isRecognizingCounter: Boolean = false,
     val isRecognizingRoiCrop: Boolean = false,
     val showManualCounterPrompt: Boolean = false,
@@ -123,6 +124,7 @@ class TaskDetailViewModel(
                             commentText = "",
                             counterValue = "",
                             counterAutoDetected = false,
+                            detectedCounterRoi = null,
                             equipmentScan = null,
                             pendingPhotos = emptyList(),
                             actionMessage = null
@@ -363,6 +365,7 @@ class TaskDetailViewModel(
                         isRecognizingRoiCrop = false,
                         counterValue = normalized,
                         counterAutoDetected = true,
+                        detectedCounterRoi = roi,
                         showManualCounterPrompt = false,
                         counterPromptReason = null
                     )
@@ -546,6 +549,7 @@ class TaskDetailViewModel(
                         isRecognizingCounter = false,
                         counterValue = recognizedDigits,
                         counterAutoDetected = true,
+                        detectedCounterRoi = docResult?.counterBoxNormalized ?: state.detectedCounterRoi,
                         showManualCounterPrompt = false,
                         counterPromptReason = null,
                         equipmentScan = updatedSerialScan,
@@ -589,6 +593,7 @@ class TaskDetailViewModel(
                 commentText = "",
                 counterValue = "",
                 counterAutoDetected = false,
+                detectedCounterRoi = null,
                 equipmentScan = null,
                 pendingPhotos = emptyList(),
                 actionMessage = null
@@ -711,6 +716,7 @@ class TaskDetailViewModel(
                             commentText = "",
                             counterValue = "",
                             counterAutoDetected = false,
+                            detectedCounterRoi = null,
                             equipmentScan = null
                         )
                     }

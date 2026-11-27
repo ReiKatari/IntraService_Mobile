@@ -1792,4 +1792,174 @@ class IntraLogicTest {
         val corrCcw = DocumentGeometry.computeFineDeskewAngleDeg(tiltedLeft)
         assertTrue("Expected ~+3.8 deg rotation, got $corrCcw", kotlin.math.abs(corrCcw - 3.8f) < 0.25f)
     }
+
+    @Test
+    fun frameQualityAnalyzerRejectsNoisyBlurryFrameAndRequiresCrispInteriorEdges() {
+        val w = 160
+        val h = 120
+        val paperRoi = com.lantaservice.intra.util.NormalizedRect(0.15f, 0.15f, 0.85f, 0.85f)
+
+        // 1. Dim blurry frame with simulated high-ISO sensor grain (+-8 luma noise, wide soft bars)
+        val noisyBlurry = ByteArray(w * h)
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                // Wide gradual ramp (out-of-focus blur) + deterministic checkerboard ISO grain
+                val wave = 136 + (16.0 * kotlin.math.sin(x / 6.0) * kotlin.math.cos(y / 6.0)).toInt()
+                val grain = if ((x + y) % 2 == 0) 6 else -6
+                noisyBlurry[y * w + x] = (wave + grain).coerceIn(0, 255).toByte()
+            }
+        }
+        val (blurMetrics, _) = FrameQualityAnalyzer.evaluateFrameQuality(
+            luma = noisyBlurry,
+            width = w,
+            height = h,
+            paperRoiNormalized = paperRoi
+        )
+        assertEquals(LightStatus.LOW_LIGHT, blurMetrics.light)
+        assertFalse("Blurry noisy frame must NOT be reported as SharpnessStatus.OK", blurMetrics.sharpness == SharpnessStatus.OK)
+        assertFalse(blurMetrics.isOptimalToShoot)
+
+        // 2. Crisp well-lit document frame with sharp 1px text edges
+        val sharpPaper = ByteArray(w * h) { idx ->
+            val x = idx % w
+            val y = idx / w
+            val onTextBar = x in 32..128 && (y % 12) in 2..4 && (x % 6) < 4
+            (if (onTextBar) 45 else 218).toByte()
+        }
+        val (sharpMetrics, steadySample) = FrameQualityAnalyzer.evaluateFrameQuality(
+            luma = sharpPaper,
+            width = w,
+            height = h,
+            paperRoiNormalized = paperRoi
+        )
+        assertEquals(LightStatus.OK, sharpMetrics.light)
+        assertEquals(SharpnessStatus.OK, sharpMetrics.sharpness)
+        assertEquals(StabilityStatus.STEADY, sharpMetrics.stability)
+        assertTrue(sharpMetrics.isOptimalToShoot)
+
+        // 3. Mild AE exposure drift (+8 luma) on stationary phone must stay STEADY
+        val aeDrifted = ByteArray(w * h) { idx ->
+            val v = (sharpPaper[idx].toInt() and 0xFF) + 8
+            v.coerceIn(0, 255).toByte()
+        }
+        val (driftMetrics, _) = FrameQualityAnalyzer.evaluateFrameQuality(
+            luma = aeDrifted,
+            width = w,
+            height = h,
+            prevSample = steadySample,
+            paperRoiNormalized = paperRoi
+        )
+        assertEquals(StabilityStatus.STEADY, driftMetrics.stability)
+    }
+
+    @Test
+    fun avrCounterParserNeverStealsNumberFromNextLabeledRowAndReadsMultiVendorLabels() {
+        // Blank value on Total row must NOT steal "= 12" from the next labeled sub-counter row
+        val missingTotalValueLines = listOf(
+            "Всего напечатано страниц",
+            "Отсканир. стр. АПД на хост = 12",
+            "Факс. стр. отпечатано = 0"
+        )
+        val missingRes = AvrCounterParser.extractCounterFromLines(missingTotalValueLines)
+        assertEquals(CounterConfidence.NONE, missingRes.confidence)
+        assertEquals(null, missingRes.value)
+
+        // True tabular next-line pure value MUST still be accepted
+        val wrappedTotalLines = listOf(
+            "Всего напечатано страниц",
+            "= 2320",
+            "Отсканир. стр. АПД на хост = 12"
+        )
+        val wrappedRes = AvrCounterParser.extractCounterFromLines(wrappedTotalLines)
+        assertEquals(CounterConfidence.HIGH, wrappedRes.confidence)
+        assertEquals("2320", wrappedRes.value)
+
+        // Multi-vendor total labels
+        assertEquals("84120", AvrCounterParser.extractCounterFromLines(listOf("Total Billing Impressions: 84 120")).value)
+        assertEquals("49102", AvrCounterParser.extractCounterFromLines(listOf("Life Count 49102")).value)
+        assertEquals("19405", AvrCounterParser.extractCounterFromLines(listOf("Общий счетчик: 19 405")).value)
+    }
+
+    @Test
+    fun equipmentScanParserExtractsGarbledCyrillicAndMultiVendorSerialNumbers() {
+        // Corrupted Cyrillic homoglyphs + O->0 normalization
+        assertEquals(
+            "CNG9D4V0G3",
+            EquipmentScanParser.extractLabeledSerialFromOcrLines(
+                listOf("Серииный Номep пр0дукта CNG9D4VOG3")
+            )
+        )
+
+        // Formatter metadata row adjacent to real serial row must not block extraction
+        assertEquals(
+            "CNG9D4V0G3",
+            EquipmentScanParser.extractLabeledSerialFromOcrLines(
+                listOf(
+                    "Номер форматера: QJ551EF",
+                    "Серийный номер продукта: CNG9D4V0G3",
+                    "Идентиф. номер службы: 31237"
+                )
+            )
+        )
+
+        // Config-sheet fallback when serial label blurred out completely
+        assertEquals(
+            "CNG9D4V0G3",
+            EquipmentScanParser.extractLabeledSerialFromOcrLines(
+                listOf(
+                    "HP LaserJet Professional M1212nf MFP",
+                    "Самопроверка / Конфигурация",
+                    "Сведения о продукте",
+                    "Номер форматера QJ551EF",
+                    "CNG9D4VOG3"
+                )
+            )
+        )
+
+        // English vendor labels
+        assertEquals(
+            "JPBRC41082",
+            EquipmentScanParser.extractLabeledSerialFromOcrLines(listOf("Engine Serial No: JPBRC41082"))
+        )
+        assertEquals(
+            "VN8K201944",
+            EquipmentScanParser.extractLabeledSerialFromOcrLines(listOf("Product Serial: VN8K201944"))
+        )
+    }
+
+    @Test
+    fun rowClusteringRespectsTightTablePitchAndMapsMatchedCounterRoi() {
+        val boxes = listOf(
+            // Left column (x 80..450)
+            com.lantaservice.intra.util.OcrBoxLine(80, 180, 260, 192, "Номер форматера:"),
+            com.lantaservice.intra.util.OcrBoxLine(310, 181, 410, 192, "QJ551EF"),
+            com.lantaservice.intra.util.OcrBoxLine(80, 197, 290, 209, "Серийный номер продукта:"),
+            com.lantaservice.intra.util.OcrBoxLine(310, 197, 430, 209, "CNG9D4VOG3"),
+            com.lantaservice.intra.util.OcrBoxLine(80, 214, 280, 226, "Идентиф. номер службы:"),
+            com.lantaservice.intra.util.OcrBoxLine(310, 214, 380, 226, "31237"),
+            // Right column (x 540..920) with tight 16px pitch (12px tall boxes)
+            com.lantaservice.intra.util.OcrBoxLine(540, 180, 760, 192, "Отпечатано ч/б стр. с копии"),
+            com.lantaservice.intra.util.OcrBoxLine(840, 180, 910, 192, "= 155"),
+            com.lantaservice.intra.util.OcrBoxLine(540, 196, 770, 208, "Всего напечатано страниц"),
+            com.lantaservice.intra.util.OcrBoxLine(840, 196, 920, 208, "= 2320"),
+            com.lantaservice.intra.util.OcrBoxLine(540, 212, 770, 224, "Отсканир. стр. АПД на хост"),
+            com.lantaservice.intra.util.OcrBoxLine(840, 212, 900, 224, "= 12")
+        )
+
+        val res = com.lantaservice.intra.util.AvrCounterRecognizer.extractDocumentFieldsFromBoxedLines(
+            items = boxes,
+            imageWidth = 1000,
+            imageHeight = 1400
+        )
+        assertEquals(CounterConfidence.HIGH, res.counter.confidence)
+        assertEquals("2320", res.counter.value)
+        assertEquals("CNG9D4V0G3", res.serialNumber)
+
+        val roi = res.counterBoxNormalized
+        assertNotNull("Expected normalized ROI around matched counter row", roi)
+        // Must point directly to the right-column counter row (~y=196..208 on 1400 -> ~0.13..0.16), NOT bottom journal!
+        assertTrue("Expected left > 0.50, got ${roi!!.left}", roi.left > 0.50f)
+        assertTrue("Expected top in upper table (< 0.20), got ${roi.top}", roi.top < 0.20f)
+        assertTrue("Expected bottom in upper table (< 0.25), got ${roi.bottom}", roi.bottom < 0.25f)
+    }
 }

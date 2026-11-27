@@ -37,18 +37,36 @@ enum class CounterConfidence {
 data class CounterParseResult(
     val value: String?,
     val confidence: CounterConfidence,
-    val matchedLine: String? = null
+    val matchedLine: String? = null,
+    val matchedRowIndex: Int? = null
 )
 
 data class AvrDocumentOcrResult(
     val counter: CounterParseResult,
-    val serialNumber: String? = null
+    val serialNumber: String? = null,
+    val counterBoxNormalized: NormalizedRect? = null
+)
+
+data class OcrBoxLine(
+    val left: Int,
+    val top: Int,
+    val right: Int,
+    val bottom: Int,
+    val text: String
+)
+
+data class ClusteredRow(
+    val text: String,
+    val left: Int,
+    val top: Int,
+    val right: Int,
+    val bottom: Int
 )
 
 /**
  * Pure JVM parser extracting the printer/copier page counter written or printed on an AVR/config sheet.
- * Prioritizes total page/copy summary lines ("Всего напечатано страниц"), ignores printer settings,
- * and supports Latin-OCR Cyrillic lookalikes.
+ * Prioritizes total page/copy summary lines ("Всего напечатано страниц"), ignores sub-counters/settings,
+ * never steals numbers from adjacent labeled rows, and supports Latin-OCR Cyrillic lookalikes.
  */
 object AvrCounterParser {
 
@@ -63,11 +81,20 @@ object AvrCounterParser {
 
     private val priorityTotalKeywordRegexes = listOf(
         Regex("всег[оo0]\\s+напе[ч4уивl][аa][тмm][аa][нпh][оo0](?:\\s+ст[рг]ан\\w*)?", RegexOption.IGNORE_CASE),
-        Regex("всег[оo0]\\s+отпе[ч4уивl][аa][тмm][аa][нпh][оo0](?:\\s+(?:ст[рг]ан\\w*|копий|стр\\.?))?", RegexOption.IGNORE_CASE),
-        Regex("всег[оo0]\\s+(?:страниц|копий)", RegexOption.IGNORE_CASE),
-        Regex("итого\\s+(?:страниц|копий)", RegexOption.IGNORE_CASE),
-        Regex("общее\\s+кол(?:ичество|-во)?\\s+(?:страниц|копий|отпечатков)", RegexOption.IGNORE_CASE),
-        Regex("(?<![a-z])(?:total\\s*pages\\s*printed|total\\s*impressions|total\\s*pages|total\\s*copies|total\\s*count|life\\s*count|page\\s*count)(?![a-z])", RegexOption.IGNORE_CASE)
+        Regex("всег[оo0]\\s+отпе[ч4уивl][аa][тмm][аa][нпh][оo0](?:\\s+(?:ст[рг]ан\\w*|копий|стр\\.?|отпечатк\\w*))?", RegexOption.IGNORE_CASE),
+        Regex("всег[оo0]\\s+(?:страниц|копий|отпечатков)", RegexOption.IGNORE_CASE),
+        Regex("итого\\s+(?:страниц|копий|отпечатков)", RegexOption.IGNORE_CASE),
+        Regex("обще[еe]\\s+кол(?:ичество|-во)?\\s+(?:страниц|копий|отпечатков)", RegexOption.IGNORE_CASE),
+        Regex("обще[еe]\\s+число\\s+(?:страниц|копий|отпечатков)", RegexOption.IGNORE_CASE),
+        Regex("общий\\s+(?:с[ч4]етчик|счётчик|пробег)", RegexOption.IGNORE_CASE),
+        Regex("(?:с[ч4]етчик|счётчик)\\s+(?:всего|итого)", RegexOption.IGNORE_CASE),
+        Regex(
+            "(?<![a-z])(?:total\\s*pages\\s*printed|total\\s*impressions|total\\s*billing\\s*impressions|" +
+                "total\\s*prints?|total\\s*printed|total\\s*pages|total\\s*copies|total\\s*count(?:er)?|" +
+                "total\\s*sheet\\s*count|cumulative\\s*page\\s*count|life\\s*count|engine\\s*page\\s*count|" +
+                "page\\s*count(?:er)?|billing\\s*meter|total\\s*usage|meter\\s*1|total\\s*1)(?![a-z])",
+            RegexOption.IGNORE_CASE
+        )
     )
 
     private val strictCounterKeywordRegexes = listOf(
@@ -91,6 +118,9 @@ object AvrCounterParser {
     )
 
     private val excludedLineMarkers = listOf(
+        // Sub-counters and non-total counters (scan/fax/ADF/jams) that must not replace main total counter
+        "отсканир", "сканер", "факс", "апд", "замяти", "ошибок", "по умолчанию", "умен.", "увел.",
+        "adf", "fax", "jam", "duplex", "scanner",
         // Device settings / configuration pages (Lexmark, Kyocera, HP, Ricoh, Xerox, Canon)
         "конфигурац", "меню", "четкост", "чёткост", "шрифт", "резкост",
         "яркост", "контраст", "плотност", "разрешен", "масштаб", "формат",
@@ -126,7 +156,7 @@ object AvrCounterParser {
         extractWithKeywordRegexes(lines, priorityTotalKeywordRegexes, checkExcluded = false)?.let {
             return it
         }
-        // Pass 2: Standard AVR / counter keyword matching with device-setting line filtering
+        // Pass 2: Standard AVR / counter keyword matching with sub-counter & settings filtering
         extractWithKeywordRegexes(lines, strictCounterKeywordRegexes, checkExcluded = true)?.let {
             return it
         }
@@ -151,21 +181,47 @@ object AvrCounterParser {
             val afterKeyword = line.substring((keywordMatch.range.last + 1).coerceAtMost(line.length))
             val sameLineNum = extractPlausibleNumberFromSegment(afterKeyword, preferRightmost = false)
             if (sameLineNum != null) {
-                return CounterParseResult(sameLineNum, CounterConfidence.HIGH, line)
+                return CounterParseResult(sameLineNum, CounterConfidence.HIGH, line, matchedRowIndex = idx)
             }
 
-            // Tabular fallback: check immediately following line
+            // Tabular fallback: accept next line ONLY if it is a pure value line (never steal numbers from another labeled row!)
             if (idx + 1 < lines.size) {
                 val nextLine = lines[idx + 1].trim()
-                if (nextLine.isNotEmpty() && (!checkExcluded || !isExcludedNonCounterLine(nextLine))) {
+                if (nextLine.isNotEmpty() &&
+                    isValueOnlyLine(nextLine) &&
+                    (!checkExcluded || !isExcludedNonCounterLine(nextLine))
+                ) {
                     val nextLineNum = extractPlausibleNumberFromSegment(nextLine, preferRightmost = false)
                     if (nextLineNum != null) {
-                        return CounterParseResult(nextLineNum, CounterConfidence.HIGH, "$line | $nextLine")
+                        return CounterParseResult(
+                            value = nextLineNum,
+                            confidence = CounterConfidence.HIGH,
+                            matchedLine = "$line | $nextLine",
+                            matchedRowIndex = idx + 1
+                        )
                     }
                 }
             }
         }
         return null
+    }
+
+    internal fun isValueOnlyLine(line: String): Boolean {
+        val stripped = line.lowercase(Locale.ROOT)
+            .replace(Regex("(?iu)\\b(?:стр\\.?|коп\\.?|pcs|copies|pages|p\\.)\\b"), " ")
+            .replace("=", " ")
+            .replace(":", " ")
+            .trim()
+        if (stripped.isEmpty()) return false
+        var digits = 0
+        var letters = 0
+        for (ch in stripped) {
+            when {
+                ch.isDigit() -> digits++
+                ch.isLetter() -> letters++
+            }
+        }
+        return digits >= 1 && letters <= 3
     }
 
     private fun findKeywordMatch(line: String, regexes: List<Regex>): MatchResult? {
@@ -191,6 +247,7 @@ object AvrCounterParser {
                 'b' -> 'в'
                 'c' -> 'с'
                 'e' -> 'е'
+                'g' -> 'д'
                 'h' -> 'н'
                 'k' -> 'к'
                 'm' -> 'м'
@@ -200,9 +257,12 @@ object AvrCounterParser {
                 'r' -> 'г'
                 't' -> 'т'
                 'u' -> 'и'
+                'v' -> 'в'
                 'w' -> 'ш'
                 'x' -> 'х'
                 'y' -> 'у'
+                '0' -> if (prevIsLetter || nextIsLetter) 'о' else ch
+                '1' -> if (prevIsLetter && nextIsLetter) 'и' else ch
                 '4' -> if (prevIsLetter || nextIsLetter) 'ч' else ch
                 '6' -> if (prevIsLetter || nextIsLetter) 'б' else ch
                 else -> ch
@@ -345,7 +405,9 @@ object AvrCounterRecognizer {
             return@withContext AvrDocumentOcrResult(CounterParseResult(null, CounterConfidence.NONE), null)
         }
 
+        val (imgW, imgH) = readOrientedDimensions(imageFile)
         var bestCounter = CounterParseResult(null, CounterConfidence.NONE)
+        var bestCounterBox: NormalizedRect? = null
         var bestSerial: String? = null
 
         // Pass 1: Standard OCR on prepared/flattened document image
@@ -355,175 +417,312 @@ object AvrCounterRecognizer {
 
         val visionText = processInputImageOcr(inputImage)
         if (visionText != null) {
-            val pass1 = evaluateVisionTextToDocumentResult(visionText)
+            val pass1 = extractDocumentFieldsFromBoxedLines(visionText.toOcrBoxLines(), imgW, imgH)
             if (pass1.counter.confidence == CounterConfidence.HIGH) {
                 bestCounter = pass1.counter
+                bestCounterBox = pass1.counterBoxNormalized
             }
             if (!pass1.serialNumber.isNullOrBlank()) {
                 bestSerial = pass1.serialNumber
             }
             if (bestCounter.confidence == CounterConfidence.HIGH && !bestSerial.isNullOrBlank()) {
-                return@withContext AvrDocumentOcrResult(bestCounter, bestSerial)
+                return@withContext AvrDocumentOcrResult(bestCounter, bestSerial, bestCounterBox)
             }
+        }
 
-            // Pass 2: Crop & 2x-upscale ink-enhanced strips around any keyword blocks for handwritten digits
-            if (bestCounter.confidence != CounterConfidence.HIGH) {
-                val keywordBox = findKeywordLineExpandedBox(visionText)
-                if (keywordBox != null) {
-                    val oriented = decodeOrientedBitmap(imageFile)
-                    if (oriented != null) {
-                        val cropRect = Rect(
-                            (keywordBox.left - keywordBox.width() * 0.25f).roundToInt().coerceIn(0, oriented.width - 16),
-                            (keywordBox.top - keywordBox.height() * 0.6f).roundToInt().coerceIn(0, oriented.height - 16),
-                            (keywordBox.right + oriented.width * 0.38f).roundToInt().coerceIn(16, oriented.width),
-                            (keywordBox.bottom + keywordBox.height() * 2.2f).roundToInt().coerceIn(16, oriented.height)
-                        )
-                        val cw = (cropRect.width()).coerceAtLeast(16)
-                        val ch = (cropRect.height()).coerceAtLeast(16)
-                        val strip = Bitmap.createBitmap(oriented, cropRect.left, cropRect.top, cw, ch)
-                        oriented.recycle()
-                        val upscaled = Bitmap.createScaledBitmap(
-                            strip,
-                            (cw * 2).coerceAtMost(1800),
-                            (ch * 2).coerceAtMost(900),
-                            true
-                        )
-                        if (upscaled !== strip) strip.recycle()
-                        val inkEnhanced = PhotoEnhancerEngine.enhance(upscaled, EnhanceMode.DOCUMENT_SCAN_BW)
-                        upscaled.recycle()
-                        val stripText = processBitmapOcr(inkEnhanced.bitmap)
-                        inkEnhanced.bitmap.recycle()
-                        if (stripText != null) {
-                            val pass2 = evaluateVisionTextToDocumentResult(stripText)
-                            if (pass2.counter.confidence == CounterConfidence.HIGH) {
-                                bestCounter = pass2.counter
-                            }
-                            if (bestSerial.isNullOrBlank() && !pass2.serialNumber.isNullOrBlank()) {
-                                bestSerial = pass2.serialNumber
-                            }
-                            if (bestCounter.confidence == CounterConfidence.HIGH && !bestSerial.isNullOrBlank()) {
-                                return@withContext AvrDocumentOcrResult(bestCounter, bestSerial)
-                            }
+        // Decode full oriented bitmap once for targeted 3x row strips / clarity full pass
+        val oriented = decodeOrientedBitmap(imageFile)
+        if (oriented != null) {
+            try {
+                // Pass 2a: Targeted 3x upscaled strip around counter label with gentle clarity enhancement
+                if (bestCounter.confidence != CounterConfidence.HIGH && visionText != null) {
+                    val counterBox = findCounterKeywordLineBox(visionText)
+                    if (counterBox != null) {
+                        val stripRect = computeRowStripRect(counterBox, oriented.width, oriented.height)
+                        val stripRes = recognizeStripFields(oriented, stripRect)
+                        if (stripRes != null && stripRes.counter.confidence == CounterConfidence.HIGH) {
+                            bestCounter = stripRes.counter
+                            bestCounterBox = stripRes.counterBoxNormalized
+                                ?.let { mapStripRoiToFull(it, stripRect, oriented.width, oriented.height) }
+                                ?: rectToNormalized(stripRect, oriented.width, oriented.height)
+                        }
+                        if (bestSerial.isNullOrBlank() && !stripRes?.serialNumber.isNullOrBlank()) {
+                            bestSerial = stripRes?.serialNumber
                         }
                     }
                 }
-            }
-        }
 
-        // Pass 3: B&W ink-enhanced full-page OCR pass
-        if (bestCounter.confidence != CounterConfidence.HIGH || bestSerial.isNullOrBlank()) {
-            val orientedFull = decodeOrientedBitmap(imageFile)
-            if (orientedFull != null) {
-                val bwFull = PhotoEnhancerEngine.enhance(orientedFull, EnhanceMode.DOCUMENT_SCAN_BW)
-                orientedFull.recycle()
-                val bwText = processBitmapOcr(bwFull.bitmap)
-                bwFull.bitmap.recycle()
-                if (bwText != null) {
-                    val pass3 = evaluateVisionTextToDocumentResult(bwText)
-                    if (bestCounter.confidence != CounterConfidence.HIGH &&
-                        pass3.counter.confidence == CounterConfidence.HIGH
-                    ) {
-                        bestCounter = pass3.counter
-                    }
-                    if (bestSerial.isNullOrBlank() && !pass3.serialNumber.isNullOrBlank()) {
-                        bestSerial = pass3.serialNumber
+                // Pass 2b: Targeted 3x upscaled strip around serial label
+                if (bestSerial.isNullOrBlank() && visionText != null) {
+                    val serialBox = findSerialKeywordLineBox(visionText)
+                    if (serialBox != null) {
+                        val stripRect = computeRowStripRect(serialBox, oriented.width, oriented.height)
+                        val stripRes = recognizeStripFields(oriented, stripRect)
+                        if (!stripRes?.serialNumber.isNullOrBlank()) {
+                            bestSerial = stripRes?.serialNumber
+                        }
                     }
                 }
-            }
-        }
 
-        // Pass 4: Saved engineer AVR template ROI fallback
-        if (bestCounter.confidence != CounterConfidence.HIGH) {
-            val savedRoi = loadAvrTemplateRoi(context)
-            if (savedRoi != null) {
-                val roiDigits = recognizeDigitsInCropRegion(context, imageFile, savedRoi)
-                if (!roiDigits.isNullOrBlank()) {
-                    bestCounter = CounterParseResult(roiDigits, CounterConfidence.HIGH, "Шаблон АВР")
+                // Pass 3: Gentle full-page TEXT_CLARITY OCR pass if anything is still missing
+                if (bestCounter.confidence != CounterConfidence.HIGH || bestSerial.isNullOrBlank()) {
+                    val clarityFull = PhotoEnhancerEngine.enhance(oriented, EnhanceMode.TEXT_CLARITY)
+                    val clarityText = processBitmapOcr(clarityFull.bitmap)
+                    if (clarityFull.bitmap !== oriented) clarityFull.bitmap.recycle()
+                    if (clarityText != null) {
+                        val pass3 = extractDocumentFieldsFromBoxedLines(
+                            clarityText.toOcrBoxLines(),
+                            oriented.width,
+                            oriented.height
+                        )
+                        if (bestCounter.confidence != CounterConfidence.HIGH &&
+                            pass3.counter.confidence == CounterConfidence.HIGH
+                        ) {
+                            bestCounter = pass3.counter
+                            bestCounterBox = pass3.counterBoxNormalized
+                        }
+                        if (bestSerial.isNullOrBlank() && !pass3.serialNumber.isNullOrBlank()) {
+                            bestSerial = pass3.serialNumber
+                        }
+                    }
                 }
+            } finally {
+                oriented.recycle()
             }
         }
 
-        AvrDocumentOcrResult(bestCounter, bestSerial)
+        AvrDocumentOcrResult(bestCounter, bestSerial, bestCounterBox)
     }
 
-    private fun evaluateVisionTextToDocumentResult(visionText: Text): AvrDocumentOcrResult {
-        val boxedLines = visionText.textBlocks
-            .flatMap { it.lines }
-            .mapNotNull { line ->
-                val box = line.boundingBox ?: Rect(0, 0, 0, 0)
-                val txt = line.text.trim()
-                if (txt.isEmpty()) null else Triple(box, txt, box.exactCenterY())
+    private fun Text.toOcrBoxLines(): List<OcrBoxLine> {
+        return textBlocks.flatMap { it.lines }.mapNotNull { line ->
+            val box = line.boundingBox ?: Rect(0, 0, 0, 0)
+            val txt = line.text.trim()
+            if (txt.isEmpty()) null else OcrBoxLine(box.left, box.top, box.right, box.bottom, txt)
+        }
+    }
+
+    fun clusterBoxedLinesIntoRows(items: List<OcrBoxLine>): List<ClusteredRow> {
+        if (items.isEmpty()) return emptyList()
+        val sortedByY = items.sortedBy { (it.top + it.bottom) * 0.5f }
+        val rows = mutableListOf<MutableList<OcrBoxLine>>()
+        for (item in sortedByY) {
+            val itemCenterY = (item.top + item.bottom) * 0.5f
+            val itemH = max(1, item.bottom - item.top).toFloat()
+            val targetRow = rows.lastOrNull()?.let { prevRow ->
+                val prevCenterY = prevRow.map { (it.top + it.bottom) * 0.5f }.average().toFloat()
+                val prevAvgH = prevRow.map { max(1, it.bottom - it.top) }.average().toFloat()
+                val prevTop = prevRow.minOf { it.top }
+                val prevBottom = prevRow.maxOf { it.bottom }
+                val refH = minOf(prevAvgH, itemH)
+                val tolerance = max(5f, refH * 0.48f)
+                val overlap = minOf(prevBottom, item.bottom) - maxOf(prevTop, item.top)
+                if (abs(itemCenterY - prevCenterY) <= tolerance || overlap >= refH * 0.30f) prevRow else null
             }
-        if (boxedLines.isEmpty()) {
-            return AvrDocumentOcrResult(CounterParseResult(null, CounterConfidence.NONE), null)
+            if (targetRow != null) {
+                targetRow += item
+            } else {
+                rows += mutableListOf(item)
+            }
+        }
+        return rows.map { row ->
+            val ordered = row.sortedBy { it.left }
+            ClusteredRow(
+                text = ordered.joinToString(" ") { it.text },
+                left = ordered.minOf { it.left },
+                top = ordered.minOf { it.top },
+                right = ordered.maxOf { it.right },
+                bottom = ordered.maxOf { it.bottom }
+            )
+        }
+    }
+
+    fun extractDocumentFieldsFromBoxedLines(
+        items: List<OcrBoxLine>,
+        imageWidth: Int,
+        imageHeight: Int
+    ): AvrDocumentOcrResult {
+        if (items.isEmpty()) {
+            return AvrDocumentOcrResult(CounterParseResult(null, CounterConfidence.NONE), null, null)
         }
 
-        fun clusterRows(items: List<Triple<Rect, String, Float>>): List<String> {
-            val sortedByY = items.sortedBy { it.third }
-            val rows = mutableListOf<MutableList<Triple<Rect, String, Float>>>()
-            for (item in sortedByY) {
-                val targetRow = rows.lastOrNull()?.let { prevRow ->
-                    val prevCenter = prevRow.map { it.third }.average().toFloat()
-                    val avgHeight = prevRow.map { max(1, it.first.height()) }.average().toFloat()
-                    val tolerance = max(16f, max(avgHeight, item.first.height().toFloat()) * 0.65f)
-                    if (abs(item.third - prevCenter) <= tolerance) prevRow else null
-                }
-                if (targetRow != null) {
-                    targetRow += item
-                } else {
-                    rows += mutableListOf(item)
-                }
-            }
-            return rows.map { row -> row.sortedBy { it.first.left }.joinToString(" ") { it.second } }
-        }
+        val fullRows = clusterBoxedLinesIntoRows(items)
+        val rawRows = items.map { ClusteredRow(it.text, it.left, it.top, it.right, it.bottom) }
 
-        val fullVisualRows = clusterRows(boxedLines)
-        val rawLines = boxedLines.map { it.second }
-
-        // Detect 2-column config/test reports (e.g. HP M1212nf Config Page) and cluster each column cleanly
-        val columnRows = if (boxedLines.size >= 4) {
-            val minLeft = boxedLines.minOf { it.first.left }
-            val maxRight = boxedLines.maxOf { it.first.right }
+        // Detect 2-column config/test reports (e.g. HP M1212nf Config Page) via widest central gutter
+        val columnRows = if (items.size >= 4) {
+            val minLeft = items.minOf { it.left }
+            val maxRight = items.maxOf { it.right }
             val spanW = max(1, maxRight - minLeft)
-            val avgW = boxedLines.map { it.first.width() }.average()
-            if (spanW >= 180 && avgW <= spanW * 0.52) {
-                val splitX = minLeft + spanW * 0.48f
-                val leftBoxes = boxedLines.filter { it.first.exactCenterX() < splitX }
-                val rightBoxes = boxedLines.filter { it.first.exactCenterX() >= splitX }
+            val avgW = items.map { max(1, it.right - it.left) }.average()
+            if (spanW >= 180 && avgW <= spanW * 0.54) {
+                val sortedCenters = items.map { (it.left + it.right) * 0.5f }.sorted()
+                val loBound = minLeft + spanW * 0.34f
+                val hiBound = minLeft + spanW * 0.66f
+                var bestGap = 0f
+                var bestSplitX = minLeft + spanW * 0.48f
+                for (i in 0 until sortedCenters.lastIndex) {
+                    val mid = (sortedCenters[i] + sortedCenters[i + 1]) * 0.5f
+                    val gap = sortedCenters[i + 1] - sortedCenters[i]
+                    if (mid in loBound..hiBound && gap > bestGap) {
+                        bestGap = gap
+                        bestSplitX = mid
+                    }
+                }
+                val splitX = if (bestGap >= max(12f, spanW * 0.04f)) bestSplitX else minLeft + spanW * 0.48f
+                val leftBoxes = items.filter { (it.left + it.right) * 0.5f < splitX }
+                val rightBoxes = items.filter { (it.left + it.right) * 0.5f >= splitX }
                 if (leftBoxes.size >= 2 && rightBoxes.size >= 2) {
-                    clusterRows(leftBoxes) + clusterRows(rightBoxes)
+                    clusterBoxedLinesIntoRows(leftBoxes) + clusterBoxedLinesIntoRows(rightBoxes)
                 } else emptyList()
             } else emptyList()
         } else emptyList()
 
-        val lineSets = listOf(columnRows, fullVisualRows, rawLines).filter { it.isNotEmpty() }
-        val counter = lineSets
-            .firstNotNullOfOrNull { lines ->
-                AvrCounterParser.extractCounterFromLines(lines).takeIf { it.confidence == CounterConfidence.HIGH }
+        val rowSets = listOf(columnRows, fullRows, rawRows).filter { it.isNotEmpty() }
+        var matchedCounter = CounterParseResult(null, CounterConfidence.NONE)
+        var matchedRowBox: ClusteredRow? = null
+        for (rows in rowSets) {
+            val parsed = AvrCounterParser.extractCounterFromLines(rows.map { it.text })
+            if (parsed.confidence == CounterConfidence.HIGH) {
+                matchedCounter = parsed
+                val rowIdx = parsed.matchedRowIndex
+                if (rowIdx != null && rowIdx in rows.indices) {
+                    matchedRowBox = rows[rowIdx]
+                }
+                break
             }
-            ?: CounterParseResult(null, CounterConfidence.NONE)
-        val serial = lineSets
-            .firstNotNullOfOrNull { lines ->
-                EquipmentScanParser.extractLabeledSerialFromOcrLines(lines)
-            }
-        return AvrDocumentOcrResult(counter, serial)
+        }
+
+        val counterBoxNormalized = if (matchedRowBox != null && imageWidth > 0 && imageHeight > 0) {
+            val padX = imageWidth * 0.015f
+            val padY = imageHeight * 0.008f
+            val l = ((matchedRowBox.left - padX) / imageWidth.toFloat()).coerceIn(0f, 0.96f)
+            val t = ((matchedRowBox.top - padY) / imageHeight.toFloat()).coerceIn(0f, 0.96f)
+            val r = ((matchedRowBox.right + padX) / imageWidth.toFloat()).coerceIn(l + 0.04f, 1f)
+            val b = ((matchedRowBox.bottom + padY) / imageHeight.toFloat()).coerceIn(t + 0.03f, 1f)
+            NormalizedRect(l, t, r, b)
+        } else {
+            null
+        }
+
+        val serial = rowSets.firstNotNullOfOrNull { rows ->
+            EquipmentScanParser.extractLabeledSerialFromOcrLines(rows.map { it.text })
+        }
+        return AvrDocumentOcrResult(matchedCounter, serial, counterBoxNormalized)
     }
 
-    private fun findKeywordLineExpandedBox(visionText: Text): Rect? {
+    private suspend fun recognizeStripFields(
+        oriented: Bitmap,
+        stripRect: Rect
+    ): AvrDocumentOcrResult? {
+        val cw = stripRect.width().coerceAtLeast(16)
+        val ch = stripRect.height().coerceAtLeast(16)
+        val strip = Bitmap.createBitmap(oriented, stripRect.left, stripRect.top, cw, ch)
+        val upscaled = Bitmap.createScaledBitmap(
+            strip,
+            (cw * 3).coerceAtMost(2000),
+            (ch * 3).coerceAtMost(600),
+            true
+        )
+        if (upscaled !== strip) strip.recycle()
+        val clarityStrip = PhotoEnhancerEngine.enhance(upscaled, EnhanceMode.TEXT_CLARITY)
+        if (clarityStrip.bitmap !== upscaled) upscaled.recycle()
+        val stripW = clarityStrip.bitmap.width
+        val stripH = clarityStrip.bitmap.height
+        val stripText = processBitmapOcr(clarityStrip.bitmap)
+        clarityStrip.bitmap.recycle()
+        return stripText?.let { extractDocumentFieldsFromBoxedLines(it.toOcrBoxLines(), stripW, stripH) }
+    }
+
+    private fun computeRowStripRect(box: Rect, imgW: Int, imgH: Int): Rect {
+        val l = (box.left - box.width() * 0.25f).roundToInt().coerceIn(0, (imgW - 32).coerceAtLeast(0))
+        val t = (box.top - box.height() * 0.8f).roundToInt().coerceIn(0, (imgH - 16).coerceAtLeast(0))
+        val r = (box.right + imgW * 0.45f).roundToInt().coerceIn((l + 32).coerceAtMost(imgW), imgW)
+        val b = (box.bottom + box.height() * 1.4f).roundToInt().coerceIn((t + 16).coerceAtMost(imgH), imgH)
+        return Rect(l, t, r, b)
+    }
+
+    private fun mapStripRoiToFull(
+        stripRoi: NormalizedRect,
+        stripRect: Rect,
+        imgW: Int,
+        imgH: Int
+    ): NormalizedRect {
+        val sw = stripRect.width().toFloat()
+        val sh = stripRect.height().toFloat()
+        val l = ((stripRect.left + stripRoi.left * sw) / imgW.toFloat()).coerceIn(0f, 0.96f)
+        val t = ((stripRect.top + stripRoi.top * sh) / imgH.toFloat()).coerceIn(0f, 0.96f)
+        val r = ((stripRect.left + stripRoi.right * sw) / imgW.toFloat()).coerceIn(l + 0.04f, 1f)
+        val b = ((stripRect.top + stripRoi.bottom * sh) / imgH.toFloat()).coerceIn(t + 0.03f, 1f)
+        return NormalizedRect(l, t, r, b)
+    }
+
+    private fun rectToNormalized(rect: Rect, imgW: Int, imgH: Int): NormalizedRect {
+        val l = (rect.left.toFloat() / max(1, imgW).toFloat()).coerceIn(0f, 0.96f)
+        val t = (rect.top.toFloat() / max(1, imgH).toFloat()).coerceIn(0f, 0.96f)
+        val r = (rect.right.toFloat() / max(1, imgW).toFloat()).coerceIn(l + 0.04f, 1f)
+        val b = (rect.bottom.toFloat() / max(1, imgH).toFloat()).coerceIn(t + 0.03f, 1f)
+        return NormalizedRect(l, t, r, b)
+    }
+
+    private fun findCounterKeywordLineBox(visionText: Text): Rect? {
+        val strongHints = listOf(
+            "всего", "bcero", "bcer0", "итого", "total", "life count",
+            "напечат", "haneyat", "hane4at", "отпечат", "impressions",
+            "счет", "счёт", "c4et", "cyet", "chetchik", "пробег", "page count", "meter"
+        )
+        var fallbackBox: Rect? = null
+        for (block in visionText.textBlocks) {
+            for (line in block.lines) {
+                val lower = line.text.lowercase(Locale.ROOT)
+                if (lower.contains("четкост") || lower.contains("чёткост") ||
+                    lower.contains("отсканир") || lower.contains("факс") ||
+                    lower.contains("замяти") || lower.contains("ошибок")
+                ) {
+                    continue
+                }
+                if (lower.contains("всего") || lower.contains("bcero") || lower.contains("bcer0") ||
+                    lower.contains("total") || lower.contains("итого")
+                ) {
+                    return line.boundingBox
+                }
+                if (fallbackBox == null && strongHints.any { lower.contains(it) }) {
+                    fallbackBox = line.boundingBox
+                }
+            }
+        }
+        return fallbackBox
+    }
+
+    private fun findSerialKeywordLineBox(visionText: Text): Rect? {
         val hints = listOf(
-            "счет", "счёт", "пробег", "копий", "counter", "page",
-            "всего", "bcero", "страниц", "напечат", "haneyat", "hane4at",
-            "c4et", "cyet", "chetchik"
+            "серий", "сер.", "сер ", "cep", "serial", "s/n", "s / n", "зав.", "завод"
         )
         for (block in visionText.textBlocks) {
             for (line in block.lines) {
                 val lower = line.text.lowercase(Locale.ROOT)
-                if (hints.any { lower.contains(it) } && !lower.contains("четкост") && !lower.contains("чёткост")) {
+                if (hints.any { lower.contains(it) }) {
                     return line.boundingBox
                 }
             }
         }
         return null
+    }
+
+    private fun readOrientedDimensions(file: File): Pair<Int, Int> {
+        val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, opts)
+        val rawW = opts.outWidth.coerceAtLeast(1)
+        val rawH = opts.outHeight.coerceAtLeast(1)
+        val orientation = runCatching {
+            ExifInterface(file.absolutePath).getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL
+            )
+        }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
+        val swap = orientation == ExifInterface.ORIENTATION_ROTATE_90 ||
+            orientation == ExifInterface.ORIENTATION_ROTATE_270
+        return if (swap) rawH to rawW else rawW to rawH
     }
 
     private fun extractDigitTokens(raw: String): List<String> {

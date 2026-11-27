@@ -232,6 +232,7 @@ fun SmartCameraScreen(
                         targetValue = when {
                             quality.isOptimalToShoot -> IntraColors.EmeraldSuccess
                             quality.light == LightStatus.TOO_DARK ||
+                                quality.sharpness == SharpnessStatus.BLURRY ||
                                 quality.stability == StabilityStatus.MOVING -> IntraColors.ErrorRed
                             else -> IntraColors.WarningAmber
                         },
@@ -320,10 +321,10 @@ fun SmartCameraScreen(
                                 ConditionPill(
                                     icon = Icons.Rounded.CenterFocusStrong,
                                     label = "Чёткость",
-                                    state = if (quality.sharpness == SharpnessStatus.OK) {
-                                        PillState.GOOD
-                                    } else {
-                                        PillState.WARN
+                                    state = when (quality.sharpness) {
+                                        SharpnessStatus.OK -> PillState.GOOD
+                                        SharpnessStatus.SOFT -> PillState.WARN
+                                        SharpnessStatus.BLURRY -> PillState.BAD
                                     }
                                 )
                                 ConditionPill(

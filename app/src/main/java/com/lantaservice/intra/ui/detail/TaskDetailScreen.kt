@@ -357,7 +357,7 @@ fun TaskDetailScreen(
         }
         AvrCounterCropDialog(
             photo = targetPhoto,
-            initialRoi = savedTemplate,
+            initialRoi = state.detectedCounterRoi ?: savedTemplate,
             isRecognizing = state.isRecognizingRoiCrop,
             onDismiss = {
                 if (!state.isRecognizingRoiCrop) {
@@ -3173,7 +3173,7 @@ private fun AvrCounterCropDialog(
             )
         )
     }
-    var saveAsTemplate by remember { mutableStateOf(true) }
+    var saveAsTemplate by remember { mutableStateOf(false) }
     var dragAnchor by remember { mutableStateOf<Offset?>(null) }
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
 

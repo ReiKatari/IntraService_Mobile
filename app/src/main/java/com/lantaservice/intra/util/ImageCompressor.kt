@@ -35,7 +35,7 @@ object ImageCompressor {
 
     private const val MAX_DIMENSION_PX = 2200
     private const val JPEG_QUALITY = 88
-    private const val SCAN_BW_JPEG_QUALITY = 76
+    private const val SCAN_BW_JPEG_QUALITY = 84
 
     fun createTempCameraFile(context: Context, taskId: Int): Pair<File, Uri> {
         val cameraDir = File(context.cacheDir, "camera").apply { mkdirs() }

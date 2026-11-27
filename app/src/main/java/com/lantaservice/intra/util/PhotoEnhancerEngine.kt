@@ -275,11 +275,11 @@ object PhotoEnhancerEngine {
                 val ratio = ((yIn[row + x] * 246f) / bgEst).coerceIn(0f, 255f)
                 // Clean pure white background, smooth edges, crisp dark ink
                 val tone = when {
-                    ratio >= 204f -> 255
-                    ratio <= 122f -> ((ratio / 122f) * 38f).roundToInt().coerceIn(0, 38)
+                    ratio >= 220f -> 255
+                    ratio <= 145f -> ((ratio / 145f) * 32f).roundToInt().coerceIn(0, 32)
                     else -> {
-                        val t = (ratio - 122f) / (204f - 122f)
-                        (38f + t * t * (3f - 2f * t) * 217f).roundToInt().coerceIn(38, 255)
+                        val t = (ratio - 145f) / (220f - 145f)
+                        (32f + t * t * (3f - 2f * t) * 223f).roundToInt().coerceIn(32, 255)
                     }
                 }
                 normalized[row + x] = tone
