@@ -577,29 +577,6 @@ fun TaskDetailScreen(
                         }
 
                         item {
-                            GeolocationCard(
-                                snapshot = state.geoSnapshot,
-                                isLoading = state.isLoadingGeo,
-                                onRefreshGeo = { viewModel.refreshGeolocation() },
-                                onCopyText = { label, text, msg ->
-                                    copyToClipboard(context, label, text, msg)
-                                },
-                                onOpenMap = { lat, lon, label ->
-                                    val encoded = Uri.encode(label.ifBlank { "Заявка #${state.taskId}" })
-                                    val geoUri = Uri.parse("geo:$lat,$lon?q=$lat,$lon($encoded)")
-                                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, geoUri)) }
-                                        .onFailure {
-                                            Toast.makeText(
-                                                context,
-                                                "На устройстве не найдено приложение карт",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
-                                }
-                            )
-                        }
-
-                        item {
                             QuickRepairedStatusCard(
                                 detail = detail,
                                 markAsRepaired = state.markAsRepaired,
@@ -646,7 +623,6 @@ fun TaskDetailScreen(
                                     latestPendingAvr?.let { avrCropTargetPhoto = it }
                                 },
                                 onEditSerial = { showSerialInputDialog = true },
-                                onScanSerial = ::startEquipmentScanner,
                                 onRemovePending = viewModel::removePendingPhoto,
                                 onPreviewPending = { pending ->
                                     viewModel.openPhotoViewer(
@@ -685,6 +661,29 @@ fun TaskDetailScreen(
                                     onToggleExpand = viewModel::toggleHistoryExpanded
                                 )
                             }
+                        }
+
+                        item {
+                            GeolocationCard(
+                                snapshot = state.geoSnapshot,
+                                isLoading = state.isLoadingGeo,
+                                onRefreshGeo = { viewModel.refreshGeolocation() },
+                                onCopyText = { label, text, msg ->
+                                    copyToClipboard(context, label, text, msg)
+                                },
+                                onOpenMap = { lat, lon, label ->
+                                    val encoded = Uri.encode(label.ifBlank { "Заявка #${state.taskId}" })
+                                    val geoUri = Uri.parse("geo:$lat,$lon?q=$lat,$lon($encoded)")
+                                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, geoUri)) }
+                                        .onFailure {
+                                            Toast.makeText(
+                                                context,
+                                                "На устройстве не найдено приложение карт",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                }
+                            )
                         }
 
                         item {
@@ -1772,7 +1771,6 @@ private fun AttachmentsCard(
     onEditCounter: () -> Unit,
     onSelectCounterRegion: () -> Unit = {},
     onEditSerial: () -> Unit = {},
-    onScanSerial: () -> Unit = {},
     onRemovePending: (String) -> Unit,
     onPreviewPending: (PendingPhoto) -> Unit,
     onClickExistingAttachment: (TaskAttachment) -> Unit
@@ -1922,8 +1920,7 @@ private fun AttachmentsCard(
                                 equipmentScan = equipmentScan,
                                 expectedSerial = expectedSerial,
                                 isSaving = isSaving,
-                                onEditSerial = onEditSerial,
-                                onScanSerial = onScanSerial
+                                onEditSerial = onEditSerial
                             )
                         }
                     }
@@ -2473,8 +2470,7 @@ private fun AvrSerialBanner(
     equipmentScan: EquipmentScanResult?,
     expectedSerial: String,
     isSaving: Boolean,
-    onEditSerial: () -> Unit,
-    onScanSerial: () -> Unit
+    onEditSerial: () -> Unit
 ) {
     val serial = equipmentScan?.serialNumber.orEmpty()
     val hasSerial = serial.isNotBlank()
@@ -2541,9 +2537,9 @@ private fun AvrSerialBanner(
                     )
                     Text(
                         text = if (expectedSerial.isNotBlank()) {
-                            "По заявке: $expectedSerial - отсканируйте или введите"
+                            "По заявке: $expectedSerial - нажмите для ввода"
                         } else {
-                            "Отсканируйте шильдик / ШК или нажмите для ввода"
+                            "Нажмите для ввода или сканирования"
                         },
                         style = MaterialTheme.typography.labelSmall,
                         color = IntraColors.TextSecondary
@@ -2552,66 +2548,35 @@ private fun AvrSerialBanner(
             }
 
             Spacer(modifier = Modifier.width(8.dp))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = IntraColors.SurfaceWhite
             ) {
-                Surface(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .clickable(enabled = !isSaving, onClick = onScanSerial),
-                    shape = RoundedCornerShape(10.dp),
-                    color = IntraColors.BrandPrimary.copy(alpha = 0.12f)
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.QrCodeScanner,
-                            contentDescription = null,
-                            tint = IntraColors.BrandPrimary,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "Скан",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = IntraColors.BrandPrimary,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = IntraColors.SurfaceWhite
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Edit,
-                            contentDescription = null,
-                            tint = when {
-                                isMismatch -> IntraColors.ErrorRed
-                                hasSerial -> IntraColors.EmeraldDeep
-                                else -> IntraColors.WarningAmber
-                            },
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = if (hasSerial) "Изменить" else "Ввести",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = when {
-                                isMismatch -> IntraColors.ErrorRed
-                                hasSerial -> IntraColors.EmeraldDeep
-                                else -> IntraColors.WarningAmber
-                            },
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.Rounded.Edit,
+                        contentDescription = null,
+                        tint = when {
+                            isMismatch -> IntraColors.ErrorRed
+                            hasSerial -> IntraColors.EmeraldDeep
+                            else -> IntraColors.WarningAmber
+                        },
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = if (hasSerial) "Изменить" else "Ввести",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = when {
+                            isMismatch -> IntraColors.ErrorRed
+                            hasSerial -> IntraColors.EmeraldDeep
+                            else -> IntraColors.WarningAmber
+                        },
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
         }
@@ -3144,7 +3109,7 @@ private fun SerialNumberInputDialog(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Сканировать шильдик / штрихкод",
+                        text = "Сканировать серийный номер",
                         color = IntraColors.BrandPrimary
                     )
                 }

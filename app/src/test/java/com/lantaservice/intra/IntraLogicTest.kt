@@ -1078,7 +1078,7 @@ class IntraLogicTest {
             sharpness = SharpnessStatus.OK,
             stability = StabilityStatus.STEADY
         )
-        assertTrue(ready.isReadyToAutoCapture)
+        assertTrue(ready.isSheetAligned)
         assertNotNull(ready.normalizedQuad)
         assertEquals(4, ready.normalizedQuad!!.size)
 
@@ -1100,7 +1100,7 @@ class IntraLogicTest {
             sharpness = SharpnessStatus.OK,
             stability = StabilityStatus.STEADY
         )
-        assertFalse(tooFar.isReadyToAutoCapture)
+        assertFalse(tooFar.isSheetAligned)
         assertTrue(tooFar.hint.contains("ближе", ignoreCase = true))
     }
 
@@ -1549,5 +1549,77 @@ class IntraLogicTest {
         assertTrue(counterIdx >= 0)
         assertTrue(serialIdx > counterIdx)
         assertFalse(comment.contains("Оборудование:"))
+    }
+
+    @Test
+    fun dimPaperSheetDetectionAndFitCenterMappingAndHonestQualityMetrics() {
+        // 1. Dim paper (luma ~ 92..135) with dark printed divider lines on dark tabletop (~20)
+        val w = 112
+        val h = 150
+        val dimLuma = ByteArray(w * h)
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                val onSheet = x in 14..98 && y in 16..134
+                val isPrintedDivider = onSheet && (y == 48 || y == 82 || y == 104)
+                val v = when {
+                    isPrintedDivider -> 42
+                    onSheet -> 92 + ((y - 16) * 40 / 118)
+                    else -> 18
+                }
+                dimLuma[y * w + x] = v.toByte()
+            }
+        }
+        val dimQuad = DocumentGeometry.detectPaperQuadFromLuma(dimLuma, w, h)
+        assertNotNull("Expected dim paper sheet to be detected cleanly", dimQuad)
+        assertTrue("Top edge must not be clipped low (got ${dimQuad!!.topLeft.y})", dimQuad.topLeft.y <= 26f)
+        assertTrue("Left edge must be captured cleanly (got ${dimQuad.topLeft.x})", dimQuad.topLeft.x <= 22f)
+
+        // 2. Dim / soft-blur center frame (~106 center luma, ~90 lapVar) -> LOW_LIGHT + BLURRY (not green!)
+        val qw = 80
+        val qh = 100
+        val dimFrame = ByteArray(qw * qh) { idx ->
+            val x = idx % qw
+            val y = idx / qw
+            when {
+                x !in 10..70 || y !in 12..88 -> 20
+                (x / 3 + y / 4) % 2 == 0 -> 110
+                else -> 103
+            }.toByte()
+        }
+        val (dimMetrics, _) = FrameQualityAnalyzer.evaluateFrameQuality(dimFrame, qw, qh)
+        assertEquals(LightStatus.LOW_LIGHT, dimMetrics.light)
+        assertEquals(SharpnessStatus.BLURRY, dimMetrics.sharpness)
+        assertFalse(dimMetrics.isOptimalToShoot)
+
+        // 3. Sheet extending past frame edge (2+ corners on border) -> CLIPPED issue
+        val clippedQuad = DocumentQuad(
+            Point2D(80f, 100f),
+            Point2D(1195f, 120f),
+            Point2D(1196f, 1592f),
+            Point2D(60f, 1594f)
+        )
+        val clippedReport = DocumentGeometry.evaluateQuadGeometry(clippedQuad, 1200, 1600)
+        assertEquals(DocumentQualityIssue.CLIPPED, clippedReport.issue)
+        assertFalse(clippedReport.canSafelyFlatten)
+
+        // 4. FIT_CENTER mapping aligns normalized frame coordinates to letterboxed preview box
+        val tl = DocumentGeometry.mapNormalizedPointToFitCenter(
+            point = Point2D(0f, 0f),
+            frameW = 300,
+            frameH = 400,
+            viewW = 600f,
+            viewH = 600f
+        )
+        val br = DocumentGeometry.mapNormalizedPointToFitCenter(
+            point = Point2D(1f, 1f),
+            frameW = 300,
+            frameH = 400,
+            viewW = 600f,
+            viewH = 600f
+        )
+        assertEquals(75f, tl.x, 0.5f)
+        assertEquals(0f, tl.y, 0.5f)
+        assertEquals(525f, br.x, 0.5f)
+        assertEquals(600f, br.y, 0.5f)
     }
 }

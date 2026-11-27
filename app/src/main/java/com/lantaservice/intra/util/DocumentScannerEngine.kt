@@ -62,6 +62,7 @@ enum class DocumentQualityIssue {
     NONE,
     TOO_FAR,
     EXTREME_TILT,
+    CLIPPED,
     BLURRY_OR_UNREADABLE
 }
 
@@ -79,7 +80,7 @@ data class DocumentGeometryReport(
 
 data class LiveSheetGuidance(
     val normalizedQuad: List<Point2D>?,
-    val isReadyToAutoCapture: Boolean,
+    val isSheetAligned: Boolean,
     val hint: String
 )
 
@@ -106,7 +107,32 @@ object DocumentGeometry {
     private const val MAX_TAPER_RATIO = 1.72f
     private const val MAX_FLATTENABLE_TAPER_RATIO = 2.15f
     private const val MAX_CORNER_DEVIATION_DEG = 32f
-    private const val MIN_DOC_SHARPNESS = 46.0
+    private const val MIN_DOC_SHARPNESS = 78.0
+
+    /**
+     * Maps a normalized point `(0..1, 0..1)` from oriented camera analysis coordinates into
+     * view pixels using `FIT_CENTER` scaling so the overlay matches the preview 1:1.
+     */
+    fun mapNormalizedPointToFitCenter(
+        point: Point2D,
+        frameW: Int,
+        frameH: Int,
+        viewW: Float,
+        viewH: Float
+    ): Point2D {
+        if (frameW <= 0 || frameH <= 0 || viewW <= 0f || viewH <= 0f) {
+            return Point2D(point.x * viewW, point.y * viewH)
+        }
+        val scale = min(viewW / frameW.toFloat(), viewH / frameH.toFloat())
+        val scaledW = frameW * scale
+        val scaledH = frameH * scale
+        val offsetX = (viewW - scaledW) * 0.5f
+        val offsetY = (viewH - scaledH) * 0.5f
+        return Point2D(
+            x = offsetX + point.x * scaledW,
+            y = offsetY + point.y * scaledH
+        )
+    }
 
     fun detectPaperQuadFromArgb(
         pixels: IntArray,
@@ -125,7 +151,7 @@ object DocumentGeometry {
             val maxC = max(r, max(g, b))
             val minC = min(r, min(g, b))
             val chroma = maxC - minC
-            scores[i] = (luma - (chroma * 1.35f).roundToInt()).coerceIn(0, 255)
+            scores[i] = (luma - (chroma * 1.15f).roundToInt()).coerceIn(0, 255)
         }
         return detectPaperQuadFromScorePlane(scores, width, height)
     }
@@ -140,6 +166,22 @@ object DocumentGeometry {
         return detectPaperQuadFromScorePlane(scores, width, height)
     }
 
+    fun isQuadClippedByFrame(
+        quad: DocumentQuad,
+        frameW: Int,
+        frameH: Int
+    ): Boolean {
+        if (frameW <= 0 || frameH <= 0) return false
+        val marginX = max(1.5f, frameW * 0.015f)
+        val marginY = max(1.5f, frameH * 0.015f)
+        val corners = listOf(quad.topLeft, quad.topRight, quad.bottomRight, quad.bottomLeft)
+        val touching = corners.count { p ->
+            p.x <= marginX || p.x >= frameW - marginX ||
+                p.y <= marginY || p.y >= frameH - marginY
+        }
+        return touching >= 2
+    }
+
     fun evaluateLiveSheetGuidance(
         quad: DocumentQuad?,
         frameW: Int,
@@ -151,11 +193,13 @@ object DocumentGeometry {
         if (quad == null || frameW <= 0 || frameH <= 0) {
             val fallbackHint = when {
                 light == LightStatus.TOO_DARK -> "Слишком темно - включите фонарик или добавьте света"
+                light == LightStatus.LOW_LIGHT -> "Мало света - включите фонарик или добавьте света"
+                light == LightStatus.GLARE -> "Сильный блик - слегка измените угол съёмки"
                 stability == StabilityStatus.MOVING -> "Держите телефон неподвижно"
                 sharpness == SharpnessStatus.BLURRY -> "Наведите на лист и коснитесь экрана для фокуса"
                 else -> "Поместите лист A4 целиком в рамку"
             }
-            return LiveSheetGuidance(normalizedQuad = null, isReadyToAutoCapture = false, hint = fallbackHint)
+            return LiveSheetGuidance(normalizedQuad = null, isSheetAligned = false, hint = fallbackHint)
         }
 
         val norm = listOf(
@@ -184,25 +228,35 @@ object DocumentGeometry {
                 cornerDeviationDeg(quad.bottomRight, quad.bottomLeft, quad.topLeft)
             )
         )
+        val clipped = isQuadClippedByFrame(quad, frameW, frameH)
 
         return when {
             light == LightStatus.TOO_DARK -> LiveSheetGuidance(
                 norm, false, "Слишком темно - включите фонарик"
             )
-            maxTaper > 1.58f || angleDev > 26f -> LiveSheetGuidance(
+            light == LightStatus.LOW_LIGHT -> LiveSheetGuidance(
+                norm, false, "Мало света - включите фонарик или добавьте света"
+            )
+            light == LightStatus.GLARE -> LiveSheetGuidance(
+                norm, false, "Сильный блик - слегка измените угол съёмки"
+            )
+            clipped -> LiveSheetGuidance(
+                norm, false, "Лист обрезан краем кадра - отведите камеру дальше"
+            )
+            maxTaper > 1.32f || angleDev > 16f -> LiveSheetGuidance(
                 norm, false, "Выровняйте угол - держите камеру параллельно листу"
             )
             areaRatio < 0.22f -> LiveSheetGuidance(
                 norm, false, "Подойдите ближе к листу A4"
             )
             stability == StabilityStatus.MOVING -> LiveSheetGuidance(
-                norm, false, "Держите телефон неподвижно..."
+                norm, false, "Держите телефон неподвижно"
             )
             sharpness == SharpnessStatus.BLURRY -> LiveSheetGuidance(
-                norm, false, "Наведите фокус на текст"
+                norm, false, "Нет резкости - коснитесь текста для фокуса"
             )
             else -> LiveSheetGuidance(
-                norm, true, "Лист ровно в рамке - автосъёмка..."
+                norm, true, "Лист ровно в рамке - можно снимать"
             )
         }
     }
@@ -219,7 +273,33 @@ object DocumentGeometry {
         }
 
         val otsu = computeOtsuThreshold(hist, n)
-        val threshold = max(otsu, 108)
+        var bgSum = 0L
+        var bgCount = 0L
+        var fgSum = 0L
+        var fgCount = 0L
+        for (v in 0..255) {
+            val c = hist[v].toLong()
+            if (v <= otsu) {
+                bgSum += v * c
+                bgCount += c
+            } else {
+                fgSum += v * c
+                fgCount += c
+            }
+        }
+        if (bgCount == 0L || fgCount == 0L) return null
+        val bgMean = bgSum.toDouble() / bgCount.toDouble()
+        val fgMean = fgSum.toDouble() / fgCount.toDouble()
+        if (fgMean - bgMean < 24.0 || fgMean < 75.0) return null
+
+        val threshold = max(
+            otsu - 6,
+            (bgMean + (fgMean - bgMean) * 0.42).toInt()
+        ).coerceIn(50, 210)
+
+        val rawMask = BooleanArray(n) { i -> scores[i] >= threshold }
+        val closeRadius = if (max(width, height) >= 200) 3 else 2
+        val closedMask = morphClose(rawMask, width, height, closeRadius)
 
         val visited = BooleanArray(n)
         val queue = IntArray(n)
@@ -227,7 +307,7 @@ object DocumentGeometry {
         var bestMask: BooleanArray? = null
 
         for (startIdx in 0 until n) {
-            if (visited[startIdx] || scores[startIdx] < threshold) continue
+            if (visited[startIdx] || !closedMask[startIdx]) continue
             var head = 0
             var tail = 0
             queue[tail++] = startIdx
@@ -247,28 +327,28 @@ object DocumentGeometry {
 
                 if (x + 1 < width) {
                     val nxt = cur + 1
-                    if (!visited[nxt] && scores[nxt] >= threshold) {
+                    if (!visited[nxt] && closedMask[nxt]) {
                         visited[nxt] = true
                         queue[tail++] = nxt
                     }
                 }
                 if (x - 1 >= 0) {
                     val nxt = cur - 1
-                    if (!visited[nxt] && scores[nxt] >= threshold) {
+                    if (!visited[nxt] && closedMask[nxt]) {
                         visited[nxt] = true
                         queue[tail++] = nxt
                     }
                 }
                 if (y + 1 < height) {
                     val nxt = cur + width
-                    if (!visited[nxt] && scores[nxt] >= threshold) {
+                    if (!visited[nxt] && closedMask[nxt]) {
                         visited[nxt] = true
                         queue[tail++] = nxt
                     }
                 }
                 if (y - 1 >= 0) {
                     val nxt = cur - width
-                    if (!visited[nxt] && scores[nxt] >= threshold) {
+                    if (!visited[nxt] && closedMask[nxt]) {
                         visited[nxt] = true
                         queue[tail++] = nxt
                     }
@@ -276,11 +356,11 @@ object DocumentGeometry {
             }
 
             val areaFrac = area.toFloat() / n.toFloat()
-            if (areaFrac < 0.06f || areaFrac > 0.96f) continue
+            if (areaFrac < 0.055f || areaFrac > 0.95f) continue
             val cxNorm = (sumX.toFloat() / area.toFloat()) / width.toFloat()
             val cyNorm = (sumY.toFloat() / area.toFloat()) / height.toFloat()
             // Paper center is expected in central region (ignores bright lamps/cups at corners)
-            if (cxNorm !in 0.14f..0.86f || cyNorm !in 0.14f..0.86f) continue
+            if (cxNorm !in 0.12f..0.88f || cyNorm !in 0.12f..0.88f) continue
 
             if (area > bestArea) {
                 bestArea = area
@@ -310,9 +390,83 @@ object DocumentGeometry {
 
         val fullHull = convexHull(boundary)
         if (fullHull.size < 4) return null
-        val reducedHull = subsampleHull(fullHull, maxVertices = 20)
+        val reducedHull = subsampleHull(fullHull, maxVertices = 28)
         val rawQuad = findMaxAreaQuad(reducedHull) ?: return null
-        return orderQuadCorners(rawQuad)
+        val ordered = orderQuadCorners(rawQuad)
+
+        val quadArea = polygonArea(ordered)
+        val solidity = bestArea.toFloat() / max(1f, quadArea)
+        if (solidity < 0.72f) return null
+
+        val avgW = (dist(ordered.topLeft, ordered.topRight) + dist(ordered.bottomLeft, ordered.bottomRight)) * 0.5f
+        val avgH = (dist(ordered.topLeft, ordered.bottomLeft) + dist(ordered.topRight, ordered.bottomRight)) * 0.5f
+        val aspect = max(avgW, avgH) / max(1f, min(avgW, avgH))
+        if (aspect !in 1.02f..2.15f) return null
+
+        return ordered
+    }
+
+    private fun morphClose(
+        mask: BooleanArray,
+        width: Int,
+        height: Int,
+        radius: Int
+    ): BooleanArray {
+        val dilated = morphStep(mask, width, height, radius, isDilate = true)
+        return morphStep(dilated, width, height, radius, isDilate = false)
+    }
+
+    private fun morphStep(
+        src: BooleanArray,
+        width: Int,
+        height: Int,
+        radius: Int,
+        isDilate: Boolean
+    ): BooleanArray {
+        val n = width * height
+        val horiz = BooleanArray(n)
+        for (y in 0 until height) {
+            val row = y * width
+            for (x in 0 until width) {
+                val x0 = (x - radius).coerceAtLeast(0)
+                val x1 = (x + radius).coerceAtMost(width - 1)
+                var res = !isDilate
+                for (kx in x0..x1) {
+                    val v = src[row + kx]
+                    if (isDilate && v) {
+                        res = true
+                        break
+                    }
+                    if (!isDilate && !v) {
+                        res = false
+                        break
+                    }
+                }
+                horiz[row + x] = res
+            }
+        }
+        val out = BooleanArray(n)
+        for (y in 0 until height) {
+            val y0 = (y - radius).coerceAtLeast(0)
+            val y1 = (y + radius).coerceAtMost(height - 1)
+            val row = y * width
+            for (x in 0 until width) {
+                var res = !isDilate
+                for (ky in y0..y1) {
+                    val v = horiz[ky * width + x]
+                    if (isDilate && v) {
+                        res = true
+                        break
+                    }
+                    if (!isDilate && !v) {
+                        res = false
+                        break
+                    }
+                }
+                out[row + x] = res
+            }
+        }
+        return out
     }
 
     fun evaluateQuadGeometry(
@@ -350,6 +504,11 @@ object DocumentGeometry {
         val vertTaper = max(leftLen, rightLen) / max(1f, min(leftLen, rightLen))
         val maxTaperRatio = max(horizTaper, vertTaper)
 
+        val avgW = (topLen + bottomLen) * 0.5f
+        val avgH = (leftLen + rightLen) * 0.5f
+        val aspect = max(avgW, avgH) / max(1f, min(avgW, avgH))
+        val isClipped = isQuadClippedByFrame(quad, fullWidth, fullHeight)
+
         val angleDev = max(
             max(
                 cornerDeviationDeg(quad.bottomLeft, quad.topLeft, quad.topRight),
@@ -364,12 +523,16 @@ object DocumentGeometry {
         val tooFar = areaRatio < MIN_AREA_RATIO || minEdgePx < MIN_EDGE_PIXELS
         val extremeTilt = maxTaperRatio > MAX_TAPER_RATIO || angleDev > MAX_CORNER_DEVIATION_DEG
 
-        val canFlatten = areaRatio >= MIN_FLATTENABLE_AREA_RATIO &&
+        val canFlatten = !isClipped &&
+            aspect in 1.05f..2.05f &&
+            areaRatio >= MIN_FLATTENABLE_AREA_RATIO &&
             minEdgePx >= MIN_FLATTENABLE_EDGE_PIXELS &&
             maxTaperRatio <= MAX_FLATTENABLE_TAPER_RATIO &&
             angleDev <= 45f
 
         val (issue, warning) = when {
+            isClipped -> DocumentQualityIssue.CLIPPED to
+                "Часть листа обрезана краем кадра - отведите камеру чуть дальше и переснимите."
             extremeTilt && areaRatio >= MIN_FLATTENABLE_AREA_RATIO -> DocumentQualityIssue.EXTREME_TILT to
                 "Слишком сильный наклон листа - невозможно идеально выровнять без потери чёткости. Держите камеру ровнее над листом и переснимите."
             tooFar -> DocumentQualityIssue.TOO_FAR to
@@ -641,7 +804,7 @@ object DocumentScannerEngine {
         var workingBitmap = orientedSource
         var wasDeskewed = false
         if (fullQuad != null && geomReport.canSafelyFlatten) {
-            val paddedQuad = fullQuad.expandedOutward(0.015f, srcW.toFloat(), srcH.toFloat())
+            val paddedQuad = fullQuad.expandedOutward(0.02f, srcW.toFloat(), srcH.toFloat())
             val (dstW, dstH) = DocumentGeometry.computeFlatA4Size(paddedQuad)
             val srcPts = floatArrayOf(
                 paddedQuad.topLeft.x, paddedQuad.topLeft.y,

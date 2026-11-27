@@ -8,6 +8,7 @@ import kotlin.math.min
 
 enum class LightStatus {
     TOO_DARK,
+    LOW_LIGHT,
     OK,
     GLARE
 }
@@ -31,7 +32,9 @@ data class FrameQualityMetrics(
     val avgLuma: Double = 128.0,
     val sharpnessVar: Double = 0.0,
     val detectedQuadNormalized: List<Point2D>? = null,
-    val sheetReadyToAutoCapture: Boolean = false
+    val sheetAligned: Boolean = false,
+    val analyzedFrameWidth: Int = 0,
+    val analyzedFrameHeight: Int = 0
 )
 
 /**
@@ -44,6 +47,7 @@ class FrameQualityAnalyzer(
 
     private var lastAnalyzedMs = 0L
     private var prevSample: ByteArray? = null
+    private var consecutiveSteadyFrames = 0
 
     override fun analyze(image: ImageProxy) {
         try {
@@ -65,6 +69,17 @@ class FrameQualityAnalyzer(
             )
             prevSample = nextSample
 
+            if (baseMetrics.stability == StabilityStatus.STEADY) {
+                consecutiveSteadyFrames++
+            } else {
+                consecutiveSteadyFrames = 0
+            }
+            val effectiveStability = if (consecutiveSteadyFrames >= 2) {
+                StabilityStatus.STEADY
+            } else {
+                StabilityStatus.MOVING
+            }
+
             // Fast downsampled rotation-corrected Y plane for live A4 sheet contour detection (~112px max)
             val rotDeg = image.imageInfo.rotationDegrees
             val (orientedW, orientedH, smallLuma) = extractOrientedSmallLuma(
@@ -82,15 +97,22 @@ class FrameQualityAnalyzer(
                 frameH = orientedH,
                 light = baseMetrics.light,
                 sharpness = baseMetrics.sharpness,
-                stability = baseMetrics.stability
+                stability = effectiveStability
             )
+            val trulyOptimal = baseMetrics.light == LightStatus.OK &&
+                baseMetrics.sharpness == SharpnessStatus.OK &&
+                effectiveStability == StabilityStatus.STEADY &&
+                guidance.isSheetAligned
 
             onMetrics(
                 baseMetrics.copy(
+                    stability = effectiveStability,
                     detectedQuadNormalized = guidance.normalizedQuad,
-                    sheetReadyToAutoCapture = guidance.isReadyToAutoCapture,
+                    sheetAligned = guidance.isSheetAligned,
+                    analyzedFrameWidth = orientedW,
+                    analyzedFrameHeight = orientedH,
                     primaryHint = guidance.hint,
-                    isOptimalToShoot = baseMetrics.isOptimalToShoot || guidance.isReadyToAutoCapture
+                    isOptimalToShoot = trulyOptimal
                 )
             )
         } finally {
@@ -151,11 +173,17 @@ class FrameQualityAnalyzer(
                 return FrameQualityMetrics() to emptySample
             }
 
-            // 1. Lighting & glare evaluation over whole frame
+            // 1. Lighting & glare evaluation over whole frame and center document region (20%..80%)
             val lumaStep = max(2, min(width, height) / 60)
             var sumLuma = 0L
             var brightCount = 0L
             var totalCount = 0L
+            var centerSumLuma = 0L
+            var centerCount = 0L
+            val cxStart = width / 5
+            val cxEnd = (width * 4) / 5
+            val cyStart = height / 5
+            val cyEnd = (height * 4) / 5
 
             var y = 0
             while (y < height) {
@@ -166,11 +194,16 @@ class FrameQualityAnalyzer(
                     sumLuma += v
                     if (v > 244) brightCount++
                     totalCount++
+                    if (x in cxStart..cxEnd && y in cyStart..cyEnd) {
+                        centerSumLuma += v
+                        centerCount++
+                    }
                     x += lumaStep
                 }
                 y += lumaStep
             }
             val avgLuma = if (totalCount > 0L) sumLuma.toDouble() / totalCount else 128.0
+            val centerAvgLuma = if (centerCount > 0L) centerSumLuma.toDouble() / centerCount else avgLuma
             val brightRatio = if (totalCount > 0L) brightCount.toDouble() / totalCount else 0.0
 
             // 2. Center-region Laplacian variance for focus sharpness
@@ -230,12 +263,13 @@ class FrameQualityAnalyzer(
             }
 
             val lightStatus = when {
-                avgLuma < 52.0 -> LightStatus.TOO_DARK
-                avgLuma > 228.0 || brightRatio > 0.35 -> LightStatus.GLARE
+                avgLuma < 58.0 || centerAvgLuma < 72.0 -> LightStatus.TOO_DARK
+                avgLuma > 228.0 || brightRatio > 0.30 -> LightStatus.GLARE
+                centerAvgLuma < 124.0 || avgLuma < 85.0 -> LightStatus.LOW_LIGHT
                 else -> LightStatus.OK
             }
-            val sharpnessStatus = if (lapVar < 60.0) SharpnessStatus.BLURRY else SharpnessStatus.OK
-            val stabilityStatus = if (motionDelta > 15.0) StabilityStatus.MOVING else StabilityStatus.STEADY
+            val sharpnessStatus = if (lapVar < 165.0) SharpnessStatus.BLURRY else SharpnessStatus.OK
+            val stabilityStatus = if (motionDelta > 6.5) StabilityStatus.MOVING else StabilityStatus.STEADY
 
             val optimal = lightStatus == LightStatus.OK &&
                 sharpnessStatus == SharpnessStatus.OK &&
@@ -244,6 +278,8 @@ class FrameQualityAnalyzer(
             val hint = when {
                 lightStatus == LightStatus.TOO_DARK ->
                     "Слишком темно - включите фонарик или добавьте света"
+                lightStatus == LightStatus.LOW_LIGHT ->
+                    "Мало света - включите фонарик или подойдите к источнику света"
                 stabilityStatus == StabilityStatus.MOVING ->
                     "Держите телефон неподвижно - кадр может смазаться"
                 sharpnessStatus == SharpnessStatus.BLURRY ->

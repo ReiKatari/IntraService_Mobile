@@ -43,7 +43,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.CenterFocusStrong
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
@@ -81,12 +80,10 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
@@ -103,6 +100,7 @@ import com.lantaservice.intra.ui.components.intraHeaderInsetsPadding
 import com.lantaservice.intra.ui.theme.IntraColors
 import com.lantaservice.intra.util.CameraReviewPair
 import com.lantaservice.intra.util.DateAndTextFormatter
+import com.lantaservice.intra.util.DocumentGeometry
 import com.lantaservice.intra.util.FrameQualityAnalyzer
 import com.lantaservice.intra.util.FrameQualityMetrics
 import com.lantaservice.intra.util.ImageCompressor
@@ -114,6 +112,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 private enum class CameraReviewMode {
@@ -123,8 +122,8 @@ private enum class CameraReviewMode {
 }
 
 /**
- * Full-screen smart CameraX viewfinder with real-time detected A4 sheet contour,
- * specific alignment/distance hints, 0.5s steady auto-capture, and 3-mode review (B&W scan, color, original).
+ * Full-screen smart CameraX viewfinder with manual shutter, calibrated lighting/sharpness/stability metrics,
+ * FIT_CENTER full-frame preview, real-time A4 sheet contour, and 3-mode review (B&W scan, color, original).
  */
 @SuppressLint("ClickableViewAccessibility")
 @Composable
@@ -139,19 +138,16 @@ fun SmartCameraScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
-    val haptics = LocalHapticFeedback.current
 
     var quality by remember { mutableStateOf(FrameQualityMetrics()) }
     var torchEnabled by remember { mutableStateOf(false) }
     var hasFlash by remember { mutableStateOf(false) }
-    var autoCaptureEnabled by remember { mutableStateOf(true) }
     var isCapturing by remember { mutableStateOf(false) }
     var reviewPair by remember { mutableStateOf<CameraReviewPair?>(null) }
     var reviewMode by remember { mutableStateOf(CameraReviewMode.SCAN_BW) }
     var zoomRatio by remember { mutableFloatStateOf(1f) }
     var focusTapOffset by remember { mutableStateOf<Offset?>(null) }
     val focusAlpha = remember { Animatable(0f) }
-    val autoCaptureProgress = remember { Animatable(0f) }
 
     var cameraRef by remember { mutableStateOf<Camera?>(null) }
     var imageCaptureRef by remember { mutableStateOf<ImageCapture?>(null) }
@@ -197,19 +193,6 @@ fun SmartCameraScreen(
         )
     }
 
-    LaunchedEffect(autoCaptureEnabled, quality.sheetReadyToAutoCapture, isCapturing, reviewPair) {
-        if (autoCaptureEnabled && quality.sheetReadyToAutoCapture && !isCapturing && reviewPair == null && imageCaptureRef != null) {
-            autoCaptureProgress.snapTo(0f)
-            autoCaptureProgress.animateTo(1f, animationSpec = tween(durationMillis = 500))
-            if (autoCaptureEnabled && !isCapturing && reviewPair == null) {
-                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                triggerCapture()
-            }
-        } else {
-            autoCaptureProgress.snapTo(0f)
-        }
-    }
-
     DisposableEffect(Unit) {
         onDispose {
             analysisExecutor.shutdown()
@@ -244,287 +227,303 @@ fun SmartCameraScreen(
                 label = "camera_review_switch"
             ) { pair ->
                 if (pair == null) {
-                    // Live CameraX Viewfinder
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        AndroidView(
+                    // Live CameraX Viewfinder: Top HUD -> Centered FIT_CENTER Viewfinder -> Manual Shutter
+                    val frameColor by animateColorAsState(
+                        targetValue = when {
+                            quality.isOptimalToShoot -> IntraColors.EmeraldSuccess
+                            quality.light == LightStatus.TOO_DARK ||
+                                quality.stability == StabilityStatus.MOVING -> IntraColors.ErrorRed
+                            else -> IntraColors.WarningAmber
+                        },
+                        label = "guide_frame_color"
+                    )
+
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        // Top HUD: Close, title & Torch on first row, 3 live condition pills wrapped cleanly below
+                        Column(
                             modifier = Modifier
-                                .fillMaxSize()
-                                .pointerInput(cameraRef, previewViewRef) {
-                                    detectTapGestures { offset ->
-                                        val cam = cameraRef ?: return@detectTapGestures
-                                        val pv = previewViewRef ?: return@detectTapGestures
-                                        focusTapOffset = offset
-                                        val pt = pv.meteringPointFactory.createPoint(offset.x, offset.y)
-                                        val action = FocusMeteringAction.Builder(
-                                            pt,
-                                            FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE
-                                        )
-                                            .setAutoCancelDuration(3, TimeUnit.SECONDS)
-                                            .build()
-                                        cam.cameraControl.startFocusAndMetering(action)
-                                    }
-                                }
-                                .pointerInput(cameraRef) {
-                                    detectTransformGestures { _, _, zoom, _ ->
-                                        val cam = cameraRef ?: return@detectTransformGestures
-                                        val zs = cam.cameraInfo.zoomState.value ?: return@detectTransformGestures
-                                        val next = (zoomRatio * zoom).coerceIn(zs.minZoomRatio, zs.maxZoomRatio)
-                                        zoomRatio = next
-                                        cam.cameraControl.setZoomRatio(next)
-                                    }
-                                },
-                            factory = { ctx ->
-                                PreviewView(ctx).apply {
-                                    layoutParams = ViewGroup.LayoutParams(
-                                        ViewGroup.LayoutParams.MATCH_PARENT,
-                                        ViewGroup.LayoutParams.MATCH_PARENT
-                                    )
-                                    scaleType = PreviewView.ScaleType.FILL_CENTER
-                                    val previewView = this
-                                    previewViewRef = previewView
-
-                                    val providerFuture = ProcessCameraProvider.getInstance(ctx)
-                                    providerFuture.addListener({
-                                        runCatching {
-                                            val provider = providerFuture.get()
-                                            val preview = Preview.Builder().build().also {
-                                                it.surfaceProvider = previewView.surfaceProvider
-                                            }
-                                            val imageCapture = ImageCapture.Builder()
-                                                .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
-                                                .build()
-                                            val imageAnalysis = ImageAnalysis.Builder()
-                                                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                                                .build()
-                                                .apply {
-                                                    setAnalyzer(
-                                                        analysisExecutor,
-                                                        FrameQualityAnalyzer { m -> quality = m }
-                                                    )
-                                                }
-
-                                            provider.unbindAll()
-                                            val cam = provider.bindToLifecycle(
-                                                lifecycleOwner,
-                                                CameraSelector.DEFAULT_BACK_CAMERA,
-                                                preview,
-                                                imageCapture,
-                                                imageAnalysis
-                                            )
-                                            cameraRef = cam
-                                            imageCaptureRef = imageCapture
-                                            hasFlash = cam.cameraInfo.hasFlashUnit()
-                                        }.onFailure {
-                                            onCameraFallbackRequested()
-                                        }
-                                    }, ContextCompat.getMainExecutor(ctx))
-                                }
-                            }
-                        )
-
-                        // Tap-to-focus ring indicator
-                        focusTapOffset?.let { tap ->
-                            val dpSize = 68.dp
-                            val halfPx = with(LocalDensity.current) { (dpSize / 2).toPx() }
-                            Box(
-                                modifier = Modifier
-                                    .offset {
-                                        IntOffset(
-                                            (tap.x - halfPx).roundToInt(),
-                                            (tap.y - halfPx).roundToInt()
-                                        )
-                                    }
-                                    .size(dpSize)
-                                    .border(
-                                        2.dp,
-                                        IntraColors.BrandCyan.copy(alpha = focusAlpha.value),
-                                        CircleShape
-                                    )
-                            )
-                        }
-
-                        // Live detected paper contour overlay directly over CameraX preview
-                        val detectedQuad = quality.detectedQuadNormalized
-                        if (detectedQuad != null && detectedQuad.size == 4) {
-                            val liveContourColor = if (quality.sheetReadyToAutoCapture) {
-                                IntraColors.EmeraldSuccess
-                            } else {
-                                IntraColors.BrandCyan
-                            }
-                            Canvas(modifier = Modifier.fillMaxSize()) {
-                                val pts = detectedQuad.map { p ->
-                                    Offset(p.x * size.width, p.y * size.height)
-                                }
-                                val path = Path().apply {
-                                    moveTo(pts[0].x, pts[0].y)
-                                    lineTo(pts[1].x, pts[1].y)
-                                    lineTo(pts[2].x, pts[2].y)
-                                    lineTo(pts[3].x, pts[3].y)
-                                    close()
-                                }
-                                drawPath(path = path, color = liveContourColor.copy(alpha = 0.14f))
-                                drawPath(
-                                    path = path,
-                                    color = liveContourColor,
-                                    style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
-                                )
-                                pts.forEach { pt ->
-                                    drawCircle(color = liveContourColor, radius = 6.dp.toPx(), center = pt)
-                                }
-                            }
-                        }
-
-                        // Portrait A4 document guide frame + Top HUD + Bottom shutter in non-overlapping Column
-                        val frameColor by animateColorAsState(
-                            targetValue = when {
-                                quality.isOptimalToShoot -> IntraColors.EmeraldSuccess
-                                quality.light == LightStatus.TOO_DARK ||
-                                    quality.stability == StabilityStatus.MOVING -> IntraColors.ErrorRed
-                                else -> IntraColors.WarningAmber
-                            },
-                            label = "guide_frame_color"
-                        )
-                        Column(modifier = Modifier.fillMaxSize()) {
-                            // Top HUD: Close, title & Torch on first row, 3 live condition pills wrapped cleanly below
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .intraHeaderInsetsPadding()
-                                    .padding(horizontal = 14.dp, vertical = 8.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                                .fillMaxWidth()
+                                .background(Color.Black.copy(alpha = 0.72f))
+                                .intraHeaderInsetsPadding()
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                IconButton(
+                                    onClick = onDismiss,
+                                    colors = IconButtonDefaults.iconButtonColors(
+                                        containerColor = Color.Black.copy(alpha = 0.55f),
+                                        contentColor = Color.White
+                                    )
                                 ) {
+                                    Icon(Icons.Rounded.Close, contentDescription = "Закрыть")
+                                }
+
+                                Surface(
+                                    shape = RoundedCornerShape(50),
+                                    color = Color.Black.copy(alpha = 0.55f),
+                                    modifier = Modifier.weight(1f, fill = false)
+                                ) {
+                                    Text(
+                                        text = "${documentType.shortTitle} - заявка #$taskId",
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                    )
+                                }
+
+                                if (hasFlash) {
                                     IconButton(
-                                        onClick = onDismiss,
+                                        onClick = {
+                                            val next = !torchEnabled
+                                            torchEnabled = next
+                                            cameraRef?.cameraControl?.enableTorch(next)
+                                        },
                                         colors = IconButtonDefaults.iconButtonColors(
-                                            containerColor = Color.Black.copy(alpha = 0.55f),
+                                            containerColor = if (torchEnabled) {
+                                                IntraColors.WarningAmber
+                                            } else {
+                                                Color.Black.copy(alpha = 0.55f)
+                                            },
                                             contentColor = Color.White
                                         )
                                     ) {
-                                        Icon(Icons.Rounded.Close, contentDescription = "Закрыть")
-                                    }
-
-                                    Surface(
-                                        shape = RoundedCornerShape(50),
-                                        color = Color.Black.copy(alpha = 0.55f),
-                                        modifier = Modifier.weight(1f, fill = false)
-                                    ) {
-                                        Text(
-                                            text = "${documentType.shortTitle} - заявка #$taskId",
-                                            color = Color.White,
-                                            style = MaterialTheme.typography.labelLarge,
-                                            textAlign = TextAlign.Center,
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                        Icon(
+                                            imageVector = if (torchEnabled) Icons.Rounded.FlashOn else Icons.Rounded.FlashOff,
+                                            contentDescription = "Фонарик"
                                         )
                                     }
+                                } else {
+                                    Spacer(modifier = Modifier.size(48.dp))
+                                }
+                            }
 
-                                    if (hasFlash) {
-                                        IconButton(
-                                            onClick = {
-                                                val next = !torchEnabled
-                                                torchEnabled = next
-                                                cameraRef?.cameraControl?.enableTorch(next)
-                                            },
-                                            colors = IconButtonDefaults.iconButtonColors(
-                                                containerColor = if (torchEnabled) {
-                                                    IntraColors.WarningAmber
-                                                } else {
-                                                    Color.Black.copy(alpha = 0.55f)
-                                                },
-                                                contentColor = Color.White
-                                            )
-                                        ) {
-                                            Icon(
-                                                imageVector = if (torchEnabled) Icons.Rounded.FlashOn else Icons.Rounded.FlashOff,
-                                                contentDescription = "Фонарик"
-                                            )
-                                        }
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                ConditionPill(
+                                    icon = Icons.Rounded.WbSunny,
+                                    label = "Свет",
+                                    state = when (quality.light) {
+                                        LightStatus.OK -> PillState.GOOD
+                                        LightStatus.LOW_LIGHT, LightStatus.GLARE -> PillState.WARN
+                                        LightStatus.TOO_DARK -> PillState.BAD
+                                    }
+                                )
+                                ConditionPill(
+                                    icon = Icons.Rounded.CenterFocusStrong,
+                                    label = "Чёткость",
+                                    state = if (quality.sharpness == SharpnessStatus.OK) {
+                                        PillState.GOOD
                                     } else {
-                                        Spacer(modifier = Modifier.size(48.dp))
+                                        PillState.WARN
+                                    }
+                                )
+                                ConditionPill(
+                                    icon = Icons.Rounded.Vibration,
+                                    label = "Стабильность",
+                                    state = if (quality.stability == StabilityStatus.STEADY) {
+                                        PillState.GOOD
+                                    } else {
+                                        PillState.BAD
+                                    }
+                                )
+                            }
+
+                            // Primary live hint pill
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp),
+                                color = Color.Black.copy(alpha = 0.68f),
+                                border = BorderStroke(1.dp, frameColor.copy(alpha = 0.7f))
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = quality.primaryHint,
+                                        color = if (quality.isOptimalToShoot) Color(0xFF8FF5BE) else Color.White,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "Разместите лист A4 целиком внутри рамки, без бликов (нажмите для фокуса)",
+                                        color = Color.White.copy(alpha = 0.78f),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+                        }
+
+                        // Dedicated Center Viewfinder Box: FIT_CENTER camera preview + 1:1 contour overlay + A4 guide
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .background(Color.Black)
+                        ) {
+                            AndroidView(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .pointerInput(cameraRef, previewViewRef) {
+                                        detectTapGestures { offset ->
+                                            val cam = cameraRef ?: return@detectTapGestures
+                                            val pv = previewViewRef ?: return@detectTapGestures
+                                            focusTapOffset = offset
+                                            val pt = pv.meteringPointFactory.createPoint(offset.x, offset.y)
+                                            val action = FocusMeteringAction.Builder(
+                                                pt,
+                                                FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE
+                                            )
+                                                .setAutoCancelDuration(3, TimeUnit.SECONDS)
+                                                .build()
+                                            cam.cameraControl.startFocusAndMetering(action)
+                                        }
+                                    }
+                                    .pointerInput(cameraRef) {
+                                        detectTransformGestures { _, _, zoom, _ ->
+                                            val cam = cameraRef ?: return@detectTransformGestures
+                                            val zs = cam.cameraInfo.zoomState.value ?: return@detectTransformGestures
+                                            val next = (zoomRatio * zoom).coerceIn(zs.minZoomRatio, zs.maxZoomRatio)
+                                            zoomRatio = next
+                                            cam.cameraControl.setZoomRatio(next)
+                                        }
+                                    },
+                                factory = { ctx ->
+                                    PreviewView(ctx).apply {
+                                        layoutParams = ViewGroup.LayoutParams(
+                                            ViewGroup.LayoutParams.MATCH_PARENT,
+                                            ViewGroup.LayoutParams.MATCH_PARENT
+                                        )
+                                        scaleType = PreviewView.ScaleType.FIT_CENTER
+                                        val previewView = this
+                                        previewViewRef = previewView
+
+                                        val providerFuture = ProcessCameraProvider.getInstance(ctx)
+                                        providerFuture.addListener({
+                                            runCatching {
+                                                val provider = providerFuture.get()
+                                                val preview = Preview.Builder().build().also {
+                                                    it.surfaceProvider = previewView.surfaceProvider
+                                                }
+                                                val imageCapture = ImageCapture.Builder()
+                                                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                                                    .build()
+                                                val imageAnalysis = ImageAnalysis.Builder()
+                                                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                                    .build()
+                                                    .apply {
+                                                        setAnalyzer(
+                                                            analysisExecutor,
+                                                            FrameQualityAnalyzer { m -> quality = m }
+                                                        )
+                                                    }
+
+                                                provider.unbindAll()
+                                                val cam = provider.bindToLifecycle(
+                                                    lifecycleOwner,
+                                                    CameraSelector.DEFAULT_BACK_CAMERA,
+                                                    preview,
+                                                    imageCapture,
+                                                    imageAnalysis
+                                                )
+                                                cameraRef = cam
+                                                imageCaptureRef = imageCapture
+                                                hasFlash = cam.cameraInfo.hasFlashUnit()
+                                            }.onFailure {
+                                                onCameraFallbackRequested()
+                                            }
+                                        }, ContextCompat.getMainExecutor(ctx))
                                     }
                                 }
+                            )
 
-                                FlowRow(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    ConditionPill(
-                                        icon = Icons.Rounded.WbSunny,
-                                        label = "Свет",
-                                        state = when (quality.light) {
-                                            LightStatus.OK -> PillState.GOOD
-                                            LightStatus.GLARE -> PillState.WARN
-                                            LightStatus.TOO_DARK -> PillState.BAD
+                            // Tap-to-focus ring indicator
+                            focusTapOffset?.let { tap ->
+                                val dpSize = 68.dp
+                                val halfPx = with(LocalDensity.current) { (dpSize / 2).toPx() }
+                                Box(
+                                    modifier = Modifier
+                                        .offset {
+                                            IntOffset(
+                                                (tap.x - halfPx).roundToInt(),
+                                                (tap.y - halfPx).roundToInt()
+                                            )
                                         }
-                                    )
-                                    ConditionPill(
-                                        icon = Icons.Rounded.CenterFocusStrong,
-                                        label = "Чёткость",
-                                        state = if (quality.sharpness == SharpnessStatus.OK) {
-                                            PillState.GOOD
-                                        } else {
-                                            PillState.WARN
-                                        }
-                                    )
-                                    ConditionPill(
-                                        icon = Icons.Rounded.Vibration,
-                                        label = "Стабильно",
-                                        state = if (quality.stability == StabilityStatus.STEADY) {
-                                            PillState.GOOD
-                                        } else {
-                                            PillState.BAD
-                                        }
-                                    )
+                                        .size(dpSize)
+                                        .border(
+                                            2.dp,
+                                            IntraColors.BrandCyan.copy(alpha = focusAlpha.value),
+                                            CircleShape
+                                        )
+                                )
+                            }
+
+                            // Live detected paper contour overlay mapped 1:1 onto FIT_CENTER preview rect
+                            val detectedQuad = quality.detectedQuadNormalized
+                            if (detectedQuad != null && detectedQuad.size == 4) {
+                                val liveContourColor = when {
+                                    quality.sheetAligned && quality.isOptimalToShoot -> IntraColors.EmeraldSuccess
+                                    quality.sheetAligned -> IntraColors.BrandCyan
+                                    else -> IntraColors.WarningAmber
                                 }
-
-                                // Primary live hint pill
-                                Surface(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(14.dp),
-                                    color = Color.Black.copy(alpha = 0.68f),
-                                    border = BorderStroke(1.dp, frameColor.copy(alpha = 0.7f))
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally
-                                    ) {
-                                        Text(
-                                            text = quality.primaryHint,
-                                            color = if (quality.isOptimalToShoot) Color(0xFF8FF5BE) else Color.White,
-                                            style = MaterialTheme.typography.labelLarge,
-                                            textAlign = TextAlign.Center
+                                Canvas(modifier = Modifier.fillMaxSize()) {
+                                    val pts = detectedQuad.map { p ->
+                                        val mapped = DocumentGeometry.mapNormalizedPointToFitCenter(
+                                            point = p,
+                                            frameW = quality.analyzedFrameWidth,
+                                            frameH = quality.analyzedFrameHeight,
+                                            viewW = size.width,
+                                            viewH = size.height
                                         )
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text(
-                                            text = "Разместите лист A4 целиком внутри рамки, без бликов (нажмите для фокуса)",
-                                            color = Color.White.copy(alpha = 0.78f),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            textAlign = TextAlign.Center
-                                        )
+                                        Offset(mapped.x, mapped.y)
+                                    }
+                                    val path = Path().apply {
+                                        moveTo(pts[0].x, pts[0].y)
+                                        lineTo(pts[1].x, pts[1].y)
+                                        lineTo(pts[2].x, pts[2].y)
+                                        lineTo(pts[3].x, pts[3].y)
+                                        close()
+                                    }
+                                    drawPath(path = path, color = liveContourColor.copy(alpha = 0.14f))
+                                    drawPath(
+                                        path = path,
+                                        color = liveContourColor,
+                                        style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
+                                    )
+                                    pts.forEach { pt ->
+                                        drawCircle(color = liveContourColor, radius = 6.dp.toPx(), center = pt)
                                     }
                                 }
                             }
 
-                            // Center A4 sheet viewfinder frame (210:297 portrait / 297:210 landscape)
+                            // Center A4 sheet guide frame inside exact fitted preview bounds (zero cropping)
                             BoxWithConstraints(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 18.dp, vertical = 8.dp),
+                                modifier = Modifier.fillMaxSize(),
                                 contentAlignment = Alignment.Center
                             ) {
-                                val availW = maxWidth
-                                val availH = maxHeight
-                                val a4AspectRatio = if (availW > availH) 297f / 210f else 210f / 297f
-                                val (frameW, frameH) = if ((availW / availH) > a4AspectRatio) {
-                                    (availH * a4AspectRatio) to availH
+                                val refW = if (quality.analyzedFrameWidth > 0) quality.analyzedFrameWidth.toFloat() else 3f
+                                val refH = if (quality.analyzedFrameHeight > 0) quality.analyzedFrameHeight.toFloat() else 4f
+                                val fitScale = min(maxWidth.value / refW, maxHeight.value / refH)
+                                val fittedPreviewW = (refW * fitScale).dp
+                                val fittedPreviewH = (refH * fitScale).dp
+                                val innerW = fittedPreviewW * 0.88f
+                                val innerH = fittedPreviewH * 0.88f
+                                val a4AspectRatio = if (fittedPreviewW > fittedPreviewH) 297f / 210f else 210f / 297f
+                                val (frameW, frameH) = if ((innerW / innerH) > a4AspectRatio) {
+                                    (innerH * a4AspectRatio) to innerH
                                 } else {
-                                    availW to (availW / a4AspectRatio)
+                                    innerW to (innerW / a4AspectRatio)
                                 }
 
                                 Box(modifier = Modifier.size(frameW, frameH)) {
@@ -570,92 +569,43 @@ fun SmartCameraScreen(
                                     }
                                 }
                             }
+                        }
 
-                            // Bottom shutter controls
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(Color.Black.copy(alpha = 0.58f))
-                                    .navigationBarsPadding()
-                                    .padding(horizontal = 20.dp, vertical = 14.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                        // Bottom manual shutter controls (manual photo capture only)
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color.Black.copy(alpha = 0.72f))
+                                .navigationBarsPadding()
+                                .padding(horizontal = 20.dp, vertical = 14.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Box(
+                                modifier = Modifier.size(76.dp),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Surface(
-                                    shape = RoundedCornerShape(50),
-                                    color = if (autoCaptureEnabled) {
-                                        IntraColors.EmeraldSuccess.copy(alpha = 0.25f)
-                                    } else {
-                                        Color.White.copy(alpha = 0.14f)
-                                    },
-                                    border = BorderStroke(
-                                        1.dp,
-                                        if (autoCaptureEnabled) IntraColors.EmeraldSuccess else Color.White.copy(alpha = 0.35f)
-                                    ),
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(50))
-                                        .clickable { autoCaptureEnabled = !autoCaptureEnabled }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.AutoFixHigh,
-                                            contentDescription = null,
-                                            tint = if (autoCaptureEnabled) Color(0xFF8FF5BE) else Color.White,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
-                                            text = if (autoCaptureEnabled) {
-                                                "Автосъёмка листа A4: ВКЛ"
-                                            } else {
-                                                "Автосъёмка листа A4: ВЫКЛ"
-                                            },
-                                            color = Color.White,
-                                            style = MaterialTheme.typography.labelMedium
-                                        )
-                                    }
-                                }
-
                                 Box(
-                                    modifier = Modifier.size(80.dp),
+                                    modifier = Modifier
+                                        .size(72.dp)
+                                        .clip(CircleShape)
+                                        .border(
+                                            3.5.dp,
+                                            if (quality.isOptimalToShoot) IntraColors.EmeraldSuccess else Color.White,
+                                            CircleShape
+                                        )
+                                        .padding(6.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isCapturing) Color.Gray else Color.White)
+                                        .clickable(enabled = !isCapturing) { triggerCapture() },
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    if (autoCaptureProgress.value > 0.01f) {
-                                        Canvas(modifier = Modifier.fillMaxSize()) {
-                                            drawArc(
-                                                color = IntraColors.EmeraldSuccess,
-                                                startAngle = -90f,
-                                                sweepAngle = 360f * autoCaptureProgress.value,
-                                                useCenter = false,
-                                                style = Stroke(width = 4.5.dp.toPx(), cap = StrokeCap.Round)
-                                            )
-                                        }
-                                    }
-                                    Box(
-                                        modifier = Modifier
-                                            .size(72.dp)
-                                            .clip(CircleShape)
-                                            .border(
-                                                3.5.dp,
-                                                if (quality.isOptimalToShoot) IntraColors.EmeraldSuccess else Color.White,
-                                                CircleShape
-                                            )
-                                            .padding(6.dp)
-                                            .clip(CircleShape)
-                                            .background(if (isCapturing) Color.Gray else Color.White)
-                                            .clickable(enabled = !isCapturing) { triggerCapture() },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (isCapturing) {
-                                            CircularProgressIndicator(
-                                                color = IntraColors.BrandPrimary,
-                                                strokeWidth = 3.dp,
-                                                modifier = Modifier.size(28.dp)
-                                            )
-                                        }
+                                    if (isCapturing) {
+                                        CircularProgressIndicator(
+                                            color = IntraColors.BrandPrimary,
+                                            strokeWidth = 3.dp,
+                                            modifier = Modifier.size(28.dp)
+                                        )
                                     }
                                 }
                             }
