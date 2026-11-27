@@ -1190,6 +1190,7 @@ class IntraRepository(
                                     suburb = parsed.suburb,
                                     placeName = parsed.placeName,
                                     geocoderProvider = parsed.providerName,
+                                    entrance = parsed.entrance,
                                     addressResolved = true
                                 )
                             } else {
@@ -1530,8 +1531,8 @@ class IntraRepository(
         const val REPAIRED_STATUS_KEYWORD = "починил"
 
         val ALLOWED_LIST_STATUS_NAMES = setOf(
-            "принят сп",
-            "назначен си",
+            "доведена до сп",
+            "направлен си",
             "эскалация исполнителю"
         )
 

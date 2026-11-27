@@ -1378,12 +1378,14 @@ class IntraLogicTest {
 
     @Test
     fun ticketListStatusWhitelistAllowsOnlyThreeTargetStatuses() {
-        assertTrue(IntraRepository.isAllowedListStatusName("Принят СП"))
-        assertTrue(IntraRepository.isAllowedListStatusName("  принят   сп "))
-        assertTrue(IntraRepository.isAllowedListStatusName("Назначен СИ"))
+        assertTrue(IntraRepository.isAllowedListStatusName("Доведена до СП"))
+        assertTrue(IntraRepository.isAllowedListStatusName("  доведена   до   сп "))
+        assertTrue(IntraRepository.isAllowedListStatusName("Направлен СИ"))
         assertTrue(IntraRepository.isAllowedListStatusName("Эскалация Исполнителю"))
         assertTrue(IntraRepository.isAllowedListStatusName("эскалация исполнителю"))
 
+        assertFalse(IntraRepository.isAllowedListStatusName("Принят СП"))
+        assertFalse(IntraRepository.isAllowedListStatusName("Назначен СИ"))
         assertFalse(IntraRepository.isAllowedListStatusName("Принята в работу"))
         assertFalse(IntraRepository.isAllowedListStatusName("Открыта"))
         assertFalse(IntraRepository.isAllowedListStatusName("Ожидание Согаз"))
@@ -1393,12 +1395,117 @@ class IntraLogicTest {
 
         val statuses = listOf(
             TaskStatusDto(id = 10, name = "Открыта", isFinal = false),
-            TaskStatusDto(id = 11, name = "Принят СП", isFinal = false),
-            TaskStatusDto(id = 12, name = "Назначен СИ", isFinal = false),
+            TaskStatusDto(id = 11, name = "Доведена до СП", isFinal = false),
+            TaskStatusDto(id = 12, name = "Направлен СИ", isFinal = false),
             TaskStatusDto(id = 13, name = "Эскалация Исполнителю", isFinal = false),
             TaskStatusDto(id = 26, name = "Починил", isFinal = false),
             TaskStatusDto(id = 30, name = "Закрыта", isFinal = true)
         )
         assertEquals(setOf(11, 12, 13), IntraRepository.findAllowedListStatusIds(statuses))
+    }
+
+    @Test
+    fun equipmentScanParserRejectsBareVendorRmnAndVoltageAndNormalizesOToZero() {
+        val entries = listOf(
+            com.lantaservice.intra.util.PrinterCatalogEntry("HP", "LaserJet Pro M1132", "МФУ"),
+            com.lantaservice.intra.util.PrinterCatalogEntry("HP", "LaserJet Pro M404dn", "Принтер")
+        )
+        // Screenshot 2 exact plate: bare vendor HEWLETT PACKARD + RMN BOISB0901-03 + 220-240V + CNG9D4VOG3
+        val plateOnly = EquipmentScanParser.parse(
+            barcodeValues = emptyList(),
+            ocrLines = listOf("HEWLETT PACKARD", "BOISB0901-03", "220-240V", "CNG9D4VOG3"),
+            ticketText = "Ремонт HP LaserJet Pro M1132 S/N CNG9D4V0G3",
+            catalogEntries = entries
+        )
+        assertNotNull(plateOnly)
+        assertEquals("", plateOnly!!.modelName)
+        assertEquals("HP", plateOnly.detectedVendor)
+        assertEquals("CNG9D4V0G3", plateOnly.serialNumber)
+        assertEquals(listOf("CNG9D4V0G3"), plateOnly.candidateSerials)
+        assertEquals(true, plateOnly.matchesTicket)
+
+        // Multi-line HP sticker where concrete model is on a separate line below HEWLETT PACKARD
+        val withModel = EquipmentScanParser.parse(
+            barcodeValues = emptyList(),
+            ocrLines = listOf("HEWLETT PACKARD", "LaserJet Pro M1132", "S/N: CNG9D4VOG3"),
+            ticketText = "",
+            catalogEntries = entries
+        )
+        assertNotNull(withModel)
+        assertEquals("HP LaserJet Pro M1132", withModel!!.modelName)
+        assertEquals("CNG9D4V0G3", withModel.serialNumber)
+    }
+
+    @Test
+    fun reverseGeocoderParserExtractsOverpassBuildingAndEntranceAndMultiFeaturePhoton() {
+        val roadNominatimRaw = """
+            {
+              "address": {
+                "postcode": "141421",
+                "country": "Россия",
+                "state": "Московская область",
+                "state_district": "городской округ Химки",
+                "suburb": "Сходня",
+                "city": "Химки",
+                "road": "2-й Дачный переулок"
+              }
+            }
+        """.trimIndent()
+        val nominatimRoad = ReverseGeocoderParser.parseNominatimJson(roadNominatimRaw, json)
+        assertNotNull(nominatimRoad)
+        assertEquals("", nominatimRoad!!.houseNumber)
+
+        val overpassRaw = """
+            {
+              "elements": [
+                {
+                  "type": "way",
+                  "center": { "lat": 55.946400, "lon": 37.289780 },
+                  "tags": {
+                    "addr:housenumber": "4",
+                    "addr:street": "2-й Дачный переулок"
+                  }
+                },
+                {
+                  "type": "node",
+                  "lat": 55.946370,
+                  "lon": 37.289740,
+                  "tags": {
+                    "entrance": "staircase",
+                    "ref": "2",
+                    "addr:flats": "37-72"
+                  }
+                }
+              ]
+            }
+        """.trimIndent()
+        val overpassAddr = ReverseGeocoderParser.parseOverpassBuildingAndEntrance(
+            overpassRaw,
+            targetLat = 55.946363,
+            targetLon = 37.289728,
+            json = json
+        )
+        assertNotNull(overpassAddr)
+        assertEquals("4", overpassAddr!!.houseNumber)
+        assertEquals("2 (кв. 37-72)", overpassAddr.entrance)
+
+        val merged = ReverseGeocoderParser.mergeAddresses(nominatimRoad, overpassAddr)
+        assertNotNull(merged)
+        assertEquals("4", merged!!.houseNumber)
+        assertEquals("2 (кв. 37-72)", merged.entrance)
+        assertTrue(merged.fullAddress.contains("д. 4"))
+        assertTrue(merged.fullAddress.contains("подъезд 2 (кв. 37-72)"))
+
+        val multiPhotonRaw = """
+            {
+              "features": [
+                { "properties": { "street": "2-й Дачный переулок", "city": "Химки" } },
+                { "properties": { "street": "2-й Дачный переулок", "housenumber": "4", "city": "Химки", "postcode": "141421" } }
+              ]
+            }
+        """.trimIndent()
+        val photonAddr = ReverseGeocoderParser.parsePhotonJson(multiPhotonRaw, json)
+        assertNotNull(photonAddr)
+        assertEquals("4", photonAddr!!.houseNumber)
     }
 }

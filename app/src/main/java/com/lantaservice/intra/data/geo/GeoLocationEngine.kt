@@ -114,7 +114,7 @@ class GeoLocationEngine(
         )
         lastSnapshot = prelimSnapshot
         onPreliminary(prelimSnapshot)
-        if (cachedAddr != null && cachedAddr.fullAddress.isNotBlank()) {
+        if (cachedAddr != null && cachedAddr.fullAddress.isNotBlank() && cachedAddr.houseNumber.isNotBlank()) {
             saveSnapshotToDisk(prelimSnapshot)
             return@withContext prelimSnapshot
         }
@@ -143,7 +143,8 @@ class GeoLocationEngine(
                 fullAddress = near.fullAddress,
                 suburb = near.suburb,
                 placeName = near.placeName,
-                providerName = near.geocoderProvider
+                providerName = near.geocoderProvider,
+                entrance = near.entrance
             )
         }
 
@@ -189,7 +190,8 @@ class GeoLocationEngine(
             altitudeMeters = selected.candidate.altitudeMeters,
             providerCount = providerCount,
             geocoderProvider = addr?.providerName.orEmpty(),
-            resolveDurationMs = resolveDurationMs
+            resolveDurationMs = resolveDurationMs,
+            entrance = addr?.entrance.orEmpty()
         )
     }
 

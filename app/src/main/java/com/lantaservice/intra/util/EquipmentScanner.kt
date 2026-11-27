@@ -14,7 +14,8 @@ data class EquipmentScanResult(
     val matchesTicket: Boolean? = null,
     val matchNote: String = "",
     val candidateSerials: List<String> = emptyList(),
-    val skippedCodes: List<String> = emptyList()
+    val skippedCodes: List<String> = emptyList(),
+    val detectedVendor: String = ""
 ) {
     fun formatSummaryForComment(): String {
         val parts = buildList {
@@ -50,15 +51,49 @@ object EquipmentScanParser {
     )
     private val standaloneSerialRegex = Regex("^(?=.*[A-Z])(?=.*\\d)[A-Z0-9-]{8,24}$|^\\d{10,18}$")
 
-    // OEM label revision / FRU part codes (e.g. 36S2890-004, 41X0252-001) & non-serial sticker metadata
+    // OEM label revision / FRU / HP Regulatory Model Numbers (RMN) & electrical ratings
     private val oemLabelRevisionRegex = Regex("^\\d{2}[A-Z]\\d{4}-\\d{3}$|^[A-Z0-9]{4,12}-0\\d{2}$")
+    private val regulatoryModelNumberRegex = Regex(
+        "^(?:BOISB|FCLSD|SHNGC|SEOLA|VCVRA|SNPRC|SDGOB|SNPRB|Q75|CE|CF|CC)[-A-Z0-9]*-\\d{2,3}$|^[A-Z]{4,6}-?\\d{4}-\\d{2,3}$"
+    )
+    private val electricalRatingRegex = Regex(
+        "(?i)^\\d{2,3}(?:[-/~]\\d{2,3})?\\s*[VvAaWw]$|^\\d+(?:[.,/]\\d+)?\\s*(?:HZ|MA|KW|VA|VAC|VDC)$|^\\d{2,3}[-/~]\\d{2,3}V.*$"
+    )
     private val macAddressRegex = Regex("^([0-9A-F]{2}[:-]){5}[0-9A-F]{2}$")
     private val ipv4Regex = Regex("^\\d{1,3}(\\.\\d{1,3}){3}$")
     private val imdaApprovalRegex = Regex("^DA\\d{5,8}$")
     private val regulatoryLineRegex = Regex(
-        "(?iu)\\b(?:imda|standards?|complies|fcc\\s*id|cmiit|anatel|rohs|ic\\s*:|eac|part\\s*no|p/?n|fru|rev)\\b"
+        "(?iu)\\b(?:imda|standards?|complies|fcc\\s*id|cmiit|anatel|rohs|ic\\s*:|eac|rmn|regulatory\\s*model|part\\s*no|p/?n|fru|rev)\\b"
     )
-    private val partNumberPrefixRegex = Regex("(?iu)^(?:p/?n|pn|fru|part|rev)[:#=-].*$")
+    private val partNumberPrefixRegex = Regex("(?iu)^(?:p/?n|pn|fru|part|rev|rmn)[:#=-].*$")
+
+    /**
+     * Printer/MFP serial numbers never contain letter O (always digit zero 0).
+     */
+    fun normalizePrinterSerial(raw: String): String {
+        return raw.trim()
+            .replace(" ", "")
+            .uppercase(Locale.ROOT)
+            .replace('O', '0')
+            .replace('О', '0')
+    }
+
+    fun normalizeVendorName(raw: String): String {
+        return when (val up = raw.trim().uppercase(Locale.ROOT).replace("-", " ").replace(Regex("\\s+"), " ")) {
+            "HEWLETT PACKARD", "HP" -> "HP"
+            "KATYUSHA", "КАТЮША" -> "Катюша"
+            "KONICA MINOLTA" -> "Konica Minolta"
+            "OKI" -> "OKI"
+            "TSC" -> "TSC"
+            "RISO" -> "RISO"
+            "F+ IMAGING" -> "F+ imaging"
+            "TRIUMPH ADLER" -> "Triumph-Adler"
+            "UTAX" -> "UTAX"
+            "АТОЛ" -> "АТОЛ"
+            else -> up.lowercase(Locale.ROOT).split(" ")
+                .joinToString(" ") { w -> w.replaceFirstChar { it.uppercaseChar() } }
+        }
+    }
 
     fun isNonSerialLabelCode(
         code: String,
@@ -69,7 +104,8 @@ object EquipmentScanParser {
         if (up.isEmpty()) return true
         if (up.startsWith("HTTP://") || up.startsWith("HTTPS://") || up.startsWith("WWW.")) return true
         if (macAddressRegex.matches(up) || ipv4Regex.matches(up)) return true
-        if (oemLabelRevisionRegex.matches(up)) return true
+        if (oemLabelRevisionRegex.matches(up) || regulatoryModelNumberRegex.matches(up)) return true
+        if (electricalRatingRegex.matches(up)) return true
         if (partNumberPrefixRegex.matches(up)) return true
 
         val contextText = "$previousLine $currentLine"
@@ -112,24 +148,25 @@ object EquipmentScanParser {
 
         var inventoryNumber = ""
         var modelName = ""
+        var detectedVendor = ""
         val explicitSerials = mutableListOf<String>()
         val barcodeSerials = mutableListOf<String>()
         val ocrFallbackSerials = mutableListOf<String>()
         val skippedCodes = mutableListOf<String>()
         val acceptedSources = mutableListOf<String>()
 
-        // 1. Check barcodes first (ignoring OEM label part numbers like 36S2890-004)
+        // 1. Check barcodes first (ignoring OEM label part numbers like 36S2890-004, RMN, electrical ratings)
         for (raw in cleanBarcodes) {
             val upper = raw.uppercase(Locale.ROOT).trim()
             var barcodeMatchedSerial = false
             serialLabelRegex.find(upper)?.let { m ->
-                val sn = m.groupValues[1].trim()
-                if (!isNonSerialLabelCode(sn, raw)) {
-                    explicitSerials += sn
+                val rawSn = m.groupValues[1].trim()
+                if (!isNonSerialLabelCode(rawSn, raw)) {
+                    explicitSerials += normalizePrinterSerial(rawSn)
                     barcodeMatchedSerial = true
                     acceptedSources += raw.take(24)
                 } else {
-                    skippedCodes += sn
+                    skippedCodes += rawSn
                 }
             }
             invLabelRegex.find(upper)?.let { m ->
@@ -140,35 +177,36 @@ object EquipmentScanParser {
                 if (isNonSerialLabelCode(compact, raw)) {
                     skippedCodes += raw
                 } else if (standaloneSerialRegex.matches(compact)) {
-                    barcodeSerials += compact
+                    barcodeSerials += normalizePrinterSerial(compact)
                     acceptedSources += raw.take(24)
                 }
             }
-            if (modelName.isEmpty()) {
-                extractModel(raw, catalogEntries)?.let { modelName = it }
-            }
+            val (v, mod) = extractVendorAndModel(raw, catalogEntries)
+            if (detectedVendor.isEmpty() && !v.isNullOrBlank()) detectedVendor = v
+            if (modelName.isEmpty() && !mod.isNullOrBlank()) modelName = mod
         }
 
-        // 2. Enrich from label OCR lines
+        // 2. Enrich from label OCR lines (never stop at a bare vendor line; keep scanning for actual model)
         for (idx in cleanOcr.indices) {
             val line = cleanOcr[idx]
             val prevLine = if (idx > 0) cleanOcr[idx - 1] else ""
-            if (modelName.isEmpty()) {
-                extractModel(line, catalogEntries)?.let { modelName = it }
-            }
+            val (v, mod) = extractVendorAndModel(line, catalogEntries)
+            if (detectedVendor.isEmpty() && !v.isNullOrBlank()) detectedVendor = v
+            if (modelName.isEmpty() && !mod.isNullOrBlank()) modelName = mod
+
             serialLabelRegex.find(line)?.let { m ->
-                val sn = m.groupValues[1].uppercase(Locale.ROOT).trim()
-                if (!isNonSerialLabelCode(sn, line, prevLine)) {
-                    explicitSerials += sn
+                val rawSn = m.groupValues[1].uppercase(Locale.ROOT).trim()
+                if (!isNonSerialLabelCode(rawSn, line, prevLine)) {
+                    explicitSerials += normalizePrinterSerial(rawSn)
                 } else {
-                    skippedCodes += sn
+                    skippedCodes += rawSn
                 }
             }
             if (line.contains("s/n", ignoreCase = true) && idx + 1 < cleanOcr.size) {
                 val nextLine = cleanOcr[idx + 1].trim()
                 val nextTok = nextLine.uppercase(Locale.ROOT).replace(" ", "")
                 if (standaloneSerialRegex.matches(nextTok) && !isNonSerialLabelCode(nextTok, nextLine, line)) {
-                    explicitSerials += nextTok
+                    explicitSerials += normalizePrinterSerial(nextTok)
                 }
             }
             if (inventoryNumber.isEmpty()) {
@@ -180,10 +218,13 @@ object EquipmentScanParser {
 
         if (modelName.isEmpty() && catalogEntries.isNotEmpty()) {
             val combinedText = (cleanBarcodes + cleanOcr).joinToString("\n")
-            modelName = PrinterModelCatalogEngine.matchModelFromText(catalogEntries, combinedText).orEmpty()
+            val matchedCatalog = PrinterModelCatalogEngine.matchModelFromText(catalogEntries, combinedText)
+            if (!matchedCatalog.isNullOrBlank()) {
+                modelName = matchedCatalog
+            }
         }
 
-        // 3. Fallback OCR standalone alphanumeric tokens (filtering out regulatory/label part numbers & model tokens)
+        // 3. Fallback OCR standalone alphanumeric tokens (filtering out regulatory/RMN/voltage & model tokens)
         val modelUpper = modelName.uppercase(Locale.ROOT)
         val invUpper = inventoryNumber.uppercase(Locale.ROOT)
         for (idx in cleanOcr.indices) {
@@ -199,18 +240,18 @@ object EquipmentScanParser {
                 if (isNonSerialLabelCode(up, line, prevLine)) {
                     if (standaloneSerialRegex.matches(up)) skippedCodes += up
                 } else if (standaloneSerialRegex.matches(up)) {
-                    ocrFallbackSerials += up
+                    ocrFallbackSerials += normalizePrinterSerial(up)
                 }
             }
         }
 
         val allCandidates = (explicitSerials + barcodeSerials + ocrFallbackSerials)
-            .map { it.trim().uppercase(Locale.ROOT) }
+            .map { normalizePrinterSerial(it) }
             .filter { it.isNotEmpty() }
             .distinct()
         val serialNumber = allCandidates.firstOrNull().orEmpty()
 
-        if (serialNumber.isEmpty() && inventoryNumber.isEmpty() && modelName.isEmpty()) {
+        if (serialNumber.isEmpty() && inventoryNumber.isEmpty() && modelName.isEmpty() && detectedVendor.isEmpty()) {
             return null
         }
 
@@ -237,7 +278,8 @@ object EquipmentScanParser {
             matchesTicket = matches,
             matchNote = note,
             candidateSerials = allCandidates,
-            skippedCodes = skippedCodes.distinct()
+            skippedCodes = skippedCodes.distinct(),
+            detectedVendor = detectedVendor
         )
     }
 
@@ -254,15 +296,17 @@ object EquipmentScanParser {
         var serialNumber = ""
         var inventoryNumber = ""
         var modelName = ""
+        var detectedVendor = ""
         for (line in lines) {
-            if (modelName.isEmpty()) {
-                extractModel(line, catalogEntries)?.let { modelName = it }
-            }
+            val (v, mod) = extractVendorAndModel(line, catalogEntries)
+            if (detectedVendor.isEmpty() && !v.isNullOrBlank()) detectedVendor = v
+            if (modelName.isEmpty() && !mod.isNullOrBlank()) modelName = mod
+
             if (serialNumber.isEmpty()) {
                 serialLabelRegex.find(line)?.let { m ->
                     val sn = m.groupValues[1].uppercase(Locale.ROOT).trim()
                     if (!isNonSerialLabelCode(sn, line)) {
-                        serialNumber = sn
+                        serialNumber = normalizePrinterSerial(sn)
                     }
                 }
             }
@@ -282,7 +326,8 @@ object EquipmentScanParser {
             modelName = modelName,
             rawSource = "Из описания заявки",
             matchesTicket = null,
-            matchNote = ""
+            matchNote = "",
+            detectedVendor = detectedVendor
         )
     }
 
@@ -301,10 +346,16 @@ object EquipmentScanParser {
         if (existing == null) return fresh
         if (fresh == null) return existing
 
-        val mergedSerial = existing.serialNumber.ifBlank { fresh.serialNumber }
+        val mergedSerial = existing.serialNumber.ifBlank { fresh.serialNumber }.let {
+            if (it.isNotBlank()) normalizePrinterSerial(it) else ""
+        }
         val mergedInv = existing.inventoryNumber.ifBlank { fresh.inventoryNumber }
         val mergedModel = existing.modelName.ifBlank { fresh.modelName }
-        val mergedCandidates = (existing.candidateSerials + fresh.candidateSerials).distinct()
+        val mergedVendor = existing.detectedVendor.ifBlank { fresh.detectedVendor }
+        val mergedCandidates = (existing.candidateSerials + fresh.candidateSerials)
+            .map { normalizePrinterSerial(it) }
+            .filter { it.isNotBlank() }
+            .distinct()
         val mergedSkipped = (existing.skippedCodes + fresh.skippedCodes).distinct()
         val (matches, note) = evaluateTicketMatch(
             normalizedTicket = ticketText.lowercase(Locale.ROOT),
@@ -325,7 +376,8 @@ object EquipmentScanParser {
             matchesTicket = matches,
             matchNote = note,
             candidateSerials = mergedCandidates,
-            skippedCodes = mergedSkipped
+            skippedCodes = mergedSkipped,
+            detectedVendor = mergedVendor
         )
     }
 
@@ -338,10 +390,11 @@ object EquipmentScanParser {
         serialNumber: String,
         inventoryNumber: String,
         ticketText: String,
-        rawSource: String = "Ручной ввод"
+        rawSource: String = "Ручной ввод",
+        detectedVendor: String = ""
     ): EquipmentScanResult? {
         val cleanModel = modelName.trim()
-        val cleanSerial = serialNumber.trim().uppercase(Locale.ROOT)
+        val cleanSerial = normalizePrinterSerial(serialNumber)
         val cleanInv = inventoryNumber.trim().uppercase(Locale.ROOT)
         if (cleanModel.isEmpty() && cleanSerial.isEmpty() && cleanInv.isEmpty()) return null
 
@@ -357,33 +410,51 @@ object EquipmentScanParser {
             modelName = cleanModel,
             rawSource = rawSource,
             matchesTicket = matches,
-            matchNote = note
+            matchNote = note,
+            detectedVendor = detectedVendor
         )
     }
 
-    private fun extractModel(
+    /**
+     * Returns `(normalizedVendor, concreteModel)` where `concreteModel` is NEVER a bare vendor
+     * name like "HEWLETT PACKARD" without a real model code.
+     */
+    private fun extractVendorAndModel(
         line: String,
         catalogEntries: List<PrinterCatalogEntry> = emptyList()
-    ): String? {
-        val m = brandRegex.find(line)
-        if (m != null) {
-            val brand = m.groupValues[1].trim()
-            val tail = m.groupValues[2].trim()
-                .split(Regex("\\s+(?:s/n|sn|сер|инв|rev|mac|ip)\\b", RegexOption.IGNORE_CASE))
-                .firstOrNull()
-                .orEmpty()
-                .trim()
-                .take(28)
-            val rawCandidate = if (tail.isNotEmpty()) "$brand $tail" else brand
-            if (catalogEntries.isNotEmpty()) {
-                PrinterModelCatalogEngine.matchModelFromText(catalogEntries, rawCandidate)?.let { return it }
-            }
-            return rawCandidate
-        }
+    ): Pair<String?, String?> {
         if (catalogEntries.isNotEmpty()) {
-            return PrinterModelCatalogEngine.matchModelFromText(catalogEntries, line)
+            PrinterModelCatalogEngine.matchModelFromText(catalogEntries, line)?.let { matched ->
+                val vendorPrefix = brandRegex.find(matched)?.groupValues?.getOrNull(1)?.let(::normalizeVendorName)
+                return vendorPrefix to matched
+            }
         }
-        return null
+        val m = brandRegex.find(line) ?: return null to null
+        val vendor = normalizeVendorName(m.groupValues[1])
+        val tail = m.groupValues[2].trim()
+            .split(Regex("\\s+(?:s/n|sn|сер|инв|rev|mac|ip|rmn)\\b", RegexOption.IGNORE_CASE))
+            .firstOrNull()
+            .orEmpty()
+            .trim()
+            .take(28)
+
+        if (tail.isNotEmpty() && catalogEntries.isNotEmpty()) {
+            PrinterModelCatalogEngine.matchModelFromText(catalogEntries, "$vendor $tail")?.let { matched ->
+                return vendor to matched
+            }
+        }
+        val isCorporateWordOnly = tail.equals("inc", true) ||
+            tail.equals("company", true) ||
+            tail.equals("corp", true) ||
+            tail.equals("ltd", true) ||
+            tail.equals("gmbh", true)
+        val hasModelDigits = tail.any { it.isDigit() }
+        val concreteModel = if (!isCorporateWordOnly && hasModelDigits && tail.length >= 2) {
+            "$vendor $tail"
+        } else {
+            null
+        }
+        return vendor to concreteModel
     }
 
     private fun evaluateTicketMatch(
@@ -396,14 +467,17 @@ object EquipmentScanParser {
             return null to "Данные считаны"
         }
 
-        if (serialNumber.isNotBlank() && normalizedTicket.contains(serialNumber.lowercase(Locale.ROOT))) {
+        val normTicketSerials = normalizedTicket.uppercase(Locale.ROOT)
+            .replace('O', '0')
+            .replace('О', '0')
+        if (serialNumber.isNotBlank() && normTicketSerials.contains(normalizePrinterSerial(serialNumber))) {
             return true to "Серийный номер совпадает с заявкой"
         }
         if (inventoryNumber.isNotBlank() && normalizedTicket.contains(inventoryNumber.lowercase(Locale.ROOT))) {
             return true to "Инвентарный номер совпадает с заявкой"
         }
 
-        val ticketModel = extractModel(normalizedTicket).orEmpty()
+        val ticketModel = extractVendorAndModel(normalizedTicket).second.orEmpty()
         if (modelName.isNotBlank()) {
             val scannedTokens = modelName.lowercase(Locale.ROOT).split(Regex("\\s+")).filter { it.length >= 3 }
             val modelCoreMatch = scannedTokens.size >= 2 &&

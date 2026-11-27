@@ -778,7 +778,7 @@ private fun GeoMetricTile(
                     text = subtitle,
                     style = MaterialTheme.typography.labelSmall,
                     color = IntraColors.TextSecondary,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }
@@ -1029,15 +1029,18 @@ private fun GeolocationCard(
                                 streetHouseCombined.takeIf { it.isNotBlank() }?.let {
                                     GeoAddressDetailRow(label = "Улица и дом", value = it)
                                 }
+                                snapshot.entrance.takeIf { it.isNotBlank() }?.let {
+                                    GeoAddressDetailRow(label = "Подъезд", value = it)
+                                }
                             }
                         }
                     }
                 }
 
-                // Group 2: Navigation & Accuracy Metrics (2x2 clean grid)
+                // Group 2: Navigation & Accuracy Metrics (clean non-truncated layout)
                 val accuracyColor = when {
                     snapshot.accuracyMeters <= 0f -> IntraColors.TextSecondary
-                    snapshot.accuracyMeters <= 25f -> IntraColors.EmeraldDeep
+                    snapshot.accuracyMeters <= 30f -> IntraColors.EmeraldDeep
                     snapshot.accuracyMeters <= 80f -> IntraColors.BrandPrimary
                     else -> IntraColors.WarningAmber
                 }
@@ -1046,14 +1049,13 @@ private fun GeolocationCard(
                 } else {
                     "Не определена"
                 }
+                val altitudeText = snapshot.altitudeMeters?.let { alt ->
+                    "${alt.roundToInt()} метров"
+                } ?: "Не определена"
                 val sourceSubtitle = buildList {
-                    if (snapshot.providerCount > 1) add("Источников: ${snapshot.providerCount}")
-                    snapshot.geocoderProvider.takeIf { it.isNotBlank() }?.let { add(it) }
-                }.joinToString(" - ").takeIf { it.isNotBlank() }
-
-                val timeSubtitle = snapshot.altitudeMeters?.let { alt ->
-                    "Высота: ${alt.roundToInt()} м"
-                }
+                    if (snapshot.providerCount > 0) add("Активных источников: ${snapshot.providerCount}")
+                    snapshot.geocoderProvider.takeIf { it.isNotBlank() }?.let { add("Геокодер: $it") }
+                }.joinToString(" • ").takeIf { it.isNotBlank() }
 
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(
@@ -1077,19 +1079,23 @@ private fun GeolocationCard(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         GeoMetricTile(
-                            title = "Источник сигнала",
-                            value = snapshot.sourceLabel,
-                            subtitle = sourceSubtitle,
-                            valueColor = if (snapshot.jammerSuspected) IntraColors.WarningAmber else IntraColors.EmeraldDeep,
+                            title = "Время фиксации",
+                            value = snapshot.capturedAtText,
                             modifier = Modifier.weight(1f)
                         )
                         GeoMetricTile(
-                            title = "Время фиксации",
-                            value = snapshot.capturedAtText,
-                            subtitle = timeSubtitle,
+                            title = "Высота над уровнем моря",
+                            value = altitudeText,
                             modifier = Modifier.weight(1f)
                         )
                     }
+                    GeoMetricTile(
+                        title = "Источник сигнала",
+                        value = snapshot.sourceLabel,
+                        subtitle = sourceSubtitle,
+                        valueColor = if (snapshot.jammerSuspected) IntraColors.WarningAmber else IntraColors.EmeraldDeep,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
 
                 // Quick actions bar
@@ -3251,12 +3257,14 @@ private fun EquipmentManualInputDialog(
                     onValueChange = { modelText = it },
                     catalogEntries = catalogEntries,
                     label = "Модель (поиск или выбор из списка)",
+                    initialBrandFilter = initial?.detectedVendor?.takeIf { it.isNotBlank() }
+                        ?: expected?.detectedVendor?.takeIf { it.isNotBlank() },
                     modifier = Modifier.fillMaxWidth()
                 )
 
                 OutlinedTextField(
                     value = serialText,
-                    onValueChange = { serialText = it.uppercase() },
+                    onValueChange = { serialText = EquipmentScanParser.normalizePrinterSerial(it) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     label = { Text("Серийный номер") },

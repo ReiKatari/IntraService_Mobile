@@ -575,12 +575,17 @@ fun EquipmentScannerScreen(
                                 value = editModel,
                                 onValueChange = { editModel = it },
                                 catalogEntries = catalogEntries,
-                                label = "Модель аппарата",
+                                label = if (res.detectedVendor.isNotBlank()) {
+                                    "Модель аппарата (${res.detectedVendor})"
+                                } else {
+                                    "Модель аппарата"
+                                },
+                                initialBrandFilter = res.detectedVendor.takeIf { it.isNotBlank() },
                                 modifier = Modifier.fillMaxWidth()
                             )
                             OutlinedTextField(
                                 value = editSerial,
-                                onValueChange = { editSerial = it },
+                                onValueChange = { editSerial = EquipmentScanParser.normalizePrinterSerial(it) },
                                 label = { Text("Серийный номер (S/N)") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth(),

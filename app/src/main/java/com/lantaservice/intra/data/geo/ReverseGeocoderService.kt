@@ -20,6 +20,8 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.doubleOrNull
+import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -40,13 +42,14 @@ data class ParsedRussianAddress(
     val fullAddress: String = "",
     val suburb: String = "",
     val placeName: String = "",
-    val providerName: String = ""
+    val providerName: String = "",
+    val entrance: String = ""
 )
 
 /**
  * Pure JVM parser formatting complete Russian postal addresses
- * (postal code, region, district, locality, street, house number)
- * from OpenStreetMap Nominatim and Komoot Photon reverse-geocoding JSON responses.
+ * (postal code, region, district, locality, street, house number, entrance)
+ * from OpenStreetMap Nominatim, Komoot Photon, and Overpass API JSON responses.
  */
 object ReverseGeocoderParser {
 
@@ -57,7 +60,8 @@ object ReverseGeocoderParser {
         locality: String,
         street: String,
         houseNumber: String,
-        country: String = ""
+        country: String = "",
+        entrance: String = ""
     ): String {
         val parts = mutableListOf<String>()
         val cleanPost = postalCode.trim()
@@ -67,6 +71,7 @@ object ReverseGeocoderParser {
         val cleanLocality = locality.trim()
         val cleanStreet = street.trim()
         val cleanHouse = houseNumber.trim()
+        val cleanEntrance = entrance.trim()
 
         if (cleanPost.isNotEmpty()) {
             parts += cleanPost
@@ -106,6 +111,14 @@ object ReverseGeocoderParser {
                 "д. $cleanHouse"
             }
             parts += houseFormatted
+        }
+        if (cleanEntrance.isNotEmpty()) {
+            val lowerEnt = cleanEntrance.lowercase(Locale.ROOT)
+            parts += if (lowerEnt.startsWith("подъезд") || lowerEnt.startsWith("под.")) {
+                cleanEntrance
+            } else {
+                "подъезд $cleanEntrance"
+            }
         }
         return parts
             .filter { it.isNotBlank() }
@@ -205,28 +218,40 @@ object ReverseGeocoderParser {
     fun parsePhotonJson(rawJson: String, json: Json): ParsedRussianAddress? {
         val root = runCatching { json.parseToJsonElement(rawJson) }.getOrNull() as? JsonObject ?: return null
         val features = root["features"] as? JsonArray ?: return null
-        val firstFeature = features.firstOrNull() as? JsonObject ?: return null
-        val props = firstFeature["properties"] as? JsonObject ?: return null
+        val propList = features.mapNotNull { (it as? JsonObject)?.get("properties") as? JsonObject }
+        val firstProps = propList.firstOrNull() ?: return null
+        val houseProps = propList.firstOrNull { !it.str("housenumber").isNullOrBlank() } ?: firstProps
 
-        val postalCode = props.str("postcode").orEmpty()
-        val country = props.str("country").orEmpty()
-        val region = props.str("state").orEmpty()
-        val district = listOfNotNull(props.str("county"), props.str("district")).firstOrNull().orEmpty()
+        val postalCode = houseProps.str("postcode") ?: firstProps.str("postcode").orEmpty()
+        val country = houseProps.str("country") ?: firstProps.str("country").orEmpty()
+        val region = houseProps.str("state") ?: firstProps.str("state").orEmpty()
+        val district = listOfNotNull(
+            houseProps.str("county"),
+            houseProps.str("district"),
+            firstProps.str("county"),
+            firstProps.str("district")
+        ).firstOrNull().orEmpty()
         val locality = listOfNotNull(
-            props.str("city"),
-            props.str("locality"),
-            props.str("town"),
-            props.str("village")
+            houseProps.str("city"),
+            houseProps.str("locality"),
+            houseProps.str("town"),
+            houseProps.str("village"),
+            firstProps.str("city"),
+            firstProps.str("locality"),
+            firstProps.str("town"),
+            firstProps.str("village")
         ).firstOrNull().orEmpty()
         val street = listOfNotNull(
-            props.str("street"),
-            props.str("name")
+            houseProps.str("street"),
+            firstProps.str("street"),
+            houseProps.str("name"),
+            firstProps.str("name")
         ).firstOrNull().orEmpty()
-        val houseNumber = props.str("housenumber").orEmpty()
-        val suburb = props.str("district").orEmpty()
+        val houseNumber = houseProps.str("housenumber").orEmpty()
+        val suburb = (houseProps.str("district") ?: firstProps.str("district")).orEmpty()
             .takeIf { !it.equals(district, ignoreCase = true) && !it.equals(locality, ignoreCase = true) }
             .orEmpty()
-        val placeName = props.str("name").orEmpty()
+        val placeName = (houseProps.str("name") ?: firstProps.str("name")).orEmpty()
             .takeIf { !it.equals(street, ignoreCase = true) && !it.equals(locality, ignoreCase = true) }
             .orEmpty()
 
@@ -256,6 +281,100 @@ object ReverseGeocoderParser {
         )
     }
 
+    /**
+     * Parses OSM Overpass API elements around target coordinates to recover exact
+     * building house number (`addr:housenumber`) and nearest entrance (`entrance` + `ref`/`addr:flats`)
+     * when road-level geocoders only return the street name.
+     */
+    fun parseOverpassBuildingAndEntrance(
+        rawJson: String,
+        targetLat: Double,
+        targetLon: Double,
+        json: Json
+    ): ParsedRussianAddress? {
+        val root = runCatching { json.parseToJsonElement(rawJson) }.getOrNull() as? JsonObject ?: return null
+        val elements = root["elements"] as? JsonArray ?: return null
+
+        var bestBuildingDist = Double.MAX_VALUE
+        var bestHouse = ""
+        var bestStreet = ""
+        var bestCity = ""
+        var bestPostcode = ""
+        var bestPlaceName = ""
+
+        var bestEntranceDist = Double.MAX_VALUE
+        var bestEntrance = ""
+        var entranceHouseHint = ""
+
+        for (el in elements) {
+            val obj = el as? JsonObject ?: continue
+            val tags = obj["tags"] as? JsonObject ?: continue
+            val center = obj["center"] as? JsonObject
+            val elLat = (obj["lat"] as? JsonPrimitive)?.doubleOrNull
+                ?: (center?.get("lat") as? JsonPrimitive)?.doubleOrNull
+                ?: continue
+            val elLon = (obj["lon"] as? JsonPrimitive)?.doubleOrNull
+                ?: (center?.get("lon") as? JsonPrimitive)?.doubleOrNull
+                ?: continue
+
+            val dist = GeoAntiSpoofSelector.haversineMeters(targetLat, targetLon, elLat, elLon)
+
+            val entType = tags.str("entrance")
+            if (entType != null && dist <= 55.0 && dist < bestEntranceDist) {
+                val ref = tags.str("ref")?.takeIf {
+                    it.isNotBlank() && !it.equals("yes", true) && !it.equals("main", true)
+                }.orEmpty()
+                val flats = tags.str("addr:flats")?.takeIf { it.isNotBlank() }.orEmpty()
+                val entLabel = when {
+                    ref.isNotEmpty() && flats.isNotEmpty() -> "$ref (кв. $flats)"
+                    ref.isNotEmpty() -> ref
+                    flats.isNotEmpty() -> "кв. $flats"
+                    else -> ""
+                }
+                if (entLabel.isNotEmpty()) {
+                    bestEntranceDist = dist
+                    bestEntrance = entLabel
+                    tags.str("addr:housenumber")?.let { entranceHouseHint = it }
+                }
+            }
+
+            val house = tags.str("addr:housenumber")
+            if (!house.isNullOrBlank() && dist <= 80.0 && dist < bestBuildingDist) {
+                bestBuildingDist = dist
+                bestHouse = house
+                bestStreet = tags.str("addr:street").orEmpty()
+                bestCity = tags.str("addr:city").orEmpty()
+                bestPostcode = tags.str("addr:postcode").orEmpty()
+                bestPlaceName = tags.str("name")?.takeIf {
+                    !it.equals(bestStreet, true) && !it.equals(house, true)
+                }.orEmpty()
+            }
+        }
+
+        val resolvedHouse = bestHouse.ifBlank { entranceHouseHint }
+        if (resolvedHouse.isBlank() && bestEntrance.isBlank()) return null
+
+        val composed = formatRussianFullAddress(
+            postalCode = bestPostcode,
+            region = "",
+            district = "",
+            locality = bestCity,
+            street = bestStreet,
+            houseNumber = resolvedHouse,
+            entrance = bestEntrance
+        )
+        return ParsedRussianAddress(
+            postalCode = bestPostcode,
+            locality = bestCity,
+            street = bestStreet,
+            houseNumber = resolvedHouse,
+            fullAddress = sanitizeDashes(composed),
+            placeName = sanitizeDashes(bestPlaceName),
+            providerName = "OpenStreetMap Overpass",
+            entrance = sanitizeDashes(bestEntrance)
+        )
+    }
+
     fun mergeAddresses(
         primary: ParsedRussianAddress?,
         secondary: ParsedRussianAddress?
@@ -272,6 +391,7 @@ object ReverseGeocoderParser {
         val house = primary.houseNumber.ifBlank { secondary.houseNumber }
         val suburb = primary.suburb.ifBlank { secondary.suburb }
         val placeName = primary.placeName.ifBlank { secondary.placeName }
+        val entrance = primary.entrance.ifBlank { secondary.entrance }
         val recomposed = formatRussianFullAddress(
             postalCode = postal,
             region = region,
@@ -279,7 +399,8 @@ object ReverseGeocoderParser {
             locality = locality,
             street = street,
             houseNumber = house,
-            country = country
+            country = country,
+            entrance = entrance
         )
         val fullAddress = recomposed.ifBlank { primary.fullAddress.ifBlank { secondary.fullAddress } }
         return ParsedRussianAddress(
@@ -293,7 +414,8 @@ object ReverseGeocoderParser {
             fullAddress = sanitizeDashes(fullAddress),
             suburb = sanitizeDashes(suburb),
             placeName = sanitizeDashes(placeName),
-            providerName = primary.providerName.ifBlank { secondary.providerName }
+            providerName = primary.providerName.ifBlank { secondary.providerName },
+            entrance = sanitizeDashes(entrance)
         )
     }
 
@@ -365,6 +487,9 @@ class ReverseGeocoderService(
             val nominatimJob = async {
                 withTimeoutOrNull(2600L) { queryNominatim(lat, lon) }
             }
+            val overpassJob = async {
+                withTimeoutOrNull(2500L) { queryOverpassBuildingAndEntrance(lat, lon) }
+            }
             val photonJob = async {
                 val res = withTimeoutOrNull(2000L) { queryPhoton(lat, lon) }
                 if (res != null && onFastResult != null && !nominatimJob.isCompleted) {
@@ -393,21 +518,25 @@ class ReverseGeocoderService(
             }
 
             val nominatim = nominatimJob.await()
-            if (nominatim != null && nominatim.postalCode.isNotBlank() && nominatim.houseNumber.isNotBlank()) {
+            val overpass = runCatching { overpassJob.await() }.getOrNull()
+
+            val baseAddr = if (nominatim != null && nominatim.postalCode.isNotBlank() && nominatim.houseNumber.isNotBlank()) {
                 photonJob.cancel()
                 androidJob.cancel()
-                return@coroutineScope nominatim
-            }
-
-            val photon = runCatching { photonJob.await() }.getOrNull()
-            val androidAddr = if (nominatim == null && photon == null) {
-                runCatching { androidJob.await() }.getOrNull()
+                nominatim
             } else {
-                if (androidJob.isCompleted) runCatching { androidJob.await() }.getOrNull() else null
+                val photon = runCatching { photonJob.await() }.getOrNull()
+                val androidAddr = if (nominatim == null && photon == null) {
+                    runCatching { androidJob.await() }.getOrNull()
+                } else {
+                    if (androidJob.isCompleted) runCatching { androidJob.await() }.getOrNull() else null
+                }
+                val secondary = ReverseGeocoderParser.mergeAddresses(photon, androidAddr)
+                ReverseGeocoderParser.mergeAddresses(nominatim, secondary)
             }
 
-            val secondary = ReverseGeocoderParser.mergeAddresses(photon, androidAddr)
-            ReverseGeocoderParser.mergeAddresses(nominatim, secondary)
+            // Always enrich houseNumber / entrance / placeName with Overpass nearest building & entrance
+            ReverseGeocoderParser.mergeAddresses(baseAddr, overpass)
         }
 
         if (resolved != null && resolved.fullAddress.isNotBlank()) {
@@ -467,7 +596,7 @@ class ReverseGeocoderService(
     private fun queryPhoton(lat: Double, lon: Double): ParsedRussianAddress? {
         val url = String.format(
             Locale.US,
-            "https://photon.komoot.io/reverse?lat=%.6f&lon=%.6f",
+            "https://photon.komoot.io/reverse?lat=%.6f&lon=%.6f&limit=5",
             lat,
             lon
         )
@@ -488,6 +617,37 @@ class ReverseGeocoderService(
         }.getOrNull()
     }
 
+    private fun queryOverpassBuildingAndEntrance(lat: Double, lon: Double): ParsedRussianAddress? {
+        val ql = String.format(
+            Locale.US,
+            "[out:json][timeout:3];(nwr[\"addr:housenumber\"](around:75,%.6f,%.6f);node[\"entrance\"](around:55,%.6f,%.6f););out center tags;",
+            lat, lon, lat, lon
+        )
+        val endpoints = listOf(
+            "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+            "https://overpass-api.de/api/interpreter"
+        )
+        for (endpoint in endpoints) {
+            val formBody = FormBody.Builder().add("data", ql).build()
+            val req = Request.Builder()
+                .url(endpoint)
+                .header("User-Agent", "IntraService-Mobile/${BuildConfig.VERSION_NAME} (Android)")
+                .header("Accept", "application/json")
+                .post(formBody)
+                .build()
+            val parsed = runCatching {
+                client.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) return@use null
+                    val body = resp.body?.string().orEmpty()
+                    if (body.isBlank()) return@use null
+                    ReverseGeocoderParser.parseOverpassBuildingAndEntrance(body, lat, lon, json)
+                }
+            }.getOrNull()
+            if (parsed != null) return parsed
+        }
+        return null
+    }
+
     private suspend fun queryAndroidGeocoder(lat: Double, lon: Double): ParsedRussianAddress? {
         if (!Geocoder.isPresent()) return null
         val ruLocale = Locale.Builder().setLanguage("ru").setRegion("RU").build()
@@ -497,7 +657,7 @@ class ReverseGeocoderService(
             withTimeoutOrNull(4500L) {
                 suspendCancellableCoroutine { cont ->
                     runCatching {
-                        geocoder.getFromLocation(lat, lon, 1) { list ->
+                        geocoder.getFromLocation(lat, lon, 5) { list ->
                             if (cont.isActive) cont.resume(list)
                         }
                     }.onFailure {
@@ -508,11 +668,13 @@ class ReverseGeocoderService(
         } else {
             runCatching {
                 @Suppress("DEPRECATION")
-                geocoder.getFromLocation(lat, lon, 1).orEmpty()
+                geocoder.getFromLocation(lat, lon, 5).orEmpty()
             }.getOrDefault(emptyList())
         }
 
-        val addr = addresses.firstOrNull() ?: return null
+        val addr = addresses.firstOrNull { !it.subThoroughfare.isNullOrBlank() }
+            ?: addresses.firstOrNull()
+            ?: return null
         val postal = addr.postalCode.orEmpty().trim()
         val region = addr.adminArea.orEmpty().trim()
         val district = addr.subAdminArea.orEmpty().trim()

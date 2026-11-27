@@ -65,7 +65,8 @@ data class GeoAddressSnapshot(
     val altitudeMeters: Double? = null,
     val providerCount: Int = 0,
     val geocoderProvider: String = "",
-    val resolveDurationMs: Long = 0L
+    val resolveDurationMs: Long = 0L,
+    val entrance: String = ""
 ) {
     fun formatCoordinates(): String {
         return String.format(Locale.US, "%.6f, %.6f", latitude, longitude)
@@ -73,7 +74,7 @@ data class GeoAddressSnapshot(
 
     fun accuracyQualityLabel(): String = when {
         accuracyMeters <= 0f -> "не указана"
-        accuracyMeters <= 25f -> "высокая"
+        accuracyMeters <= 30f -> "высокая"
         accuracyMeters <= 80f -> "средняя"
         else -> "приблизительная"
     }
@@ -82,7 +83,16 @@ data class GeoAddressSnapshot(
         val lines = mutableListOf<String>()
         val addressPart = fullAddress.trim()
         if (addressPart.isNotEmpty()) {
-            lines += "Геолокация: $addressPart"
+            val cleanEntrance = entrance.trim()
+            val fullWithEntrance = if (
+                cleanEntrance.isNotEmpty() &&
+                !addressPart.contains("подъезд", ignoreCase = true)
+            ) {
+                "$addressPart, подъезд $cleanEntrance"
+            } else {
+                addressPart
+            }
+            lines += "Геолокация: $fullWithEntrance"
         } else {
             lines += "Геолокация: адрес уточняется (офлайн)"
         }

@@ -64,10 +64,11 @@ fun PrinterModelDropdownField(
     modifier: Modifier = Modifier,
     label: String = "Модель аппарата",
     placeholder: String = "Начните ввод или выберите из списка",
+    initialBrandFilter: String? = null,
     enabled: Boolean = true
 ) {
     var expanded by remember { mutableStateOf(false) }
-    var selectedBrand by remember { mutableStateOf<String?>(null) }
+    var selectedBrand by remember(initialBrandFilter) { mutableStateOf(initialBrandFilter) }
 
     val indexedCatalog = remember(catalogEntries) {
         PrinterModelCatalogEngine.buildIndex(catalogEntries)
