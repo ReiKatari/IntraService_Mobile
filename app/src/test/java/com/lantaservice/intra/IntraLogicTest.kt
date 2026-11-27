@@ -1962,4 +1962,72 @@ class IntraLogicTest {
         assertTrue("Expected top in upper table (< 0.20), got ${roi.top}", roi.top < 0.20f)
         assertTrue("Expected bottom in upper table (< 0.25), got ${roi.bottom}", roi.bottom < 0.25f)
     }
+
+    @Test
+    fun shiftedValueColumnRestores2320InsteadOf12AndMonotonicityRejectsSmallerTotal() {
+        // Direct parser monotonicity guard: Total cannot be 12 when adjacent printed copy sub-counter is 155
+        val impossibleShiftLines = listOf(
+            "Отпечатано ч/б стр. с копии = 155",
+            "Всего напечатано страниц = 12",
+            "Отсканир. стр. АПД на хост = 655"
+        )
+        val rejected = AvrCounterParser.extractCounterFromLines(impossibleShiftLines)
+        assertEquals(CounterConfidence.NONE, rejected.confidence)
+
+        // Realistic geometric 10px upward shift on 16px-pitched right value stack:
+        // Raw Y distance puts "= 12" (cy=206) closer to "Всего напечатано страниц" (cy=200) than "= 2320" (cy=190)!
+        val shiftedBoxes = listOf(
+            com.lantaservice.intra.util.OcrBoxLine(540, 132, 740, 144, "Количество страниц"),
+            com.lantaservice.intra.util.OcrBoxLine(540, 146, 770, 158, "Отсканир. стр. АПД для копир."),
+            com.lantaservice.intra.util.OcrBoxLine(845, 136, 900, 148, "= 1"),
+            com.lantaservice.intra.util.OcrBoxLine(540, 162, 780, 174, "Отсканир. стр. сканера для копир."),
+            com.lantaservice.intra.util.OcrBoxLine(845, 152, 910, 164, "= 154"),
+            com.lantaservice.intra.util.OcrBoxLine(540, 178, 775, 190, "Отпечатано ч/б стр. с копии"),
+            com.lantaservice.intra.util.OcrBoxLine(845, 168, 910, 180, "= 155"),
+            com.lantaservice.intra.util.OcrBoxLine(540, 194, 775, 206, "Всего напечатано страниц"),
+            com.lantaservice.intra.util.OcrBoxLine(845, 184, 920, 196, "= 2320"),
+            com.lantaservice.intra.util.OcrBoxLine(540, 210, 775, 222, "Отсканир. стр. АПД на хост"),
+            com.lantaservice.intra.util.OcrBoxLine(845, 200, 905, 212, "= 12"),
+            com.lantaservice.intra.util.OcrBoxLine(540, 226, 775, 238, "Отсканир. стр. сканера на хост"),
+            com.lantaservice.intra.util.OcrBoxLine(845, 216, 910, 228, "= 655")
+        )
+        val res = com.lantaservice.intra.util.AvrCounterRecognizer.extractDocumentFieldsFromBoxedLines(
+            items = shiftedBoxes,
+            imageWidth = 1000,
+            imageHeight = 1400
+        )
+        assertEquals(CounterConfidence.HIGH, res.counter.confidence)
+        assertEquals("2320", res.counter.value)
+    }
+
+    @Test
+    fun extractTicketAddressParsesExplicitAndDescriptionAddresses() {
+        val fromDesc = DateAndTextFormatter.extractTicketAddress(
+            title = "Замена термоплёнки HP M1212nf",
+            description = "Клиент: ООО Альфа\nАдрес объекта: г. Химки, 2-й Дачный пер., д. 5\nКонтакт: Иван",
+            explicitAddress = null
+        )
+        assertEquals("г. Химки, 2-й Дачный пер., д. 5", fromDesc)
+
+        val fromStreetCue = DateAndTextFormatter.extractTicketAddress(
+            title = "Ремонт МФУ",
+            description = "Не берёт бумагу.\nМосква, ул. Тверская, д. 12, каб. 4",
+            explicitAddress = null
+        )
+        assertEquals("Москва, ул. Тверская, д. 12, каб. 4", fromStreetCue)
+
+        val explicitWins = DateAndTextFormatter.extractTicketAddress(
+            title = "Ремонт",
+            description = "Адрес: старое описание",
+            explicitAddress = "141421, г. Химки, ул. Ленина, 10"
+        )
+        assertEquals("141421, г. Химки, ул. Ленина, 10", explicitWins)
+
+        val emptyPlaceholder = DateAndTextFormatter.extractTicketAddress(
+            title = "Ремонт принтера",
+            description = "Адрес: Не указан",
+            explicitAddress = null
+        )
+        assertEquals("", emptyPlaceholder)
+    }
 }

@@ -230,4 +230,71 @@ object DateAndTextFormatter {
         if (parts.size == 1) return parts[0].take(2).uppercase(ruLocale)
         return "${parts[0].first()}${parts[1].first()}".uppercase(ruLocale)
     }
+
+    private val ticketAddressLabelRegex = Regex(
+        "(?iu)^(?:[-*•]\\s*)?(?:фактический\\s+|почтовый\\s+)?(?:адрес(?:\\s+(?:объекта|клиента|доставки|установки|точки|филиала|офиса))?|местоположение|местонахождение|address)\\s*[:=-]?\\s*(.*)$"
+    )
+    private val russianStreetCueRegex = Regex(
+        "(?iu)(?:^|[,\\s(])(?:ул\\.|улица|пр-?т|просп(?:ект)?\\.?|пер\\.|переулок|ш\\.|шоссе|б-р|бульвар|наб\\.|мкр\\.?|микрорайон|пр-?д|проезд|пл\\.|площадь|пгт\\.?|город\\s+[А-ЯЁ]|г\\.\\s*[А-ЯЁ])"
+    )
+    private val houseOrIndexCueRegex = Regex("(?iu)(?:д\\.|дом|корп\\.|стр\\.|\\b\\d{6}\\b|\\d+[а-яa-z]?(?:/\\d+)?)")
+
+    fun extractTicketAddress(
+        title: String?,
+        description: String?,
+        explicitAddress: String? = null
+    ): String {
+        fun cleanCandidate(raw: String): String {
+            return raw.trim()
+                .replace(Regex("\\s+"), " ")
+                .trim(',', ';', '.', ' ')
+                .take(200)
+        }
+
+        fun isValidAddress(cand: String): Boolean {
+            if (cand.length < 6) return false
+            val low = cand.lowercase(ruLocale)
+            if (low in setOf("не указан", "не указана", "не указано", "нет", "none", "null", "n/a", "-", "--")) {
+                return false
+            }
+            if (low.startsWith("http://") || low.startsWith("https://")) return false
+            return cand.any { it.isLetter() }
+        }
+
+        explicitAddress?.let {
+            val cleaned = cleanCandidate(it)
+            if (isValidAddress(cleaned)) return cleaned
+        }
+
+        val descLines = description.orEmpty().lines().map { it.trim() }.filter { it.isNotEmpty() }
+        for (i in descLines.indices) {
+            val m = ticketAddressLabelRegex.matchEntire(descLines[i]) ?: continue
+            val inlineVal = cleanCandidate(m.groupValues[1])
+            if (isValidAddress(inlineVal)) return inlineVal
+            if (inlineVal.isEmpty() && i + 1 < descLines.size) {
+                val nextVal = cleanCandidate(descLines[i + 1])
+                if (isValidAddress(nextVal)) return nextVal
+            }
+        }
+
+        for (line in descLines) {
+            val cleaned = cleanCandidate(line)
+            if (isValidAddress(cleaned) &&
+                russianStreetCueRegex.containsMatchIn(cleaned) &&
+                (houseOrIndexCueRegex.containsMatchIn(cleaned) || cleaned.contains(','))
+            ) {
+                return cleaned
+            }
+        }
+
+        val titleClean = cleanCandidate(title.orEmpty())
+        if (isValidAddress(titleClean) &&
+            russianStreetCueRegex.containsMatchIn(titleClean) &&
+            houseOrIndexCueRegex.containsMatchIn(titleClean)
+        ) {
+            return titleClean
+        }
+
+        return ""
+    }
 }

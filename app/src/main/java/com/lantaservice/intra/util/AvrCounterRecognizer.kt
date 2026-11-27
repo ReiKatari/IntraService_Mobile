@@ -176,12 +176,29 @@ object AvrCounterParser {
             if (checkExcluded && isExcludedNonCounterLine(line)) continue
 
             val keywordMatch = findKeywordMatch(line, regexes) ?: continue
+            val lowerLine = line.lowercase(Locale.ROOT)
+            val skelLine = toHomoglyphSkeleton(lowerLine)
+            val isTotalOrPrintedLine = regexes === priorityTotalKeywordRegexes ||
+                listOf("всего", "итого", "общ", "total", "life", "напечатано страниц", "bcero")
+                    .any { lowerLine.contains(it) || skelLine.contains(it) }
+            val adjacentPrintedMax = if (isTotalOrPrintedLine) {
+                findAdjacentPrintedSubCounterMax(lines, idx)
+            } else {
+                null
+            }
 
             // Extract number strictly AFTER the counter keyword on the same line
             val afterKeyword = line.substring((keywordMatch.range.last + 1).coerceAtMost(line.length))
-            val sameLineNum = extractPlausibleNumberFromSegment(afterKeyword, preferRightmost = false)
-            if (sameLineNum != null) {
-                return CounterParseResult(sameLineNum, CounterConfidence.HIGH, line, matchedRowIndex = idx)
+            val sameLineNums = extractPlausibleNumbersInLine(afterKeyword)
+            if (sameLineNums.isNotEmpty()) {
+                val chosenSameLine = if (adjacentPrintedMax != null) {
+                    sameLineNums.firstOrNull { (it.toLongOrNull() ?: 0L) >= adjacentPrintedMax }
+                } else {
+                    sameLineNums.first()
+                }
+                if (chosenSameLine != null) {
+                    return CounterParseResult(chosenSameLine, CounterConfidence.HIGH, line, matchedRowIndex = idx)
+                }
             }
 
             // Tabular fallback: accept next line ONLY if it is a pure value line (never steal numbers from another labeled row!)
@@ -192,7 +209,8 @@ object AvrCounterParser {
                     (!checkExcluded || !isExcludedNonCounterLine(nextLine))
                 ) {
                     val nextLineNum = extractPlausibleNumberFromSegment(nextLine, preferRightmost = false)
-                    if (nextLineNum != null) {
+                    val nextLong = nextLineNum?.toLongOrNull() ?: 0L
+                    if (nextLineNum != null && (adjacentPrintedMax == null || nextLong >= adjacentPrintedMax)) {
                         return CounterParseResult(
                             value = nextLineNum,
                             confidence = CounterConfidence.HIGH,
@@ -204,6 +222,41 @@ object AvrCounterParser {
             }
         }
         return null
+    }
+
+    /**
+     * Checks neighboring rows (-3..+3) for explicit printed sub-counters (e.g. "Отпечатано ч/б стр. с копии = 155"),
+     * so a priority Total counter ("Всего напечатано страниц") never accepts an impossible smaller value (like "12" shifted up).
+     */
+    private fun findAdjacentPrintedSubCounterMax(lines: List<String>, centerIdx: Int): Long? {
+        val printedSubCues = listOf(
+            "отпечатано", "отпечатан", "напечатано", "с копии", "printed", "copy print", "print count"
+        )
+        val nonPrintExclusions = listOf(
+            "отсканир", "сканер", "scan", "факс", "fax", "апд", "adf",
+            "замяти", "jam", "ошиб", "код", "dpi", "память", "памят",
+            "мб", "кб", "гб", "формат", "плотност", "макс", "разреш",
+            "умен", "увел", "таймаут", "верси", "дата", "даты", "ip"
+        )
+        var maxSub: Long? = null
+        val fromIdx = max(0, centerIdx - 3)
+        val toIdx = minOf(lines.lastIndex, centerIdx + 3)
+        for (i in fromIdx..toIdx) {
+            if (i == centerIdx) continue
+            val line = lines[i].trim()
+            if (line.isEmpty()) continue
+            val lower = line.lowercase(Locale.ROOT)
+            val skel = toHomoglyphSkeleton(lower)
+            if (nonPrintExclusions.any { lower.contains(it) || skel.contains(it) }) continue
+            val cue = printedSubCues.firstOrNull { lower.contains(it) || skel.contains(it) } ?: continue
+            val pos = maxOf(lower.indexOf(cue), skel.indexOf(cue))
+            val tail = if (pos >= 0) line.substring((pos + cue.length).coerceAtMost(line.length)) else line
+            val num = extractPlausibleNumberFromSegment(tail, preferRightmost = true)?.toLongOrNull() ?: continue
+            if (num > 0L && (maxSub == null || num > maxSub)) {
+                maxSub = num
+            }
+        }
+        return maxSub
     }
 
     internal fun isValueOnlyLine(line: String): Boolean {
@@ -512,12 +565,9 @@ object AvrCounterRecognizer {
             val targetRow = rows.lastOrNull()?.let { prevRow ->
                 val prevCenterY = prevRow.map { (it.top + it.bottom) * 0.5f }.average().toFloat()
                 val prevAvgH = prevRow.map { max(1, it.bottom - it.top) }.average().toFloat()
-                val prevTop = prevRow.minOf { it.top }
-                val prevBottom = prevRow.maxOf { it.bottom }
                 val refH = minOf(prevAvgH, itemH)
-                val tolerance = max(5f, refH * 0.48f)
-                val overlap = minOf(prevBottom, item.bottom) - maxOf(prevTop, item.top)
-                if (abs(itemCenterY - prevCenterY) <= tolerance || overlap >= refH * 0.30f) prevRow else null
+                val tolerance = max(4f, refH * 0.42f)
+                if (abs(itemCenterY - prevCenterY) <= tolerance) prevRow else null
             }
             if (targetRow != null) {
                 targetRow += item
@@ -573,12 +623,13 @@ object AvrCounterRecognizer {
                 val leftBoxes = items.filter { (it.left + it.right) * 0.5f < splitX }
                 val rightBoxes = items.filter { (it.left + it.right) * 0.5f >= splitX }
                 if (leftBoxes.size >= 2 && rightBoxes.size >= 2) {
-                    clusterBoxedLinesIntoRows(leftBoxes) + clusterBoxedLinesIntoRows(rightBoxes)
+                    alignTabularColumnRows(leftBoxes) + alignTabularColumnRows(rightBoxes)
                 } else emptyList()
             } else emptyList()
         } else emptyList()
 
-        val rowSets = listOf(columnRows, fullRows, rawRows).filter { it.isNotEmpty() }
+        val alignedFullRows = alignTabularColumnRows(items)
+        val rowSets = listOf(columnRows, alignedFullRows, fullRows, rawRows).filter { it.isNotEmpty() }
         var matchedCounter = CounterParseResult(null, CounterConfidence.NONE)
         var matchedRowBox: ClusteredRow? = null
         for (rows in rowSets) {
@@ -611,6 +662,140 @@ object AvrCounterRecognizer {
         return AvrDocumentOcrResult(matchedCounter, serial, counterBoxNormalized)
     }
 
+    /**
+     * When a table column has left-side labels facing a right-side stack of numeric "= N" values
+     * that drifted vertically (bowed/tilted paper, e.g. "12" shifted slightly toward "2320"),
+     * estimate the best uniform vertical offset (shiftY) so every label pairs 1-to-1 with its real value.
+     */
+    private fun alignTabularColumnRows(colItems: List<OcrBoxLine>): List<ClusteredRow> {
+        val baseRows = clusterBoxedLinesIntoRows(colItems)
+        if (colItems.size < 6) return baseRows
+
+        val colMinX = colItems.minOf { it.left }
+        val colMaxX = colItems.maxOf { it.right }
+        val colW = max(1, colMaxX - colMinX)
+        if (colW < 80) return baseRows
+
+        val pureValueRegex = Regex("^=?\\s*(?:\\d{1,3}(?:[\\s,.']\\d{3})+|\\d{1,8})\\s*$")
+        val valueMidX = colMinX + colW * 0.52f
+        val valueBoxes = colItems
+            .filter { it.left >= valueMidX && pureValueRegex.matches(it.text.trim()) }
+            .sortedBy { (it.top + it.bottom) * 0.5f }
+        if (valueBoxes.size < 4) return baseRows
+
+        val labelItems = colItems.filter { it !in valueBoxes }
+        val labelRows = clusterBoxedLinesIntoRows(labelItems)
+            .filter { row -> !pureValueRegex.matches(row.text.trim()) }
+        if (labelRows.size < 4) return baseRows
+
+        val valGaps = (0 until valueBoxes.lastIndex).mapNotNull { i ->
+            val dy = ((valueBoxes[i + 1].top + valueBoxes[i + 1].bottom) - (valueBoxes[i].top + valueBoxes[i].bottom)) * 0.5f
+            if (dy in 6f..45f) dy else null
+        }.sorted()
+        val pitchY = if (valGaps.isNotEmpty()) valGaps[valGaps.size / 2] else return baseRows
+
+        fun buildPairs(shiftY: Float): Pair<Double, List<Pair<ClusteredRow, OcrBoxLine>>> {
+            val pairs = mutableListOf<Pair<ClusteredRow, OcrBoxLine>>()
+            var vStart = 0
+            var score = 0.0
+            val maxDist = pitchY * 0.45f
+            for (lRow in labelRows) {
+                val lCy = (lRow.top + lRow.bottom) * 0.5f
+                var bestJ = -1
+                var bestErr = Float.MAX_VALUE
+                for (j in vStart until valueBoxes.size) {
+                    val vCy = (valueBoxes[j].top + valueBoxes[j].bottom) * 0.5f + shiftY
+                    val err = abs(lCy - vCy)
+                    if (err <= maxDist && err < bestErr) {
+                        bestErr = err
+                        bestJ = j
+                    } else if (vCy > lCy + maxDist) {
+                        break
+                    }
+                }
+                if (bestJ >= 0) {
+                    pairs += lRow to valueBoxes[bestJ]
+                    score += 10.0 - (bestErr / max(1f, pitchY)) * 4.0
+                    vStart = bestJ + 1
+                }
+            }
+            // Check section continuity inside the matched range
+            if (pairs.size >= 3) {
+                val firstL = labelRows.indexOf(pairs.first().first)
+                val lastL = labelRows.indexOf(pairs.last().first)
+                val expectedLabels = (lastL - firstL + 1).coerceAtLeast(1)
+                val unmatchedLabels = expectedLabels - pairs.size
+                score -= unmatchedLabels * 5.0
+                val unmatchedVals = (valueBoxes.size - pairs.size).coerceAtLeast(0)
+                score -= unmatchedVals * 6.0
+
+                // Semantic penalty if a total-printed label got a value strictly smaller than an adjacent print sub-counter
+                val syntheticLines = pairs.map { "${it.first.text} ${it.second.text}" }
+                val totalRes = AvrCounterParser.extractCounterFromLines(syntheticLines)
+                if (totalRes.confidence == CounterConfidence.HIGH) {
+                    score += 6.0
+                } else {
+                    val hasTotalLabel = pairs.any {
+                        val low = it.first.text.lowercase(Locale.ROOT)
+                        low.contains("всего") || low.contains("total")
+                    }
+                    if (hasTotalLabel) score -= 25.0
+                }
+            }
+            return score to pairs
+        }
+
+        val step = 2f
+        val maxShift = (pitchY * 0.90f).coerceAtMost(24f)
+        var bestScore = Double.NEGATIVE_INFINITY
+        var bestPairs: List<Pair<ClusteredRow, OcrBoxLine>> = emptyList()
+        var bestShift = 0f
+
+        var s = -maxShift
+        while (s <= maxShift + 0.1f) {
+            val (sc, pr) = buildPairs(s)
+            if (sc > bestScore) {
+                bestScore = sc
+                bestPairs = pr
+                bestShift = s
+            }
+            s += step
+        }
+
+        val (zeroScore, zeroPairs) = buildPairs(0f)
+        if (abs(bestShift) < 3f && zeroPairs.size >= bestPairs.size) {
+            return baseRows
+        }
+        if (bestPairs.size < 3 || bestScore <= zeroScore + 1.5) {
+            return baseRows
+        }
+
+        val pairedMap = bestPairs.associate { it.first to it.second }
+        val pairedValueSet = bestPairs.map { it.second }.toSet()
+        val result = mutableListOf<ClusteredRow>()
+        for (lRow in labelRows) {
+            val vBox = pairedMap[lRow]
+            if (vBox != null) {
+                result += ClusteredRow(
+                    text = "${lRow.text} ${vBox.text}",
+                    left = minOf(lRow.left, vBox.left),
+                    top = minOf(lRow.top, vBox.top),
+                    right = maxOf(lRow.right, vBox.right),
+                    bottom = maxOf(lRow.bottom, vBox.bottom)
+                )
+            } else {
+                result += lRow
+            }
+        }
+        // Append any leftover unpaired values only if needed, keeping order clean
+        for (vBox in valueBoxes) {
+            if (vBox !in pairedValueSet) {
+                result += ClusteredRow(vBox.text, vBox.left, vBox.top, vBox.right, vBox.bottom)
+            }
+        }
+        return result.sortedBy { (it.top + it.bottom) * 0.5f }
+    }
+
     private suspend fun recognizeStripFields(
         oriented: Bitmap,
         stripRect: Rect
@@ -621,24 +806,45 @@ object AvrCounterRecognizer {
         val upscaled = Bitmap.createScaledBitmap(
             strip,
             (cw * 3).coerceAtMost(2000),
-            (ch * 3).coerceAtMost(600),
+            (ch * 3).coerceAtMost(720),
             true
         )
         if (upscaled !== strip) strip.recycle()
+        val stripW = upscaled.width
+        val stripH = upscaled.height
+
+        fun filterCleanBoxes(visionText: Text): List<OcrBoxLine> {
+            return visionText.toOcrBoxLines().filter { box ->
+                box.top > 2 && box.bottom < (stripH - 2)
+            }
+        }
+
+        // Probe 1: Raw clean 3x upscaled strip (avoids CLAHE haloes on already B&W scans)
+        val rawText = processBitmapOcr(upscaled)
+        val rawRes = rawText?.let { extractDocumentFieldsFromBoxedLines(filterCleanBoxes(it), stripW, stripH) }
+        if (rawRes != null && rawRes.counter.confidence == CounterConfidence.HIGH) {
+            upscaled.recycle()
+            return rawRes
+        }
+
+        // Probe 2: Enhanced contrast 3x strip fallback
         val clarityStrip = PhotoEnhancerEngine.enhance(upscaled, EnhanceMode.TEXT_CLARITY)
         if (clarityStrip.bitmap !== upscaled) upscaled.recycle()
-        val stripW = clarityStrip.bitmap.width
-        val stripH = clarityStrip.bitmap.height
-        val stripText = processBitmapOcr(clarityStrip.bitmap)
+        val clarityText = processBitmapOcr(clarityStrip.bitmap)
         clarityStrip.bitmap.recycle()
-        return stripText?.let { extractDocumentFieldsFromBoxedLines(it.toOcrBoxLines(), stripW, stripH) }
+        val clarityRes = clarityText?.let { extractDocumentFieldsFromBoxedLines(filterCleanBoxes(it), stripW, stripH) }
+        return when {
+            clarityRes != null && clarityRes.counter.confidence == CounterConfidence.HIGH -> clarityRes
+            clarityRes != null && !clarityRes.serialNumber.isNullOrBlank() -> clarityRes
+            else -> rawRes
+        }
     }
 
     private fun computeRowStripRect(box: Rect, imgW: Int, imgH: Int): Rect {
         val l = (box.left - box.width() * 0.25f).roundToInt().coerceIn(0, (imgW - 32).coerceAtLeast(0))
-        val t = (box.top - box.height() * 0.8f).roundToInt().coerceIn(0, (imgH - 16).coerceAtLeast(0))
-        val r = (box.right + imgW * 0.45f).roundToInt().coerceIn((l + 32).coerceAtMost(imgW), imgW)
-        val b = (box.bottom + box.height() * 1.4f).roundToInt().coerceIn((t + 16).coerceAtMost(imgH), imgH)
+        val t = (box.top - box.height() * 1.8f).roundToInt().coerceIn(0, (imgH - 16).coerceAtLeast(0))
+        val r = (box.right + imgW * 0.48f).roundToInt().coerceIn((l + 32).coerceAtMost(imgW), imgW)
+        val b = (box.bottom + box.height() * 1.6f).roundToInt().coerceIn((t + 16).coerceAtMost(imgH), imgH)
         return Rect(l, t, r, b)
     }
 

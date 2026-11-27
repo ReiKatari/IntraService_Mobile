@@ -300,7 +300,8 @@ data class TicketDetail(
     val canAttachFiles: Boolean,
     val canComment: Boolean,
     val attachments: List<TaskAttachment>,
-    val history: List<TicketLifetimeEvent>
+    val history: List<TicketLifetimeEvent>,
+    val addressText: String = ""
 )
 
 @Immutable

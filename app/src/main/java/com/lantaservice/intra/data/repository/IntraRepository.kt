@@ -300,7 +300,12 @@ class IntraRepository(
             canAttachFiles = true,
             canComment = true,
             attachments = emptyList(),
-            history = emptyList()
+            history = emptyList(),
+            addressText = DateAndTextFormatter.extractTicketAddress(
+                title = item.name,
+                description = item.descriptionPreview,
+                explicitAddress = null
+            )
         )
     }
 
@@ -951,11 +956,19 @@ class IntraRepository(
                 ?: form.services.firstOrNull { it.id == task.serviceId }?.name
                 ?: ""
 
+            val cleanDescription = DateAndTextFormatter.cleanHtmlText(task.description)
+                .ifBlank { "Описание не указано" }
+            val explicitAddress = extractRawTaskAddress(rawJson)
+            val resolvedTicketAddress = DateAndTextFormatter.extractTicketAddress(
+                title = task.name,
+                description = cleanDescription,
+                explicitAddress = explicitAddress
+            )
+
             val detail = TicketDetail(
                 id = task.id,
                 name = task.name?.takeIf { it.isNotBlank() } ?: "Заявка #${task.id}",
-                description = DateAndTextFormatter.cleanHtmlText(task.description)
-                    .ifBlank { "Описание не указано" },
+                description = cleanDescription,
                 statusId = task.statusId,
                 statusName = currentStatusName,
                 priorityName = priorityName,
@@ -978,7 +991,8 @@ class IntraRepository(
                 canAttachFiles = canAttachFiles,
                 canComment = canComment,
                 attachments = attachments,
-                history = historyEvents
+                history = historyEvents,
+                addressText = resolvedTicketAddress
             )
             detailCache[task.id] = detail
             Result.success(detail)
@@ -1697,6 +1711,51 @@ class IntraRepository(
                 val singleTask = json.decodeFromJsonElement(TaskSummaryDto.serializer(), raw)
                 TaskFormDto(task = singleTask)
             }
+        }
+
+        fun extractRawTaskAddress(raw: JsonElement): String? {
+            val taskObj = (raw as? JsonObject)?.let { root ->
+                (root["Task"] as? JsonObject) ?: root
+            } ?: return null
+
+            val directKeys = setOf(
+                "address", "objectaddress", "clientaddress", "siteaddress",
+                "workplaceaddress", "deliveryaddress", "location", "адрес"
+            )
+            for ((key, value) in taskObj.entries) {
+                if (key.lowercase() in directKeys) {
+                    val text = (value as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim()
+                    if (!text.isNullOrBlank() && !text.equals("null", ignoreCase = true)) {
+                        return DateAndTextFormatter.cleanHtmlText(text)
+                    }
+                }
+            }
+            val arrayKeys = setOf("fieldvalues", "customfields", "attributes", "fields")
+            for ((key, value) in taskObj.entries) {
+                if (key.lowercase() !in arrayKeys) continue
+                val arr = value as? kotlinx.serialization.json.JsonArray ?: continue
+                for (el in arr) {
+                    val obj = el as? JsonObject ?: continue
+                    val fieldName = (
+                        obj.stringField("FieldName")
+                            ?: obj.stringField("Name")
+                            ?: obj.stringField("Title")
+                            ?: obj.stringField("Caption")
+                        ).orEmpty().lowercase()
+                    if (fieldName.contains("адрес") || fieldName.contains("address")) {
+                        val fieldVal = (
+                            obj.stringField("Value")
+                                ?: obj.stringField("StringValue")
+                                ?: obj.stringField("Text")
+                                ?: obj.stringField("DisplayValue")
+                            )?.trim()
+                        if (!fieldVal.isNullOrBlank()) {
+                            return DateAndTextFormatter.cleanHtmlText(fieldVal)
+                        }
+                    }
+                }
+            }
+            return null
         }
 
         private val skippedLifetimeKeys = setOf(

@@ -572,6 +572,22 @@ fun TaskDetailScreen(
                                 onCallPhone = { phone ->
                                     val dialIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone"))
                                     runCatching { context.startActivity(dialIntent) }
+                                },
+                                onOpenAddressOnMap = { address ->
+                                    val encoded = Uri.encode(address)
+                                    val geoUri = Uri.parse("geo:0,0?q=$encoded")
+                                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, geoUri)) }
+                                        .onFailure {
+                                            val webUri = Uri.parse("https://maps.google.com/?q=$encoded")
+                                            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, webUri)) }
+                                                .onFailure {
+                                                    Toast.makeText(
+                                                        context,
+                                                        "На устройстве не найдено приложение карт",
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                }
+                                        }
                                 }
                             )
                         }
@@ -667,21 +683,11 @@ fun TaskDetailScreen(
                             GeolocationCard(
                                 snapshot = state.geoSnapshot,
                                 isLoading = state.isLoadingGeo,
+                                expanded = state.isGeoExpanded,
+                                onToggleExpand = viewModel::toggleGeoExpanded,
                                 onRefreshGeo = { viewModel.refreshGeolocation() },
                                 onCopyText = { label, text, msg ->
                                     copyToClipboard(context, label, text, msg)
-                                },
-                                onOpenMap = { lat, lon, label ->
-                                    val encoded = Uri.encode(label.ifBlank { "Заявка #${state.taskId}" })
-                                    val geoUri = Uri.parse("geo:$lat,$lon?q=$lat,$lon($encoded)")
-                                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, geoUri)) }
-                                        .onFailure {
-                                            Toast.makeText(
-                                                context,
-                                                "На устройстве не найдено приложение карт",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
                                 }
                             )
                         }
@@ -781,9 +787,10 @@ private fun GeoMetricTile(
 private fun GeolocationCard(
     snapshot: GeoAddressSnapshot?,
     isLoading: Boolean,
+    expanded: Boolean,
+    onToggleExpand: () -> Unit,
     onRefreshGeo: () -> Unit,
-    onCopyText: (label: String, text: String, toastMessage: String) -> Unit,
-    onOpenMap: (lat: Double, lon: Double, label: String) -> Unit
+    onCopyText: (label: String, text: String, toastMessage: String) -> Unit
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -797,11 +804,13 @@ private fun GeolocationCard(
     ) {
         Column(
             modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Card Header + Status Pill + Refresh Button
+            // Clickable Header + Status Pill + Refresh + Expand/Collapse Chevron
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onToggleExpand),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -819,7 +828,9 @@ private fun GeolocationCard(
                     Text(
                         text = "Геолокация на объекте",
                         style = MaterialTheme.typography.titleMedium,
-                        color = IntraColors.TextPrimary
+                        color = IntraColors.TextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
@@ -883,8 +894,21 @@ private fun GeolocationCard(
                             modifier = Modifier.size(17.dp)
                         )
                     }
+
+                    Icon(
+                        imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                        contentDescription = null,
+                        tint = IntraColors.TextSecondary
+                    )
                 }
             }
+
+            AnimatedVisibility(
+                visible = expanded,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
 
             if (snapshot == null) {
                 Surface(
@@ -1089,70 +1113,6 @@ private fun GeolocationCard(
                     )
                 }
 
-                // Quick actions bar
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = {
-                            onCopyText("coords", snapshot.formatCoordinates(), "Координаты скопированы")
-                        },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(38.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, IntraColors.SubtleBorder)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.ContentCopy,
-                            contentDescription = null,
-                            tint = IntraColors.BrandPrimary,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(5.dp))
-                        Text(
-                            text = "Координаты",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = IntraColors.TextPrimary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            onOpenMap(
-                                snapshot.latitude,
-                                snapshot.longitude,
-                                snapshot.fullAddress.ifBlank { snapshot.placeName }
-                            )
-                        },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(38.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, IntraColors.BrandPrimary.copy(alpha = 0.45f))
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Map,
-                            contentDescription = null,
-                            tint = IntraColors.BrandPrimary,
-                            modifier = Modifier.size(15.dp)
-                        )
-                        Spacer(modifier = Modifier.width(5.dp))
-                        Text(
-                            text = "На карте",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = IntraColors.BrandPrimary,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-
                 // Group 3: Navigation Warning / Anti-Jammer Note
                 snapshot.warningNote?.takeIf { it.isNotBlank() }?.let { note ->
                     Surface(
@@ -1180,6 +1140,8 @@ private fun GeolocationCard(
                             )
                         }
                     }
+                }
+            }
                 }
             }
         }
@@ -1459,7 +1421,8 @@ private fun CounterInputDialog(
 @Composable
 private fun TicketInfoCard(
     detail: TicketDetail,
-    onCallPhone: (String) -> Unit
+    onCallPhone: (String) -> Unit,
+    onOpenAddressOnMap: (String) -> Unit
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -1509,6 +1472,52 @@ private fun TicketInfoCard(
 
             DetailMetaRow(label = "Сервис", value = detail.serviceName.ifBlank { "Не указан" })
             DetailMetaRow(label = "Заявитель", value = detail.creatorName)
+            if (detail.addressText.isNotBlank()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Адрес",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = IntraColors.TextTertiary,
+                        modifier = Modifier.width(104.dp)
+                    )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = detail.addressText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = IntraColors.TextPrimary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        OutlinedButton(
+                            onClick = { onOpenAddressOnMap(detail.addressText) },
+                            modifier = Modifier.height(34.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, IntraColors.BrandPrimary.copy(alpha = 0.45f))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Map,
+                                contentDescription = null,
+                                tint = IntraColors.BrandPrimary,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "На карте",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = IntraColors.BrandPrimary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+            }
             if (!detail.creatorPhone.isNullOrBlank()) {
                 Row(
                     modifier = Modifier
@@ -1597,12 +1606,12 @@ private fun QuickRepairedStatusCard(
     onCommentChange: (String) -> Unit
 ) {
     val toggleBg by animateColorAsState(
-        targetValue = if (markAsRepaired) IntraColors.EmeraldSuccess else IntraColors.EmeraldTint,
+        targetValue = if (markAsRepaired) IntraColors.EmeraldSuccess else IntraColors.BackgroundIce,
         animationSpec = spring(stiffness = Spring.StiffnessMedium),
         label = "repaired_toggle_bg"
     )
     val toggleFg by animateColorAsState(
-        targetValue = if (markAsRepaired) Color.White else IntraColors.EmeraldDeep,
+        targetValue = if (markAsRepaired) Color.White else IntraColors.TextPrimary,
         animationSpec = spring(stiffness = Spring.StiffnessMedium),
         label = "repaired_toggle_fg"
     )
@@ -1668,7 +1677,7 @@ private fun QuickRepairedStatusCard(
                         color = toggleBg,
                         border = BorderStroke(
                             1.dp,
-                            if (markAsRepaired) IntraColors.EmeraldDeep else IntraColors.EmeraldSuccess.copy(alpha = 0.45f)
+                            if (markAsRepaired) IntraColors.EmeraldDeep else IntraColors.SubtleBorder
                         )
                     ) {
                         Row(
@@ -1693,17 +1702,19 @@ private fun QuickRepairedStatusCard(
                                     } else {
                                         "Нажмите, чтобы отметить работу выполненной"
                                     },
-                                    color = toggleFg.copy(alpha = 0.85f),
+                                    color = if (markAsRepaired) toggleFg.copy(alpha = 0.88f) else IntraColors.TextSecondary,
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             }
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Icon(
-                                imageVector = Icons.Rounded.CheckCircle,
-                                contentDescription = null,
-                                tint = toggleFg,
-                                modifier = Modifier.size(28.dp)
-                            )
+                            if (markAsRepaired) {
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Icon(
+                                    imageVector = Icons.Rounded.CheckCircle,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -2347,35 +2358,106 @@ private fun AvrCounterBanner(
             }
         )
     ) {
-        Row(
+        Column(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            verticalArrangement = Arrangement.spacedBy(5.dp)
         ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                if (isRecognizing) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(
-                            color = IntraColors.BrandPrimary,
-                            strokeWidth = 2.dp,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Распознаём счётчик копий на АВР...",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = IntraColors.TextPrimary,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                } else if (hasCounter) {
+            if (isRecognizing) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(
+                        color = IntraColors.BrandPrimary,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Счётчик копий: ${AvrCounterParser.formatCounterDisplay(counterValue)}",
-                        style = MaterialTheme.typography.titleSmall,
+                        text = "Распознаём счётчик копий на АВР...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = IntraColors.TextPrimary,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Счётчик копий",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (hasCounter) IntraColors.EmeraldDeep.copy(alpha = 0.9f) else IntraColors.WarningAmber
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (hasAvrPhoto) {
+                            Surface(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable(enabled = !isSaving, onClick = onSelectRegion),
+                                shape = RoundedCornerShape(10.dp),
+                                color = IntraColors.BrandPrimary.copy(alpha = 0.12f)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.CropFree,
+                                        contentDescription = null,
+                                        tint = IntraColors.BrandPrimary,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Область",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = IntraColors.BrandPrimary,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = IntraColors.SurfaceWhite
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Edit,
+                                    contentDescription = null,
+                                    tint = if (hasCounter) IntraColors.EmeraldDeep else IntraColors.WarningAmber,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = if (hasCounter) "Изменить" else "Ввести",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = if (hasCounter) IntraColors.EmeraldDeep else IntraColors.WarningAmber,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (hasCounter) {
+                    Text(
+                        text = AvrCounterParser.formatCounterDisplay(counterValue),
+                        style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
                         color = IntraColors.EmeraldDeep
                     )
                     Text(
@@ -2389,8 +2471,8 @@ private fun AvrCounterBanner(
                     )
                 } else {
                     Text(
-                        text = "Счётчик копий не указан",
-                        style = MaterialTheme.typography.titleSmall,
+                        text = "Не указан",
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = IntraColors.WarningAmber
                     )
@@ -2399,66 +2481,6 @@ private fun AvrCounterBanner(
                         style = MaterialTheme.typography.labelSmall,
                         color = IntraColors.TextSecondary
                     )
-                }
-            }
-
-            if (!isRecognizing) {
-                Spacer(modifier = Modifier.width(8.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (hasAvrPhoto) {
-                        Surface(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable(enabled = !isSaving, onClick = onSelectRegion),
-                            shape = RoundedCornerShape(10.dp),
-                            color = IntraColors.BrandPrimary.copy(alpha = 0.12f)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.CropFree,
-                                    contentDescription = null,
-                                    tint = IntraColors.BrandPrimary,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "Область",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = IntraColors.BrandPrimary,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                        }
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = IntraColors.SurfaceWhite
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Edit,
-                                contentDescription = null,
-                                tint = if (hasCounter) IntraColors.EmeraldDeep else IntraColors.WarningAmber,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = if (hasCounter) "Изменить" else "Ввести",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = if (hasCounter) IntraColors.EmeraldDeep else IntraColors.WarningAmber,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
                 }
             }
         }
@@ -2496,88 +2518,101 @@ private fun AvrSerialBanner(
             }
         )
     ) {
-        Row(
+        Column(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            verticalArrangement = Arrangement.spacedBy(5.dp)
         ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                if (hasSerial) {
-                    Text(
-                        text = "Серийный номер: $serial",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isMismatch) IntraColors.ErrorRed else IntraColors.EmeraldDeep
-                    )
-                    val subtitle = when {
-                        equipmentScan?.matchesTicket == true -> "Совпадает с заявкой"
-                        equipmentScan?.matchesTicket == false ->
-                            equipmentScan.matchNote.ifBlank { "Не совпадает с заявкой" }
-                        equipmentScan?.rawSource == "Ручной ввод" -> "Указано инженером вручную"
-                        else -> "Считан с шильдика / штрихкода"
+                Text(
+                    text = "Серийный номер (S/N)",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = when {
+                        isMismatch -> IntraColors.ErrorRed
+                        hasSerial -> IntraColors.EmeraldDeep.copy(alpha = 0.9f)
+                        else -> IntraColors.WarningAmber
                     }
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isMismatch) {
-                            IntraColors.ErrorRed.copy(alpha = 0.9f)
-                        } else {
-                            IntraColors.EmeraldDeep.copy(alpha = 0.85f)
-                        }
-                    )
-                } else {
-                    Text(
-                        text = "Серийный номер не указан",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = IntraColors.WarningAmber
-                    )
-                    Text(
-                        text = if (expectedSerial.isNotBlank()) {
-                            "По заявке: $expectedSerial - нажмите для ввода"
-                        } else {
-                            "Нажмите для ввода или сканирования"
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = IntraColors.TextSecondary
-                    )
+                )
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = IntraColors.SurfaceWhite
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Edit,
+                            contentDescription = null,
+                            tint = when {
+                                isMismatch -> IntraColors.ErrorRed
+                                hasSerial -> IntraColors.EmeraldDeep
+                                else -> IntraColors.WarningAmber
+                            },
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (hasSerial) "Изменить" else "Ввести",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = when {
+                                isMismatch -> IntraColors.ErrorRed
+                                hasSerial -> IntraColors.EmeraldDeep
+                                else -> IntraColors.WarningAmber
+                            },
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = IntraColors.SurfaceWhite
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Edit,
-                        contentDescription = null,
-                        tint = when {
-                            isMismatch -> IntraColors.ErrorRed
-                            hasSerial -> IntraColors.EmeraldDeep
-                            else -> IntraColors.WarningAmber
-                        },
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = if (hasSerial) "Изменить" else "Ввести",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = when {
-                            isMismatch -> IntraColors.ErrorRed
-                            hasSerial -> IntraColors.EmeraldDeep
-                            else -> IntraColors.WarningAmber
-                        },
-                        fontWeight = FontWeight.SemiBold
-                    )
+            if (hasSerial) {
+                Text(
+                    text = serial,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                    color = if (isMismatch) IntraColors.ErrorRed else IntraColors.EmeraldDeep
+                )
+                val subtitle = when {
+                    equipmentScan?.matchesTicket == true -> "Совпадает с заявкой"
+                    equipmentScan?.matchesTicket == false ->
+                        equipmentScan.matchNote.ifBlank { "Не совпадает с заявкой" }
+                    equipmentScan?.rawSource == "Ручной ввод" -> "Указано инженером вручную"
+                    equipmentScan?.rawSource == "Фото документа (OCR)" -> "Автоматически распознан на фото документа"
+                    else -> "Считан с шильдика / штрихкода"
                 }
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isMismatch) {
+                        IntraColors.ErrorRed.copy(alpha = 0.9f)
+                    } else {
+                        IntraColors.EmeraldDeep.copy(alpha = 0.85f)
+                    }
+                )
+            } else {
+                Text(
+                    text = "Не указан",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = IntraColors.WarningAmber
+                )
+                Text(
+                    text = if (expectedSerial.isNotBlank()) {
+                        "По заявке: $expectedSerial - нажмите для ввода"
+                    } else {
+                        "Нажмите для ввода или сканирования"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = IntraColors.TextSecondary
+                )
             }
         }
     }

@@ -57,6 +57,7 @@ data class TaskDetailUiState(
     val savingStage: String = "",
     val actionMessage: String? = null,
     val isHistoryExpanded: Boolean = false,
+    val isGeoExpanded: Boolean = false,
     val viewerPhoto: ViewerPhoto? = null
 ) {
     val hasChangesToSave: Boolean
@@ -235,6 +236,10 @@ class TaskDetailViewModel(
 
     fun toggleHistoryExpanded() {
         _uiState.update { it.copy(isHistoryExpanded = !it.isHistoryExpanded) }
+    }
+
+    fun toggleGeoExpanded() {
+        _uiState.update { it.copy(isGeoExpanded = !it.isGeoExpanded) }
     }
 
     fun openPhotoViewer(photo: ViewerPhoto) {
