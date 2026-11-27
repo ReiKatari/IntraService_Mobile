@@ -1590,6 +1590,20 @@ class IntraRepository(
                 sections += "Счётчик копий (АВР): ${AvrCounterParser.formatCounterDisplay(cleanCounter)}"
             }
 
+            if (equipmentScan != null &&
+                equipmentScan.modelName.isBlank() &&
+                equipmentScan.inventoryNumber.isBlank() &&
+                equipmentScan.serialNumber.isNotBlank() &&
+                !cleanUser.contains("Серийный номер (АВР):")
+            ) {
+                val notePart = if (equipmentScan.matchNote.isNotBlank() && equipmentScan.matchesTicket != null) {
+                    " (${equipmentScan.matchNote})"
+                } else {
+                    ""
+                }
+                sections += "Серийный номер (АВР): ${equipmentScan.serialNumber}$notePart"
+            }
+
             if (photos.isNotEmpty() && !cleanUser.contains("Документы:")) {
                 val avrCount = photos.count { it.documentType == PhotoDocumentType.AVR }
                 val testCount = photos.count { it.documentType == PhotoDocumentType.TEST_LIST }
@@ -1604,7 +1618,10 @@ class IntraRepository(
                 }
             }
 
-            if (equipmentScan != null && !cleanUser.contains("Оборудование:")) {
+            if (equipmentScan != null &&
+                (equipmentScan.modelName.isNotBlank() || equipmentScan.inventoryNumber.isNotBlank()) &&
+                !cleanUser.contains("Оборудование:")
+            ) {
                 val equipSummary = equipmentScan.formatSummaryForComment()
                 if (equipSummary.isNotBlank()) {
                     sections += "Оборудование: $equipSummary"

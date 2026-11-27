@@ -152,7 +152,6 @@ import com.lantaservice.intra.ui.camera.EquipmentScannerScreen
 import com.lantaservice.intra.ui.camera.SmartCameraScreen
 import com.lantaservice.intra.ui.components.FullscreenPhotoViewer
 import com.lantaservice.intra.ui.components.IntraHeaderBanner
-import com.lantaservice.intra.ui.components.PrinterModelDropdownField
 import com.lantaservice.intra.ui.components.StatusPill
 import com.lantaservice.intra.ui.components.ViewerPhoto
 import com.lantaservice.intra.ui.components.intraHeaderInsetsPadding
@@ -164,7 +163,6 @@ import com.lantaservice.intra.util.EquipmentScanParser
 import com.lantaservice.intra.util.EquipmentScanResult
 import com.lantaservice.intra.util.ImageCompressor
 import com.lantaservice.intra.util.NormalizedRect
-import com.lantaservice.intra.util.PrinterModelCatalog
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
@@ -188,7 +186,7 @@ fun TaskDetailScreen(
 
     var showSmartCamera by remember { mutableStateOf(false) }
     var showEquipmentScanner by remember { mutableStateOf(false) }
-    var showEquipmentManualDialog by remember { mutableStateOf(false) }
+    var showSerialInputDialog by remember { mutableStateOf(false) }
     var pendingCameraPurpose by remember { mutableStateOf("photo") }
     var smartCameraPhotoIndex by remember { mutableIntStateOf(1) }
     var activePhotoTypeForCapture by rememberSaveable { mutableStateOf(PhotoDocumentType.AVR) }
@@ -392,19 +390,23 @@ fun TaskDetailScreen(
         )
     }
 
-    if (showEquipmentManualDialog) {
-        EquipmentManualInputDialog(
-            initial = state.equipmentScan,
-            expected = expectedEquipment,
-            onDismiss = { showEquipmentManualDialog = false },
-            onSave = { modelName, serialNumber, inventoryNumber ->
-                showEquipmentManualDialog = false
-                viewModel.updateEquipmentManual(
-                    modelName = modelName,
-                    serialNumber = serialNumber,
-                    inventoryNumber = inventoryNumber,
-                    rawSource = state.equipmentScan?.rawSource?.takeIf { it.isNotBlank() } ?: "Ручной ввод"
-                )
+    if (showSerialInputDialog) {
+        SerialNumberInputDialog(
+            initialValue = state.equipmentScan?.serialNumber.orEmpty(),
+            expectedSerial = expectedEquipment?.serialNumber.orEmpty(),
+            ticketText = state.detail?.let { "${it.name}\n${it.description}" }.orEmpty(),
+            onOpenScanner = {
+                showSerialInputDialog = false
+                startEquipmentScanner()
+            },
+            onClear = {
+                showSerialInputDialog = false
+                viewModel.clearEquipmentScan()
+            },
+            onDismiss = { showSerialInputDialog = false },
+            onConfirm = { serialNumber ->
+                showSerialInputDialog = false
+                viewModel.updateSerialNumberManual(serialNumber)
             }
         )
     }
@@ -619,6 +621,8 @@ fun TaskDetailScreen(
                                 counterValue = state.counterValue,
                                 counterAutoDetected = state.counterAutoDetected,
                                 isRecognizingCounter = state.isRecognizingCounter,
+                                equipmentScan = state.equipmentScan,
+                                expectedSerial = expectedEquipment?.serialNumber.orEmpty(),
                                 isProcessingPhoto = state.isProcessingPhoto,
                                 isSaving = state.isSaving,
                                 onTakePhoto = {
@@ -641,6 +645,8 @@ fun TaskDetailScreen(
                                 onSelectCounterRegion = {
                                     latestPendingAvr?.let { avrCropTargetPhoto = it }
                                 },
+                                onEditSerial = { showSerialInputDialog = true },
+                                onScanSerial = ::startEquipmentScanner,
                                 onRemovePending = viewModel::removePendingPhoto,
                                 onPreviewPending = { pending ->
                                     viewModel.openPhotoViewer(
@@ -668,20 +674,6 @@ fun TaskDetailScreen(
                                         }
                                     }
                                 }
-                            )
-                        }
-
-                        item {
-                            EquipmentScanCard(
-                                equipmentScan = state.equipmentScan,
-                                expectedEquipment = expectedEquipment,
-                                isSaving = state.isSaving,
-                                onScanClick = ::startEquipmentScanner,
-                                onManualInputClick = { showEquipmentManualDialog = true },
-                                onCopySerial = { sn ->
-                                    copyToClipboard(context, "serial", sn, "Серийный номер скопирован")
-                                },
-                                onClear = viewModel::clearEquipmentScan
                             )
                         }
 
@@ -1769,6 +1761,8 @@ private fun AttachmentsCard(
     counterValue: String,
     counterAutoDetected: Boolean,
     isRecognizingCounter: Boolean,
+    equipmentScan: EquipmentScanResult? = null,
+    expectedSerial: String = "",
     isProcessingPhoto: Boolean,
     isSaving: Boolean,
     onTakePhoto: () -> Unit,
@@ -1777,6 +1771,8 @@ private fun AttachmentsCard(
     onChangePhotoType: (PendingPhoto) -> Unit,
     onEditCounter: () -> Unit,
     onSelectCounterRegion: () -> Unit = {},
+    onEditSerial: () -> Unit = {},
+    onScanSerial: () -> Unit = {},
     onRemovePending: (String) -> Unit,
     onPreviewPending: (PendingPhoto) -> Unit,
     onClickExistingAttachment: (TaskAttachment) -> Unit
@@ -1909,15 +1905,27 @@ private fun AttachmentsCard(
                     onClickExistingAttachment = onClickExistingAttachment
                 ) {
                     if (docType == PhotoDocumentType.AVR) {
-                        AvrCounterBanner(
-                            counterValue = counterValue,
-                            counterAutoDetected = counterAutoDetected,
-                            isRecognizing = isRecognizingCounter,
-                            isSaving = isSaving,
-                            hasAvrPhoto = catPending.isNotEmpty(),
-                            onEditCounter = onEditCounter,
-                            onSelectRegion = onSelectCounterRegion
-                        )
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            AvrCounterBanner(
+                                counterValue = counterValue,
+                                counterAutoDetected = counterAutoDetected,
+                                isRecognizing = isRecognizingCounter,
+                                isSaving = isSaving,
+                                hasAvrPhoto = catPending.isNotEmpty(),
+                                onEditCounter = onEditCounter,
+                                onSelectRegion = onSelectCounterRegion
+                            )
+                            AvrSerialBanner(
+                                equipmentScan = equipmentScan,
+                                expectedSerial = expectedSerial,
+                                isSaving = isSaving,
+                                onEditSerial = onEditSerial,
+                                onScanSerial = onScanSerial
+                            )
+                        }
                     }
                 }
             }
@@ -2461,6 +2469,156 @@ private fun AvrCounterBanner(
 }
 
 @Composable
+private fun AvrSerialBanner(
+    equipmentScan: EquipmentScanResult?,
+    expectedSerial: String,
+    isSaving: Boolean,
+    onEditSerial: () -> Unit,
+    onScanSerial: () -> Unit
+) {
+    val serial = equipmentScan?.serialNumber.orEmpty()
+    val hasSerial = serial.isNotBlank()
+    val isMismatch = hasSerial && equipmentScan?.matchesTicket == false
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(enabled = !isSaving, onClick = onEditSerial),
+        shape = RoundedCornerShape(12.dp),
+        color = when {
+            isMismatch -> IntraColors.ErrorTint
+            hasSerial -> IntraColors.EmeraldTint
+            else -> IntraColors.WarningTint
+        },
+        border = BorderStroke(
+            1.dp,
+            when {
+                isMismatch -> IntraColors.ErrorRed.copy(alpha = 0.55f)
+                hasSerial -> IntraColors.EmeraldSuccess.copy(alpha = 0.45f)
+                else -> IntraColors.WarningAmber.copy(alpha = 0.55f)
+            }
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                if (hasSerial) {
+                    Text(
+                        text = "Серийный номер: $serial",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isMismatch) IntraColors.ErrorRed else IntraColors.EmeraldDeep
+                    )
+                    val subtitle = when {
+                        equipmentScan?.matchesTicket == true -> "Совпадает с заявкой"
+                        equipmentScan?.matchesTicket == false ->
+                            equipmentScan.matchNote.ifBlank { "Не совпадает с заявкой" }
+                        equipmentScan?.rawSource == "Ручной ввод" -> "Указано инженером вручную"
+                        else -> "Считан с шильдика / штрихкода"
+                    }
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isMismatch) {
+                            IntraColors.ErrorRed.copy(alpha = 0.9f)
+                        } else {
+                            IntraColors.EmeraldDeep.copy(alpha = 0.85f)
+                        }
+                    )
+                } else {
+                    Text(
+                        text = "Серийный номер не указан",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = IntraColors.WarningAmber
+                    )
+                    Text(
+                        text = if (expectedSerial.isNotBlank()) {
+                            "По заявке: $expectedSerial - отсканируйте или введите"
+                        } else {
+                            "Отсканируйте шильдик / ШК или нажмите для ввода"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = IntraColors.TextSecondary
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable(enabled = !isSaving, onClick = onScanSerial),
+                    shape = RoundedCornerShape(10.dp),
+                    color = IntraColors.BrandPrimary.copy(alpha = 0.12f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.QrCodeScanner,
+                            contentDescription = null,
+                            tint = IntraColors.BrandPrimary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Скан",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = IntraColors.BrandPrimary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = IntraColors.SurfaceWhite
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Edit,
+                            contentDescription = null,
+                            tint = when {
+                                isMismatch -> IntraColors.ErrorRed
+                                hasSerial -> IntraColors.EmeraldDeep
+                                else -> IntraColors.WarningAmber
+                            },
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (hasSerial) "Изменить" else "Ввести",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = when {
+                                isMismatch -> IntraColors.ErrorRed
+                                hasSerial -> IntraColors.EmeraldDeep
+                                else -> IntraColors.WarningAmber
+                            },
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun HistoryCard(
     detail: TicketDetail,
     expanded: Boolean,
@@ -2861,344 +3019,28 @@ private fun RequirementCheckPill(
 }
 
 @Composable
-private fun EquipmentDetailRow(
-    label: String,
-    value: String,
-    onCopy: (() -> Unit)? = null
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = IntraColors.TextTertiary,
-            modifier = Modifier.width(128.dp)
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodySmall,
-            color = IntraColors.TextPrimary,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.weight(1f)
-        )
-        if (onCopy != null) {
-            IconButton(
-                onClick = onCopy,
-                modifier = Modifier.size(28.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.ContentCopy,
-                    contentDescription = "Копировать $label",
-                    tint = IntraColors.BrandPrimary,
-                    modifier = Modifier.size(15.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun EquipmentScanCard(
-    equipmentScan: EquipmentScanResult?,
-    expectedEquipment: EquipmentScanResult?,
-    isSaving: Boolean,
-    onScanClick: () -> Unit,
-    onManualInputClick: () -> Unit,
-    onCopySerial: (String) -> Unit,
-    onClear: () -> Unit
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        color = IntraColors.SurfaceWhite,
-        border = BorderStroke(
-            1.dp,
-            when (equipmentScan?.matchesTicket) {
-                true -> IntraColors.EmeraldSuccess.copy(alpha = 0.55f)
-                false -> IntraColors.ErrorRed.copy(alpha = 0.55f)
-                null -> IntraColors.SubtleBorder
-            }
-        ),
-        shadowElevation = 2.dp
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.QrCodeScanner,
-                        contentDescription = null,
-                        tint = IntraColors.BrandPrimary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Оборудование (шильдик / штрихкод)",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = IntraColors.TextPrimary
-                    )
-                }
-
-                if (equipmentScan != null && !isSaving) {
-                    IconButton(
-                        onClick = onClear,
-                        modifier = Modifier.size(30.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Close,
-                            contentDescription = "Очистить",
-                            tint = IntraColors.TextSecondary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-            }
-
-            if (expectedEquipment != null && equipmentScan == null) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    color = IntraColors.BrandPrimary.copy(alpha = 0.08f)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Print,
-                            contentDescription = null,
-                            tint = IntraColors.BrandPrimary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        val expectedDesc = listOfNotNull(
-                            expectedEquipment.modelName.takeIf { it.isNotBlank() },
-                            expectedEquipment.serialNumber.takeIf { it.isNotBlank() }?.let { "серийный номер $it" },
-                            expectedEquipment.inventoryNumber.takeIf { it.isNotBlank() }?.let { "инвентарный номер $it" }
-                        ).joinToString(" - ")
-                        Text(
-                            text = "Ожидается по заявке: $expectedDesc",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = IntraColors.BrandPrimary,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-            }
-
-            if (equipmentScan == null) {
-                Text(
-                    text = "Отсканируйте DataMatrix, Code128, QR или текст шильдика на аппарате либо введите данные вручную для сверки с заявкой.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = IntraColors.TextSecondary
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Button(
-                        onClick = onScanClick,
-                        enabled = !isSaving,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(44.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = IntraColors.BrandPrimary,
-                            contentColor = Color.White
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.QrCodeScanner,
-                            contentDescription = null,
-                            modifier = Modifier.size(17.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Сканировать", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    OutlinedButton(
-                        onClick = onManualInputClick,
-                        enabled = !isSaving,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(44.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                        border = BorderStroke(1.dp, IntraColors.BrandPrimary)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Edit,
-                            contentDescription = null,
-                            tint = IntraColors.BrandPrimary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Ввести вручную",
-                            color = IntraColors.BrandPrimary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-            } else {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    color = when (equipmentScan.matchesTicket) {
-                        true -> IntraColors.EmeraldTint
-                        false -> IntraColors.ErrorTint
-                        null -> IntraColors.BackgroundIce
-                    }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = when (equipmentScan.matchesTicket) {
-                                true -> Icons.Rounded.CheckCircle
-                                false -> Icons.Rounded.WarningAmber
-                                null -> Icons.Rounded.Print
-                            },
-                            contentDescription = null,
-                            tint = when (equipmentScan.matchesTicket) {
-                                true -> IntraColors.EmeraldDeep
-                                false -> IntraColors.ErrorRed
-                                null -> IntraColors.BrandPrimary
-                            },
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = equipmentScan.matchNote.ifBlank { "Данные оборудования зафиксированы" },
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = when (equipmentScan.matchesTicket) {
-                                true -> IntraColors.EmeraldDeep
-                                false -> IntraColors.ErrorRed
-                                null -> IntraColors.TextPrimary
-                            }
-                        )
-                    }
-                }
-
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    color = IntraColors.BackgroundIce,
-                    border = BorderStroke(1.dp, IntraColors.SubtleBorder)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        if (equipmentScan.modelName.isNotBlank()) {
-                            EquipmentDetailRow(
-                                label = "Модель",
-                                value = equipmentScan.modelName
-                            )
-                        }
-                        if (equipmentScan.serialNumber.isNotBlank()) {
-                            EquipmentDetailRow(
-                                label = "Серийный номер",
-                                value = equipmentScan.serialNumber,
-                                onCopy = { onCopySerial(equipmentScan.serialNumber) }
-                            )
-                        }
-                        if (equipmentScan.inventoryNumber.isNotBlank()) {
-                            EquipmentDetailRow(
-                                label = "Инвентарный номер",
-                                value = equipmentScan.inventoryNumber
-                            )
-                        }
-                        if (equipmentScan.rawSource.isNotBlank()) {
-                            EquipmentDetailRow(
-                                label = "Источник данных",
-                                value = equipmentScan.rawSource
-                            )
-                        }
-                    }
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = onScanClick,
-                        enabled = !isSaving,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(40.dp),
-                        shape = RoundedCornerShape(11.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                        border = BorderStroke(1.dp, IntraColors.BrandPrimary)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.QrCodeScanner,
-                            contentDescription = null,
-                            tint = IntraColors.BrandPrimary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Пересканировать", color = IntraColors.BrandPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    OutlinedButton(
-                        onClick = onManualInputClick,
-                        enabled = !isSaving,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(40.dp),
-                        shape = RoundedCornerShape(11.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                        border = BorderStroke(1.dp, IntraColors.SubtleBorder)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Edit,
-                            contentDescription = null,
-                            tint = IntraColors.TextPrimary,
-                            modifier = Modifier.size(15.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Редактировать", color = IntraColors.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun EquipmentManualInputDialog(
-    initial: EquipmentScanResult?,
-    expected: EquipmentScanResult?,
+private fun SerialNumberInputDialog(
+    initialValue: String,
+    expectedSerial: String,
+    ticketText: String,
+    onOpenScanner: () -> Unit,
+    onClear: () -> Unit,
     onDismiss: () -> Unit,
-    onSave: (modelName: String, serialNumber: String, inventoryNumber: String) -> Unit
+    onConfirm: (String) -> Unit
 ) {
-    val context = LocalContext.current
-    val catalogEntries by PrinterModelCatalog.entries.collectAsStateWithLifecycle()
-    LaunchedEffect(context) {
-        PrinterModelCatalog.ensureLoaded(context)
+    var inputText by remember(initialValue) {
+        mutableStateOf(EquipmentScanParser.normalizePrinterSerial(initialValue))
     }
-
-    var modelText by remember(initial) { mutableStateOf(initial?.modelName.orEmpty()) }
-    var serialText by remember(initial) { mutableStateOf(initial?.serialNumber.orEmpty()) }
-    var invText by remember(initial) { mutableStateOf(initial?.inventoryNumber.orEmpty()) }
-    val hasAnyInput = modelText.isNotBlank() || serialText.isNotBlank() || invText.isNotBlank()
+    val normalized = EquipmentScanParser.normalizePrinterSerial(inputText)
+    val liveMatch = remember(normalized, ticketText) {
+        EquipmentScanParser.buildManualResult(
+            modelName = "",
+            serialNumber = normalized,
+            inventoryNumber = "",
+            ticketText = ticketText,
+            rawSource = "Ручной ввод"
+        )
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -3213,99 +3055,124 @@ private fun EquipmentManualInputDialog(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        imageVector = Icons.Rounded.Print,
+                        imageVector = Icons.Rounded.QrCodeScanner,
                         contentDescription = null,
                         tint = IntraColors.BrandPrimary,
                         modifier = Modifier.size(22.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Данные оборудования",
+                        text = "Серийный номер (АВР)",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = IntraColors.TextPrimary
                     )
                 }
 
-                if (expected != null && (modelText.isBlank() || serialText.isBlank())) {
+                Text(
+                    text = "Укажите или отсканируйте серийный номер аппарата. Буквы O автоматически заменяются на 0.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = IntraColors.TextSecondary
+                )
+
+                if (expectedSerial.isNotBlank() && !normalized.equals(expectedSerial, ignoreCase = true)) {
                     OutlinedButton(
-                        onClick = {
-                            if (modelText.isBlank() && expected.modelName.isNotBlank()) {
-                                modelText = expected.modelName
-                            }
-                            if (serialText.isBlank() && expected.serialNumber.isNotBlank()) {
-                                serialText = expected.serialNumber
-                            }
-                            if (invText.isBlank() && expected.inventoryNumber.isNotBlank()) {
-                                invText = expected.inventoryNumber
-                            }
-                        },
+                        onClick = { inputText = EquipmentScanParser.normalizePrinterSerial(expectedSerial) },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(12.dp),
                         border = BorderStroke(1.dp, IntraColors.BrandPrimary.copy(alpha = 0.45f))
                     ) {
                         Text(
-                            text = "Подставить данные из заявки",
+                            text = "Подставить из заявки: $expectedSerial",
                             style = MaterialTheme.typography.labelMedium,
                             color = IntraColors.BrandPrimary
                         )
                     }
                 }
 
-                PrinterModelDropdownField(
-                    value = modelText,
-                    onValueChange = { modelText = it },
-                    catalogEntries = catalogEntries,
-                    label = "Модель (поиск или выбор из списка)",
-                    initialBrandFilter = initial?.detectedVendor?.takeIf { it.isNotBlank() }
-                        ?: expected?.detectedVendor?.takeIf { it.isNotBlank() },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
                 OutlinedTextField(
-                    value = serialText,
-                    onValueChange = { serialText = EquipmentScanParser.normalizePrinterSerial(it) },
+                    value = inputText,
+                    onValueChange = { raw ->
+                        inputText = EquipmentScanParser.normalizePrinterSerial(raw)
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    label = { Text("Серийный номер") },
+                    label = { Text("Серийный номер (S/N)") },
+                    placeholder = { Text("Например: CNG9D4V0G3") },
                     shape = RoundedCornerShape(14.dp),
+                    keyboardOptions = KeyboardOptions(
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = { if (normalized.isNotBlank()) onConfirm(normalized) }
+                    ),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = IntraColors.BrandPrimary,
                         unfocusedBorderColor = IntraColors.SubtleBorder
                     )
                 )
 
-                OutlinedTextField(
-                    value = invText,
-                    onValueChange = { invText = it.uppercase() },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    label = { Text("Инвентарный номер") },
-                    shape = RoundedCornerShape(14.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = IntraColors.BrandPrimary,
-                        unfocusedBorderColor = IntraColors.SubtleBorder
+                if (normalized.isNotEmpty()) {
+                    val previewText = when (liveMatch?.matchesTicket) {
+                        true -> "Значение к отправке: $normalized (${liveMatch.matchNote})"
+                        false -> liveMatch.matchNote
+                        null -> "Значение к отправке: $normalized"
+                    }
+                    Text(
+                        text = previewText,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (liveMatch?.matchesTicket == false) {
+                            IntraColors.ErrorRed
+                        } else {
+                            IntraColors.EmeraldDeep
+                        },
+                        fontWeight = FontWeight.SemiBold
                     )
-                )
+                }
+
+                OutlinedButton(
+                    onClick = onOpenScanner,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, IntraColors.BrandPrimary.copy(alpha = 0.45f))
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.QrCodeScanner,
+                        contentDescription = null,
+                        tint = IntraColors.BrandPrimary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Сканировать шильдик / штрихкод",
+                        color = IntraColors.BrandPrimary
+                    )
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
                 ) {
+                    if (initialValue.isNotBlank()) {
+                        TextButton(onClick = onClear) {
+                            Text("Очистить", color = IntraColors.ErrorRed)
+                        }
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
                     TextButton(onClick = onDismiss) {
                         Text("Отмена", color = IntraColors.TextSecondary)
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
-                        onClick = { onSave(modelText, serialText, invText) },
-                        enabled = hasAnyInput,
+                        onClick = { onConfirm(normalized) },
+                        enabled = normalized.isNotBlank(),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = IntraColors.BrandPrimary,
                             contentColor = Color.White
                         )
                     ) {
-                        Text("Сохранить")
+                        Text("Применить")
                     }
                 }
             }

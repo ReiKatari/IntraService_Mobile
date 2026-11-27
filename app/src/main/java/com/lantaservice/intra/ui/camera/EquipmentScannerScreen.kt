@@ -80,20 +80,17 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
-import com.lantaservice.intra.ui.components.PrinterModelDropdownField
 import com.lantaservice.intra.ui.components.intraHeaderInsetsPadding
 import com.lantaservice.intra.ui.theme.IntraColors
 import com.lantaservice.intra.util.EquipmentScanParser
 import com.lantaservice.intra.util.EquipmentScanResult
 import com.lantaservice.intra.util.ImageCompressor
-import com.lantaservice.intra.util.PrinterModelCatalog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -102,8 +99,8 @@ import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 
 /**
- * Full-screen ML Kit Barcode + Label OCR scanner for printer/MFP serial numbers,
- * inventory tags, and model names with instant ticket match verification.
+ * Full-screen ML Kit Barcode + Label OCR scanner for printer/MFP serial numbers
+ * with instant O->0 normalization and ticket match verification.
  */
 @SuppressLint("UnsafeOptInUsageError")
 @Composable
@@ -117,11 +114,6 @@ fun EquipmentScannerScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
-    val catalogEntries by PrinterModelCatalog.entries.collectAsStateWithLifecycle()
-
-    LaunchedEffect(context) {
-        PrinterModelCatalog.ensureLoaded(context)
-    }
 
     var cameraRef by remember { mutableStateOf<Camera?>(null) }
     var imageCaptureRef by remember { mutableStateOf<ImageCapture?>(null) }
@@ -132,9 +124,7 @@ fun EquipmentScannerScreen(
     var ocrHintMessage by remember { mutableStateOf<String?>(null) }
     var liveBarcodeValues by remember { mutableStateOf<List<String>>(emptyList()) }
     var detectedResult by remember { mutableStateOf<EquipmentScanResult?>(null) }
-    var editModel by remember { mutableStateOf("") }
     var editSerial by remember { mutableStateOf("") }
-    var editInv by remember { mutableStateOf("") }
 
     val expectedEquipment = remember(ticketText) {
         EquipmentScanParser.extractExpectedFromTicket(ticketText)
@@ -142,9 +132,7 @@ fun EquipmentScannerScreen(
 
     fun applyDetectedResult(result: EquipmentScanResult) {
         detectedResult = result
-        editModel = result.modelName
         editSerial = result.serialNumber
-        editInv = result.inventoryNumber
         ocrHintMessage = null
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
     }
@@ -181,8 +169,7 @@ fun EquipmentScannerScreen(
                             existing = detectedResult,
                             barcodeValues = liveBarcodeValues,
                             ocrLines = ocrLines,
-                            ticketText = ticketText,
-                            catalogEntries = catalogEntries
+                            ticketText = ticketText
                         )
                         isScanningOcr = false
                         if (parsed != null) {
@@ -292,8 +279,7 @@ fun EquipmentScannerScreen(
                                                         val parsed = EquipmentScanParser.parse(
                                                             barcodeValues = vals,
                                                             ocrLines = emptyList(),
-                                                            ticketText = ticketText,
-                                                            catalogEntries = catalogEntries
+                                                            ticketText = ticketText
                                                         )
                                                         if (parsed != null && detectedResult == null) {
                                                             applyDetectedResult(parsed)
@@ -377,7 +363,7 @@ fun EquipmentScannerScreen(
                         color = Color.Black.copy(alpha = 0.55f)
                     ) {
                         Text(
-                            text = "Шильдик / штрихкод (#$taskId)",
+                            text = "Серийный номер (#$taskId)",
                             color = Color.White,
                             style = MaterialTheme.typography.labelLarge,
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
@@ -460,7 +446,7 @@ fun EquipmentScannerScreen(
                 ) {
                     Text(
                         text = ocrHintMessage
-                            ?: "Наведите на штрихкод / DataMatrix (коротко нажмите на экран для фокуса) или считайте текст шильдика",
+                            ?: "Наведите на штрихкод / DataMatrix (коротко нажмите на экран для фокуса) или считайте серийный номер с шильдика",
                         color = if (ocrHintMessage != null) IntraColors.WarningAmber else Color.White,
                         style = MaterialTheme.typography.labelSmall,
                         textAlign = TextAlign.Center,
@@ -510,14 +496,14 @@ fun EquipmentScannerScreen(
                         }
                     }
                 } else {
-                    val liveVerified = remember(editModel, editSerial, editInv, ticketText, res.rawSource) {
+                    val liveVerified = remember(editSerial, ticketText, res.rawSource) {
                         EquipmentScanParser.buildManualResult(
-                            modelName = editModel,
+                            modelName = "",
                             serialNumber = editSerial,
-                            inventoryNumber = editInv,
+                            inventoryNumber = "",
                             ticketText = ticketText,
                             rawSource = res.rawSource
-                        ) ?: res
+                        ) ?: EquipmentScanResult(rawSource = res.rawSource)
                     }
                     Surface(
                         shape = RoundedCornerShape(14.dp),
@@ -555,7 +541,7 @@ fun EquipmentScannerScreen(
                                         color = IntraColors.TextPrimary
                                     )
                                 }
-                                if (editModel.isBlank() || editSerial.isBlank()) {
+                                if (editSerial.isBlank()) {
                                     OutlinedButton(
                                         onClick = { capturePlateOcr() },
                                         enabled = !isScanningOcr,
@@ -571,18 +557,6 @@ fun EquipmentScannerScreen(
                                 }
                             }
 
-                            PrinterModelDropdownField(
-                                value = editModel,
-                                onValueChange = { editModel = it },
-                                catalogEntries = catalogEntries,
-                                label = if (res.detectedVendor.isNotBlank()) {
-                                    "Модель аппарата (${res.detectedVendor})"
-                                } else {
-                                    "Модель аппарата"
-                                },
-                                initialBrandFilter = res.detectedVendor.takeIf { it.isNotBlank() },
-                                modifier = Modifier.fillMaxWidth()
-                            )
                             OutlinedTextField(
                                 value = editSerial,
                                 onValueChange = { editSerial = EquipmentScanParser.normalizePrinterSerial(it) },
@@ -621,17 +595,6 @@ fun EquipmentScannerScreen(
                                     }
                                 }
                             }
-                            OutlinedTextField(
-                                value = editInv,
-                                onValueChange = { editInv = it },
-                                label = { Text("Инвентарный номер") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = IntraColors.BrandPrimary,
-                                    unfocusedBorderColor = IntraColors.SubtleBorder
-                                )
-                            )
 
                             if (liveVerified.matchNote.isNotBlank()) {
                                 Text(
@@ -656,9 +619,7 @@ fun EquipmentScannerScreen(
                             onClick = {
                                 detectedResult = null
                                 liveBarcodeValues = emptyList()
-                                editModel = ""
                                 editSerial = ""
-                                editInv = ""
                             },
                             modifier = Modifier
                                 .weight(1f)
@@ -672,6 +633,7 @@ fun EquipmentScannerScreen(
                         }
                         Button(
                             onClick = { onResultConfirmed(liveVerified) },
+                            enabled = editSerial.isNotBlank(),
                             modifier = Modifier
                                 .weight(1f)
                                 .height(48.dp),

@@ -473,6 +473,14 @@ object EquipmentScanParser {
         if (serialNumber.isNotBlank() && normTicketSerials.contains(normalizePrinterSerial(serialNumber))) {
             return true to "Серийный номер совпадает с заявкой"
         }
+        if (serialNumber.isNotBlank()) {
+            val expectedSerial = extractExpectedFromTicket(normalizedTicket)?.serialNumber.orEmpty()
+            if (expectedSerial.isNotBlank() &&
+                !normalizePrinterSerial(serialNumber).equals(normalizePrinterSerial(expectedSerial), ignoreCase = true)
+            ) {
+                return false to "Внимание: в заявке указан другой S/N ($expectedSerial)"
+            }
+        }
         if (inventoryNumber.isNotBlank() && normalizedTicket.contains(inventoryNumber.lowercase(Locale.ROOT))) {
             return true to "Инвентарный номер совпадает с заявкой"
         }

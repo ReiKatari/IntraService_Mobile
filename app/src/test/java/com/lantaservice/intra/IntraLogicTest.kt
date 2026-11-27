@@ -1508,4 +1508,46 @@ class IntraLogicTest {
         assertNotNull(photonAddr)
         assertEquals("4", photonAddr!!.houseNumber)
     }
+
+    @Test
+    fun serialOnlyVerificationDetectsMismatchAndFormatsAvrComment() {
+        val ticketText = "Замена термоблока HP LaserJet M1132, S/N CNG9D4V0G3"
+
+        // Matching serial with O -> 0 normalization
+        val matched = EquipmentScanParser.buildManualResult(
+            modelName = "",
+            serialNumber = "CNG9D4VOG3",
+            inventoryNumber = "",
+            ticketText = ticketText,
+            rawSource = "Ручной ввод"
+        )
+        assertNotNull(matched)
+        assertEquals("CNG9D4V0G3", matched!!.serialNumber)
+        assertEquals(true, matched.matchesTicket)
+        assertEquals("Серийный номер совпадает с заявкой", matched.matchNote)
+
+        // Serial-only mismatch without model still flags mismatch
+        val mismatched = EquipmentScanParser.buildManualResult(
+            modelName = "",
+            serialNumber = "WRONG99999",
+            inventoryNumber = "",
+            ticketText = ticketText,
+            rawSource = "Ручной ввод"
+        )
+        assertNotNull(mismatched)
+        assertEquals(false, mismatched!!.matchesTicket)
+        assertTrue(mismatched.matchNote.contains("CNG9D4V0G3"))
+
+        // Submission comment places serial directly under AVR counter and omits "Оборудование:"
+        val comment = IntraRepository.buildSubmissionComment(
+            userComment = "Выполнено ТО",
+            counterValue = "54120",
+            equipmentScan = matched
+        )
+        val counterIdx = comment.indexOf("Счётчик копий (АВР): 54 120")
+        val serialIdx = comment.indexOf("Серийный номер (АВР): CNG9D4V0G3 (Серийный номер совпадает с заявкой)")
+        assertTrue(counterIdx >= 0)
+        assertTrue(serialIdx > counterIdx)
+        assertFalse(comment.contains("Оборудование:"))
+    }
 }

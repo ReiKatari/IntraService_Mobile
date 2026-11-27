@@ -284,12 +284,30 @@ class TaskDetailViewModel(
     }
 
     fun onEquipmentScanned(result: EquipmentScanResult) {
+        val detail = _uiState.value.detail
+        val ticketText = if (detail != null) "${detail.name}\n${detail.description}" else ""
+        val serialOnly = EquipmentScanParser.buildManualResult(
+            modelName = "",
+            serialNumber = result.serialNumber,
+            inventoryNumber = "",
+            ticketText = ticketText,
+            rawSource = result.rawSource.ifBlank { "Штрихкод / шильдик" }
+        )
         _uiState.update {
             it.copy(
-                equipmentScan = result,
+                equipmentScan = serialOnly,
                 actionMessage = null
             )
         }
+    }
+
+    fun updateSerialNumberManual(serialNumber: String) {
+        updateEquipmentManual(
+            modelName = "",
+            serialNumber = serialNumber,
+            inventoryNumber = "",
+            rawSource = "Ручной ввод"
+        )
     }
 
     fun updateEquipmentManual(
