@@ -253,8 +253,14 @@ class TaskListViewModel(
     }
 
     fun onTicketSaved(movedToRepairedTab: Boolean) {
-        if (movedToRepairedTab) {
-            _uiState.update { it.copy(selectedTab = TicketTab.HAD_REPAIRED) }
+        val cached = repository.getCachedTicketsForCurrentUser()
+        _uiState.update { state ->
+            TaskListUiState.recompute(
+                state.copy(
+                    tickets = cached,
+                    selectedTab = if (movedToRepairedTab) TicketTab.HAD_REPAIRED else state.selectedTab
+                )
+            )
         }
         loadTickets(isPullToRefresh = false)
     }

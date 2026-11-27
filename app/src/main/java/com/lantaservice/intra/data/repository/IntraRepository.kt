@@ -161,6 +161,7 @@ class IntraRepository(
     private var activePrefetchJob: LivePrefetch? = null
     private val repairedHistoryCache = ConcurrentHashMap<String, Boolean>()
     private val locallyRepairedTaskIds = ConcurrentHashMap.newKeySet<Int>()
+    private val appCompletedRepairedTickets = ConcurrentHashMap<Int, TicketItem>()
     private val ticketItemCache = ConcurrentHashMap<Int, TicketItem>()
     private val detailCache = ConcurrentHashMap<Int, TicketDetail>()
 
@@ -209,6 +210,7 @@ class IntraRepository(
         prewarmedUserId = -1
         repairedHistoryCache.clear()
         locallyRepairedTaskIds.clear()
+        appCompletedRepairedTickets.clear()
         ticketItemCache.clear()
         detailCache.clear()
         _outboxEntries.value = emptyList()
@@ -251,16 +253,20 @@ class IntraRepository(
 
     fun getCachedTicketsForCurrentUser(): List<TicketItem> {
         val session = credentialsProvider.currentSession() ?: return emptyList()
-        if (prewarmedUserId == session.userId && ticketItemCache.isNotEmpty()) {
-            return ticketItemCache.values
+        if (prewarmedUserId == session.userId &&
+            (ticketItemCache.isNotEmpty() || appCompletedRepairedTickets.isNotEmpty())
+        ) {
+            val activeCached = ticketItemCache.values
                 .filter { isAllowedListStatusName(it.statusName) }
                 .sortedByDescending { it.id }
+            return mergeActiveWithAppCompletedRepaired(activeCached, appCompletedRepairedTickets.values)
         }
         warmCachesFromDisk(session.userId)
-        if (ticketItemCache.isNotEmpty()) {
-            return ticketItemCache.values
+        if (ticketItemCache.isNotEmpty() || appCompletedRepairedTickets.isNotEmpty()) {
+            val activeCached = ticketItemCache.values
                 .filter { isAllowedListStatusName(it.statusName) }
                 .sortedByDescending { it.id }
+            return mergeActiveWithAppCompletedRepaired(activeCached, appCompletedRepairedTickets.values)
         }
         return emptyList()
     }
@@ -549,16 +555,26 @@ class IntraRepository(
         }
         if (prewarmedUserId != userId) {
             repairedHistoryCache.clear()
+            appCompletedRepairedTickets.clear()
             ticketItemCache.clear()
             prewarmedUserId = userId
         }
         if (repairedHistoryCache.isEmpty()) {
             loadRepairedHistoryDiskCache(userId).forEach { (k, v) -> repairedHistoryCache[k] = v }
         }
+        if (appCompletedRepairedTickets.isEmpty()) {
+            loadAppCompletedRepairedDiskCache(userId).forEach { item ->
+                appCompletedRepairedTickets[item.id] = item
+                locallyRepairedTaskIds.add(item.id)
+            }
+        }
         if (ticketItemCache.isEmpty()) {
             loadTicketListCacheFromDisk(userId)
                 .filter { isAllowedListStatusName(it.statusName) }
                 .forEach { ticketItemCache[it.id] = it }
+            appCompletedRepairedTickets.values.forEach { completed ->
+                ticketItemCache.putIfAbsent(completed.id, completed)
+            }
         }
     }
 
@@ -799,7 +815,7 @@ class IntraRepository(
             !isFinal && !isClosed && isAllowedListStatusName(resolvedStatusName)
         }
 
-        return openTasks.map { task ->
+        val activeItems = openTasks.map { task ->
             val status = task.statusId?.let { mergedStatuses[it] }
             val statusName = task.statusName?.takeIf { it.isNotBlank() }
                 ?: status?.name
@@ -809,7 +825,8 @@ class IntraRepository(
             val cachedHadRepaired = repairedHistoryCache[cacheKey]
             val hadRepaired = currentlyRepaired ||
                 (cachedHadRepaired == true) ||
-                locallyRepairedTaskIds.contains(task.id)
+                locallyRepairedTaskIds.contains(task.id) ||
+                appCompletedRepairedTickets.containsKey(task.id)
 
             val fileCount = DateAndTextFormatter.splitIds(task.fileIds).size
 
@@ -837,6 +854,7 @@ class IntraRepository(
                 isLifetimeChecked = currentlyRepaired || cachedHadRepaired != null
             )
         }
+        return mergeActiveWithAppCompletedRepaired(activeItems, appCompletedRepairedTickets.values)
     }
 
     suspend fun loadTicketDetail(taskId: Int): Result<TicketDetail> = withContext(Dispatchers.IO) {
@@ -995,6 +1013,29 @@ class IntraRepository(
                 addressText = resolvedTicketAddress
             )
             detailCache[task.id] = detail
+            appCompletedRepairedTickets[task.id]?.let { existingCompleted ->
+                val refreshedCompleted = existingCompleted.copy(
+                    name = detail.name,
+                    descriptionPreview = cleanDescription,
+                    statusId = task.statusId,
+                    statusName = currentStatusName,
+                    priorityId = task.priorityId,
+                    priorityName = priorityName,
+                    serviceName = serviceName,
+                    creatorName = task.creator?.takeIf { it.isNotBlank() } ?: existingCompleted.creatorName,
+                    createdText = detail.createdText.ifBlank { existingCompleted.createdText },
+                    changedText = detail.changedText.ifBlank { existingCompleted.changedText },
+                    changedRaw = task.changed.orEmpty(),
+                    deadlineText = detail.deadlineText,
+                    isOverdue = detail.isOverdue,
+                    attachmentCount = attachments.size,
+                    hasHadRepairedStatus = true,
+                    isLifetimeChecked = true
+                )
+                appCompletedRepairedTickets[task.id] = refreshedCompleted
+                ticketItemCache[task.id] = refreshedCompleted
+                saveAppCompletedRepairedDiskCache(session.userId)
+            }
             Result.success(detail)
         } catch (t: Throwable) {
             if (isRecoverableOutboxFailure(t)) {
@@ -1097,9 +1138,18 @@ class IntraRepository(
             // Clean up temporary uploads & remove any superseded outbox item
             cancelOutboxEntry(taskId)
             ImageCompressor.cleanupTemporaryUploadFiles(context, pendingPhotos)
-            detailCache.remove(taskId)
+            val cachedDetailBeforeClear = detailCache.remove(taskId)
 
-            val statusChangedToRepaired = markLocalRepairedIfNeeded(taskId, newStatusId)
+            val statusChangedToRepaired = markLocalRepairedIfNeeded(
+                userId = session.userId,
+                taskId = taskId,
+                newStatusId = newStatusId,
+                newStatusName = newStatusName,
+                fallbackTaskName = taskName,
+                attachedPhotosCount = pendingPhotos.size,
+                recordedAtText = recordedAtText,
+                cachedDetail = cachedDetailBeforeClear
+            )
 
             Result.success(
                 TicketSaveResult(
@@ -1235,9 +1285,18 @@ class IntraRepository(
                         outboxStorage.saveAll(remaining)
                         outboxStorage.deleteTaskPhotos(entry.taskId)
                         refreshOutboxFlowForUser(session.userId)
-                        detailCache.remove(entry.taskId)
+                        val cachedDetailBeforeClear = detailCache.remove(entry.taskId)
 
-                        val movedToRepaired = markLocalRepairedIfNeeded(entry.taskId, entry.newStatusId)
+                        val movedToRepaired = markLocalRepairedIfNeeded(
+                            userId = session.userId,
+                            taskId = entry.taskId,
+                            newStatusId = entry.newStatusId,
+                            newStatusName = entry.newStatusName,
+                            fallbackTaskName = entry.taskName,
+                            attachedPhotosCount = livePhotos.size,
+                            recordedAtText = entry.recordedAtText,
+                            cachedDetail = cachedDetailBeforeClear
+                        )
                         syncedCount++
                         _outboxSyncedEvents.tryEmit(
                             OutboxSyncNotice(
@@ -1332,11 +1391,21 @@ class IntraRepository(
         putResp.body()?.close()
     }
 
-    private fun markLocalRepairedIfNeeded(taskId: Int, newStatusId: Int?): Boolean {
+    private fun markLocalRepairedIfNeeded(
+        userId: Int,
+        taskId: Int,
+        newStatusId: Int?,
+        newStatusName: String? = null,
+        fallbackTaskName: String = "",
+        attachedPhotosCount: Int = 0,
+        recordedAtText: String = "",
+        cachedDetail: TicketDetail? = null
+    ): Boolean {
+        val resolvedName = statusesById[newStatusId]?.name?.takeIf { it.isNotBlank() } ?: newStatusName
         val statusChangedToRepaired = newStatusId != null &&
             isRepairedStatus(
                 statusId = newStatusId,
-                statusName = statusesById[newStatusId]?.name,
+                statusName = resolvedName,
                 repairedIds = findRepairedStatusIds(statusesById.values)
             )
         if (statusChangedToRepaired) {
@@ -1344,8 +1413,89 @@ class IntraRepository(
             repairedHistoryCache.keys
                 .filter { it.startsWith("$taskId|") }
                 .forEach { repairedHistoryCache[it] = true }
+
+            val effectiveStatusName = resolvedName?.takeIf { it.isNotBlank() } ?: REPAIRED_STATUS_NAME
+            val changeDisplay = recordedAtText.ifBlank {
+                DateAndTextFormatter.formatLocalDateTime(LocalDateTime.now())
+            }
+            val baseItem = ticketItemCache[taskId] ?: appCompletedRepairedTickets[taskId]
+            val updatedItem = if (baseItem != null) {
+                baseItem.copy(
+                    statusId = newStatusId,
+                    statusName = effectiveStatusName,
+                    changedText = changeDisplay,
+                    changedRaw = changeDisplay,
+                    attachmentCount = baseItem.attachmentCount + attachedPhotosCount,
+                    hasHadRepairedStatus = true,
+                    isLifetimeChecked = true
+                )
+            } else if (cachedDetail != null) {
+                TicketItem(
+                    id = taskId,
+                    name = cachedDetail.name,
+                    descriptionPreview = cachedDetail.description,
+                    statusId = newStatusId,
+                    statusName = effectiveStatusName,
+                    priorityId = null,
+                    priorityName = cachedDetail.priorityName,
+                    serviceName = cachedDetail.serviceName,
+                    creatorName = cachedDetail.creatorName,
+                    createdText = cachedDetail.createdText,
+                    changedText = changeDisplay,
+                    changedRaw = changeDisplay,
+                    deadlineText = cachedDetail.deadlineText,
+                    isOverdue = cachedDetail.isOverdue,
+                    attachmentCount = cachedDetail.attachments.size + attachedPhotosCount,
+                    hasHadRepairedStatus = true,
+                    isLifetimeChecked = true
+                )
+            } else {
+                TicketItem(
+                    id = taskId,
+                    name = fallbackTaskName.ifBlank { "Заявка #$taskId" },
+                    descriptionPreview = "",
+                    statusId = newStatusId,
+                    statusName = effectiveStatusName,
+                    priorityId = null,
+                    priorityName = "",
+                    serviceName = "",
+                    creatorName = "",
+                    createdText = changeDisplay,
+                    changedText = changeDisplay,
+                    changedRaw = changeDisplay,
+                    deadlineText = "Без срока",
+                    isOverdue = false,
+                    attachmentCount = attachedPhotosCount,
+                    hasHadRepairedStatus = true,
+                    isLifetimeChecked = true
+                )
+            }
+            appCompletedRepairedTickets[taskId] = updatedItem
+            ticketItemCache[taskId] = updatedItem
+            saveAppCompletedRepairedDiskCache(userId)
         }
         return statusChangedToRepaired
+    }
+
+    private fun loadAppCompletedRepairedDiskCache(userId: Int): List<TicketItem> {
+        val file = File(context.filesDir, "cache_app_completed_repaired_$userId.json")
+        if (!file.exists()) return emptyList()
+        return runCatching {
+            json.decodeFromString(ListSerializer(TicketItem.serializer()), file.readText(Charsets.UTF_8))
+        }.getOrElse { emptyList() }
+    }
+
+    private fun saveAppCompletedRepairedDiskCache(userId: Int) {
+        val snapshot = appCompletedRepairedTickets.values
+            .sortedByDescending { it.id }
+            .take(300)
+        repoScope.launch {
+            runCatching {
+                val file = File(context.filesDir, "cache_app_completed_repaired_$userId.json")
+                val encoded = json.encodeToString(ListSerializer(TicketItem.serializer()), snapshot)
+                file.writeText(encoded, Charsets.UTF_8)
+            }
+        }
     }
 
     private fun loadTicketListCacheFromDisk(userId: Int): List<TicketItem> {
@@ -1567,6 +1717,31 @@ class IntraRepository(
                 .filter { isAllowedListStatusName(it.name) }
                 .map { it.id }
                 .toSet()
+        }
+
+        fun mergeActiveWithAppCompletedRepaired(
+            activeItems: List<TicketItem>,
+            appCompletedItems: Collection<TicketItem>
+        ): List<TicketItem> {
+            val completedById = appCompletedItems.associateBy { it.id }
+            val merged = LinkedHashMap<Int, TicketItem>(activeItems.size + appCompletedItems.size)
+            for (item in activeItems) {
+                val upgraded = if (completedById.containsKey(item.id)) {
+                    item.copy(hasHadRepairedStatus = true, isLifetimeChecked = true)
+                } else {
+                    item
+                }
+                merged[item.id] = upgraded
+            }
+            for (completed in appCompletedItems.sortedByDescending { it.id }) {
+                if (!merged.containsKey(completed.id)) {
+                    merged[completed.id] = completed.copy(
+                        hasHadRepairedStatus = true,
+                        isLifetimeChecked = true
+                    )
+                }
+            }
+            return merged.values.toList()
         }
 
         fun isRecoverableOutboxFailure(t: Throwable, httpCode: Int? = (t as? IntraHttpException)?.httpCode): Boolean {

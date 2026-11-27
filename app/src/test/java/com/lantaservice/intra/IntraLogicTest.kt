@@ -2030,4 +2030,63 @@ class IntraLogicTest {
         )
         assertEquals("", emptyPlaceholder)
     }
+
+    @Test
+    fun appCompletedRepairedTicketsStayInDoneTabAfterActiveWhitelistFetch() {
+        val active1 = TicketItem(
+            id = 731001,
+            name = "Заявка 1",
+            descriptionPreview = "Замятие бумаги",
+            statusId = 11,
+            statusName = "Доведена до СП",
+            priorityId = 1,
+            priorityName = "Высокий",
+            serviceName = "Лантасервис",
+            creatorName = "Иванов И.",
+            createdText = "27.11.2026 10:00",
+            changedText = "27.11.2026 10:05",
+            changedRaw = "2026-11-27T10:05:00",
+            deadlineText = "27.11.2026 18:00",
+            isOverdue = false,
+            attachmentCount = 0,
+            hasHadRepairedStatus = false,
+            isLifetimeChecked = true
+        )
+        val active2 = active1.copy(
+            id = 731002,
+            name = "Заявка 2",
+            statusId = 12,
+            statusName = "Направлен СИ"
+        )
+        val completedInApp = active1.copy(
+            id = 731099,
+            name = "Выполненная заявка 731099",
+            statusId = 25,
+            statusName = "Починил",
+            attachmentCount = 2,
+            hasHadRepairedStatus = true,
+            isLifetimeChecked = true
+        )
+        // Simulate case where server ALSO still returns one ticket that was completed locally
+        val overlappingCompleted = completedInApp.copy(id = 731002, hasHadRepairedStatus = true)
+
+        val merged = IntraRepository.mergeActiveWithAppCompletedRepaired(
+            activeItems = listOf(active1, active2),
+            appCompletedItems = listOf(completedInApp, overlappingCompleted)
+        )
+        val uiState = com.lantaservice.intra.ui.tasks.TaskListUiState.recompute(
+            com.lantaservice.intra.ui.tasks.TaskListUiState(
+                isLoading = false,
+                tickets = merged
+            )
+        )
+
+        // Active items: active1 remains in В работе; active2 overlapped so moved to Выполнено without duplication;
+        // completedInApp (moved out of server's 3-status whitelist to "Починил") remains visible in Выполнено!
+        assertEquals(3, merged.size)
+        assertEquals(listOf(731001), uiState.withoutRepairedTickets.map { it.id })
+        assertEquals(listOf(731002, 731099), uiState.hadRepairedTickets.map { it.id })
+        assertEquals(1, uiState.countWithoutRepaired)
+        assertEquals(2, uiState.countHadRepaired)
+    }
 }
