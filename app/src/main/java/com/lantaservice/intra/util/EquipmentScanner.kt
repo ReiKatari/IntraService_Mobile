@@ -44,7 +44,7 @@ object EquipmentScanParser {
         "(?iu)\\b(Lexmark|Kyocera|Hewlett[\\s-]?Packard|HP|Ricoh|Xerox|Canon|Brother|Konica\\s+Minolta|Pantum|Epson|Samsung|Sharp|Oki|Toshiba|Sindoh|Avision|Bulat|Develop|Zebra|Honeywell|Godex|Bixolon|Citizen|Dymo|Xprinter|Rongta|АТОЛ|Katyusha|Катюша)\\b([A-Za-zА-Яа-я0-9\\s/-]{1,28})?"
     )
     private val serialLabelRegex = Regex(
-        "(?iu)(?:s\\s*/\\s*n|sn|serial(?:\\s*no\\.?)?|сер\\.?\\s*№?|серийный(?:\\s*номер)?|зав\\.?\\s*№?)\\s*[:#=-]?\\s*([A-Z0-9-]{6,24})"
+        "(?iu)(?:s\\s*/\\s*n|sn|serial(?:\\s+(?:no\\.?|number))?(?:\\s+(?:of\\s+)?(?:product|device|printer))?|сер\\.?\\s*№?|серийный(?:\\s*номер)?(?:\\s+(?:продукта|изделия|аппарата|принтера|устройства|мфу|машины))?|зав\\.?\\s*№?)\\s*[:#=-]?\\s*([A-Z0-9-]{6,24})"
     )
     private val invLabelRegex = Regex(
         "(?iu)(?:инв\\.?\\s*№\\s*|инв\\.?\\s*[:#=]\\s*|инв\\.?\\s+|inv(?:entory)?(?:\\s*no\\.?)?\\s*[:#=]\\s*|inv(?:entory)?(?:\\s*no\\.?)?\\s+|asset\\s*(?:id|tag)?\\s*[:#=]?\\s*)([A-Z0-9-]{4,20})"
@@ -76,6 +76,102 @@ object EquipmentScanParser {
             .uppercase(Locale.ROOT)
             .replace('O', '0')
             .replace('О', '0')
+    }
+
+    fun extractLabeledSerialFromOcrLines(lines: List<String>): String? {
+        if (lines.isEmpty()) return null
+        val excludedFieldMarkers = listOf(
+            "форматер", "formatter", "идентиф", "код даты", "date code", "firmware", "версия", "ip"
+        )
+        val combinedCandidates = ArrayList<String>(lines.size * 2)
+        for (i in lines.indices) {
+            val cur = lines[i].trim()
+            if (cur.isEmpty()) continue
+            combinedCandidates += cur
+            if (i + 1 < lines.size) {
+                val nxt = lines[i + 1].trim()
+                if (nxt.isNotEmpty()) {
+                    combinedCandidates += "$cur $nxt"
+                }
+            }
+        }
+
+        val cyrSerialLabelRegex = Regex(
+            "(?iu)(?:сери[а-яa-z0-9]{1,7}\\s+[нnhп][оo0]м[еe]р|сер\\.?\\s*[нnhп]?[оo0]?м[еe]р|зав\\.?\\s*№)" +
+                "(?:\\s+(?:[а-яa-z]{3,14}))?\\s*[:#=-]?\\s*"
+        )
+        val postLabelTokenRegex = Regex("[A-Za-z0-9][A-Za-z0-9-]{5,23}")
+        val yyyymmddDateRegex = Regex("^(?:19|20)\\d{6}$")
+
+        for (rawLine in combinedCandidates) {
+            val skeleton = toCyrillicLookalike(rawLine)
+            if (excludedFieldMarkers.any { skeleton.contains(it) || rawLine.lowercase(Locale.ROOT).contains(it) }) {
+                // Only reject if line doesn't ALSO contain explicit serial phrase
+                if (!serialLabelRegex.containsMatchIn(rawLine) && !cyrSerialLabelRegex.containsMatchIn(skeleton)) {
+                    continue
+                }
+            }
+
+            serialLabelRegex.findAll(rawLine).forEach { m ->
+                val rawTok = m.groupValues[1]
+                val norm = normalizePrinterSerial(rawTok)
+                val validShape = (norm.any { it.isLetter() } && norm.any { it.isDigit() }) || norm.length >= 10
+                if (norm.length in 6..24 &&
+                    validShape &&
+                    !yyyymmddDateRegex.matches(norm) &&
+                    !isNonSerialLabelCode(norm, rawLine)
+                ) {
+                    return norm
+                }
+            }
+
+            cyrSerialLabelRegex.find(skeleton)?.let { match ->
+                val startIdx = (match.range.last + 1).coerceAtMost(rawLine.length)
+                val tail = rawLine.substring(startIdx)
+                postLabelTokenRegex.findAll(tail).forEach { tm ->
+                    val norm = normalizePrinterSerial(tm.value)
+                    val validShape = (norm.any { it.isLetter() } && norm.any { it.isDigit() }) || norm.length >= 10
+                    if (norm.length in 6..24 &&
+                        validShape &&
+                        !yyyymmddDateRegex.matches(norm) &&
+                        !isNonSerialLabelCode(norm, rawLine)
+                    ) {
+                        return norm
+                    }
+                }
+            }
+        }
+        return null
+    }
+
+    private fun toCyrillicLookalike(raw: String): String {
+        val lower = raw.lowercase(Locale.ROOT)
+        val sb = StringBuilder(lower.length)
+        for (ch in lower) {
+            val mapped = when (ch) {
+                'a' -> 'а'
+                'b' -> 'в'
+                'c' -> 'с'
+                'e' -> 'е'
+                'g' -> 'д'
+                'h' -> 'н'
+                'i' -> 'и'
+                'k' -> 'к'
+                'l' -> 'и'
+                'm' -> 'м'
+                'n' -> 'п'
+                'o' -> 'о'
+                'p' -> 'р'
+                'r' -> 'г'
+                't' -> 'т'
+                'u' -> 'и'
+                'x' -> 'х'
+                'y' -> 'у'
+                else -> ch
+            }
+            sb.append(mapped)
+        }
+        return sb.toString()
     }
 
     fun normalizeVendorName(raw: String): String {

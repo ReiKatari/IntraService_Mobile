@@ -1622,4 +1622,94 @@ class IntraLogicTest {
         assertEquals(525f, br.x, 0.5f)
         assertEquals(600f, br.y, 0.5f)
     }
+
+    @Test
+    fun bottomBlankClippedSheetIsNotRejectedAndComputesProportionalA4Completion() {
+        // Upper ~70% of A4 sheet touching ONLY bottom frame edge (y bottom = 1592 in 1200x1600), top/sides inside
+        val topHalfSheet = DocumentQuad(
+            Point2D(180f, 660f),
+            Point2D(1020f, 670f),
+            Point2D(1080f, 1592f),
+            Point2D(120f, 1592f)
+        )
+        // When bottom 8% is blank white paper -> NONE + shouldCompleteBottomToA4 = true + proportional A4 layout
+        val blankBottomReport = DocumentGeometry.evaluateQuadGeometry(
+            quad = topHalfSheet,
+            fullWidth = 1200,
+            fullHeight = 1600,
+            bottomEdgeInkRatio = 0.004f
+        )
+        assertEquals(DocumentQualityIssue.NONE, blankBottomReport.issue)
+        assertTrue(blankBottomReport.canSafelyFlatten)
+        assertTrue(blankBottomReport.shouldCompleteBottomToA4)
+
+        val layout = DocumentGeometry.computeFlatA4CanvasLayout(
+            quad = topHalfSheet,
+            completeBottomToA4 = true
+        )
+        assertTrue(layout.completedBottomToA4)
+        assertTrue(layout.visibleHeight < layout.canvasHeight)
+        val a4Ratio = layout.canvasHeight.toFloat() / layout.canvasWidth.toFloat()
+        assertEquals(1.414f, a4Ratio, 0.03f)
+
+        // When bottom 8% still has printed ink text -> CLIPPED warning & cannot safely complete
+        val inkedBottomReport = DocumentGeometry.evaluateQuadGeometry(
+            quad = topHalfSheet,
+            fullWidth = 1200,
+            fullHeight = 1600,
+            bottomEdgeInkRatio = 0.06f
+        )
+        assertEquals(DocumentQualityIssue.CLIPPED, inkedBottomReport.issue)
+        assertFalse(inkedBottomReport.canSafelyFlatten)
+    }
+
+    @Test
+    fun weightedAutoRotationNeverRotatesUprightDocumentSideways() {
+        // Upright HP config page with many horizontal lines and a couple noisy vertical column fragments
+        val uprightWithNoise = listOf(
+            com.lantaservice.intra.util.TextLineOrientation(angleDeg = 1.2f, alnumCount = 28, boxWidth = 420, boxHeight = 24),
+            com.lantaservice.intra.util.TextLineOrientation(angleDeg = -0.8f, alnumCount = 24, boxWidth = 380, boxHeight = 22),
+            com.lantaservice.intra.util.TextLineOrientation(angleDeg = 90f, alnumCount = 4, boxWidth = 18, boxHeight = 70),
+            com.lantaservice.intra.util.TextLineOrientation(angleDeg = 89f, alnumCount = 5, boxWidth = 20, boxHeight = 82)
+        )
+        assertEquals(0, DocumentGeometry.resolveRotationFromWeightedLines(uprightWithNoise))
+
+        // Genuinely sideways 90-degree document (vertical boxes dominate strongly)
+        val genuinelySideways = listOf(
+            com.lantaservice.intra.util.TextLineOrientation(angleDeg = 90f, alnumCount = 24, boxWidth = 24, boxHeight = 360),
+            com.lantaservice.intra.util.TextLineOrientation(angleDeg = 89f, alnumCount = 22, boxWidth = 22, boxHeight = 340),
+            com.lantaservice.intra.util.TextLineOrientation(angleDeg = 91f, alnumCount = 19, boxWidth = 22, boxHeight = 310)
+        )
+        assertEquals(270, DocumentGeometry.resolveRotationFromWeightedLines(genuinelySideways))
+    }
+
+    @Test
+    fun hpRussianConfigPageExtractsSerialNumberAndTotalPrintedPagesCounter() {
+        // Exact HP M1212nf Cyrillic config page lines (must pick 2320 not 155, and CNG9D4V0G3 not QJ551EF/31237/20201023)
+        val cyrillicLines = listOf(
+            "HP LaserJet Professional M1212nf MFP",
+            "Номер форматера: QJ551EF",
+            "Серийный номер продукта: CNG9D4VOG3",
+            "Идентиф. номер службы: 31237",
+            "Код даты микропрог.: 20201023",
+            "Отпечатано ч/б стр. с копии = 155",
+            "Всего напечатано страниц = 2320",
+            "Всего замытий на входе = 1"
+        )
+        assertEquals("CNG9D4V0G3", EquipmentScanParser.extractLabeledSerialFromOcrLines(cyrillicLines))
+        val cyrCounter = com.lantaservice.intra.util.AvrCounterParser.extractCounterFromLines(cyrillicLines)
+        assertEquals(com.lantaservice.intra.util.CounterConfidence.HIGH, cyrCounter.confidence)
+        assertEquals("2320", cyrCounter.value)
+
+        // Latin-OCR homoglyph-garbled Cyrillic config lines
+        val latinGarbledLines = listOf(
+            "CepuuHbIu HoMep npogykTa CNG9D4VOG3",
+            "OTne4aTaHo 4/6 cTp. c konuu = 155",
+            "Bcero HaneyataHo cTpaHML = 2320"
+        )
+        assertEquals("CNG9D4V0G3", EquipmentScanParser.extractLabeledSerialFromOcrLines(latinGarbledLines))
+        val garbledCounter = com.lantaservice.intra.util.AvrCounterParser.extractCounterFromLines(latinGarbledLines)
+        assertEquals(com.lantaservice.intra.util.CounterConfidence.HIGH, garbledCounter.confidence)
+        assertEquals("2320", garbledCounter.value)
+    }
 }

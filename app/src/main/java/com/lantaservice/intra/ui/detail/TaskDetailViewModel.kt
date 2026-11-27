@@ -393,7 +393,9 @@ class TaskDetailViewModel(
             refreshGeolocation()
         }
         if (stampedPhoto.documentType == PhotoDocumentType.AVR) {
-            recognizeAvrCounter(context, stampedPhoto.file)
+            recognizeDocumentFields(context, stampedPhoto.file, promptManualCounterIfMissing = true)
+        } else if (_uiState.value.counterValue.isBlank() || _uiState.value.equipmentScan?.serialNumber.isNullOrBlank()) {
+            recognizeDocumentFields(context, stampedPhoto.file, promptManualCounterIfMissing = false)
         }
     }
 
@@ -462,8 +464,11 @@ class TaskDetailViewModel(
                 refreshGeolocation(exifHint = exifHint)
             }
 
-            if (documentType == PhotoDocumentType.AVR && added.isNotEmpty()) {
-                recognizeAvrCounter(context, added.last().file)
+            if (added.isNotEmpty()) {
+                val isAvr = documentType == PhotoDocumentType.AVR
+                if (isAvr || _uiState.value.counterValue.isBlank() || _uiState.value.equipmentScan?.serialNumber.isNullOrBlank()) {
+                    recognizeDocumentFields(context, added.last().file, promptManualCounterIfMissing = isAvr)
+                }
             }
         }
     }
@@ -494,41 +499,63 @@ class TaskDetailViewModel(
             )
         }
         if (newType == PhotoDocumentType.AVR) {
-            recognizeAvrCounter(context, updatedPhoto.file)
+            recognizeDocumentFields(context, updatedPhoto.file, promptManualCounterIfMissing = true)
+        } else if (_uiState.value.counterValue.isBlank() || _uiState.value.equipmentScan?.serialNumber.isNullOrBlank()) {
+            recognizeDocumentFields(context, updatedPhoto.file, promptManualCounterIfMissing = false)
         }
     }
 
-    private fun recognizeAvrCounter(context: Context, imageFile: File) {
+    private fun recognizeDocumentFields(
+        context: Context,
+        imageFile: File,
+        promptManualCounterIfMissing: Boolean
+    ) {
         viewModelScope.launch {
             _uiState.update { it.copy(isRecognizingCounter = true) }
-            val result = runCatching {
-                AvrCounterRecognizer.recognizeCounterFromFile(context, imageFile)
+            val docResult = runCatching {
+                AvrCounterRecognizer.recognizeDocumentFieldsFromFile(context, imageFile)
             }.getOrNull()
 
-            val recognizedDigits = if (result?.confidence == com.lantaservice.intra.util.CounterConfidence.HIGH) {
-                result.value
+            val counterRes = docResult?.counter
+            val recognizedDigits = if (counterRes?.confidence == com.lantaservice.intra.util.CounterConfidence.HIGH) {
+                counterRes.value
                     ?.let { TaskSaveValidator.normalizeCounterDigits(it) }
                     ?.takeIf { TaskSaveValidator.isValidCounter(it) }
             } else {
                 null
             }
+            val detectedSerial = docResult?.serialNumber?.takeIf { it.isNotBlank() }
 
-            if (recognizedDigits != null) {
-                _uiState.update { state ->
+            _uiState.update { state ->
+                val updatedSerialScan = if (detectedSerial != null && state.equipmentScan?.serialNumber.isNullOrBlank()) {
+                    val detail = state.detail
+                    val ticketText = if (detail != null) "${detail.name}\n${detail.description}" else ""
+                    EquipmentScanParser.buildManualResult(
+                        modelName = "",
+                        serialNumber = detectedSerial,
+                        inventoryNumber = "",
+                        ticketText = ticketText,
+                        rawSource = "Фото документа (OCR)"
+                    ) ?: state.equipmentScan
+                } else {
+                    state.equipmentScan
+                }
+
+                if (recognizedDigits != null && (promptManualCounterIfMissing || state.counterValue.isBlank())) {
                     state.copy(
                         isRecognizingCounter = false,
                         counterValue = recognizedDigits,
                         counterAutoDetected = true,
                         showManualCounterPrompt = false,
                         counterPromptReason = null,
+                        equipmentScan = updatedSerialScan,
                         actionMessage = null
                     )
-                }
-            } else {
-                _uiState.update { state ->
-                    val shouldPrompt = state.counterValue.isBlank()
+                } else {
+                    val shouldPrompt = promptManualCounterIfMissing && state.counterValue.isBlank()
                     state.copy(
                         isRecognizingCounter = false,
+                        equipmentScan = updatedSerialScan,
                         showManualCounterPrompt = shouldPrompt,
                         counterPromptReason = if (shouldPrompt) {
                             "Не удалось автоматически распознать счётчик копий на фото АВР (плохое качество или почерк). Пожалуйста, введите счётчик вручную."
