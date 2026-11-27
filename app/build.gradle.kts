@@ -33,8 +33,8 @@ android {
         applicationId = "com.lantaservice.intra"
         minSdk = 26
         targetSdk = 36
-        versionCode = 21
-        versionName = "2.3.4"
+        versionCode = 22
+        versionName = "2.3.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "FIXED_BASE_URL", "\"https://intra.lantaservice.com\"")

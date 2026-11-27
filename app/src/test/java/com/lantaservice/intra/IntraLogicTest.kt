@@ -1712,4 +1712,84 @@ class IntraLogicTest {
         assertEquals(com.lantaservice.intra.util.CounterConfidence.HIGH, garbledCounter.confidence)
         assertEquals("2320", garbledCounter.value)
     }
+
+    @Test
+    fun shadowedBlankBottomAndGrazedRightMarginStillFlattensAndExtrapolatesCorner() {
+        val w = 240
+        val h = 320
+        val luma = ByteArray(w * h) { 35.toByte() }
+
+        // Sheet leaning so topRight is inside (212, 84) and bottomRight exits x=239 near y=253
+        val tlX = 34f
+        val topY = 68f
+        val trX = 212f
+        val trY = 84f
+        val leftSlope = -0.06f
+        val rightSlope = 0.16f
+
+        for (y in topY.toInt() until h) {
+            val minLeft = tlX + (y - topY) * leftSlope
+            val maxRight = trX + (y - trY) * rightSlope
+
+            // Illumination fades smoothly from 240 at top to 175 at shaded bottom
+            val vFrac = (y - topY) / (h - topY)
+            val paperShade = (240f - 65f * vFrac).toInt().coerceIn(170, 245)
+
+            for (x in 0 until w) {
+                val localTopAtX = topY + (trY - topY) * ((x - tlX) / maxOf(1f, trX - tlX))
+                if (x >= minLeft && x <= maxRight && y >= localTopAtX) {
+                    val uFrac = (x - minLeft) / maxOf(1f, maxRight - minLeft)
+                    val isUpperPrintedLine = vFrac in 0.15f..0.68f &&
+                        uFrac in 0.10f..0.85f &&
+                        ((y % 18) in 3..5)
+                    luma[y * w + x] = (if (isUpperPrintedLine) 55 else paperShade).toByte()
+                }
+            }
+        }
+
+        val quad = DocumentGeometry.detectPaperQuadFromLuma(luma, w, h)
+        assertNotNull(quad)
+        // Extrapolated bottomRight should recover virtual X past right border (> 240)
+        assertTrue("Expected extrapolated bottomRight.x > 240, got ${quad!!.bottomRight.x}", quad.bottomRight.x > 240f)
+
+        val lumaInt = IntArray(luma.size) { i -> luma[i].toInt() and 0xFF }
+        val profile = DocumentGeometry.computeEdgeInkProfileFromLuma(lumaInt, w, h, quad)
+        // Shaded bottom strip must NOT be misclassified as text compared against top lamp brightness
+        assertTrue("Expected low local bottom ink ratio < 0.018, got ${profile.bottom}", profile.bottom < 0.018f)
+
+        val fullQuad = quad.scaled(scaleX = 4f, scaleY = 4f)
+        val report = DocumentGeometry.evaluateQuadGeometry(
+            quad = fullQuad,
+            fullWidth = w * 4,
+            fullHeight = h * 4,
+            edgeInkProfile = profile
+        )
+        assertTrue(report.canSafelyFlatten)
+        assertEquals(com.lantaservice.intra.util.DocumentQualityIssue.NONE, report.issue)
+        assertTrue(report.shouldCompleteBottomToA4)
+    }
+
+    @Test
+    fun fineDeskewAngleStraightensSlightlyTiltedHorizontalLines() {
+        val tiltedRight = listOf(
+            com.lantaservice.intra.util.TextLineOrientation(angleDeg = 5.2f, alnumCount = 34, boxWidth = 480, boxHeight = 26),
+            com.lantaservice.intra.util.TextLineOrientation(angleDeg = 5.0f, alnumCount = 26, boxWidth = 420, boxHeight = 24),
+            com.lantaservice.intra.util.TextLineOrientation(angleDeg = 5.4f, alnumCount = 18, boxWidth = 360, boxHeight = 24),
+            com.lantaservice.intra.util.TextLineOrientation(angleDeg = -89.0f, alnumCount = 6, boxWidth = 22, boxHeight = 150)
+        )
+        val corrCw = DocumentGeometry.computeFineDeskewAngleDeg(tiltedRight)
+        assertTrue("Expected ~-5.2 deg counter-rotation, got $corrCw", kotlin.math.abs(corrCw - (-5.2f)) < 0.25f)
+
+        val tinyNoise = listOf(
+            com.lantaservice.intra.util.TextLineOrientation(angleDeg = 0.35f, alnumCount = 30, boxWidth = 420, boxHeight = 24)
+        )
+        assertEquals(0f, DocumentGeometry.computeFineDeskewAngleDeg(tinyNoise), 0.001f)
+
+        val tiltedLeft = listOf(
+            com.lantaservice.intra.util.TextLineOrientation(angleDeg = -3.8f, alnumCount = 28, boxWidth = 400, boxHeight = 24),
+            com.lantaservice.intra.util.TextLineOrientation(angleDeg = -3.6f, alnumCount = 22, boxWidth = 380, boxHeight = 24)
+        )
+        val corrCcw = DocumentGeometry.computeFineDeskewAngleDeg(tiltedLeft)
+        assertTrue("Expected ~+3.8 deg rotation, got $corrCcw", kotlin.math.abs(corrCcw - 3.8f) < 0.25f)
+    }
 }

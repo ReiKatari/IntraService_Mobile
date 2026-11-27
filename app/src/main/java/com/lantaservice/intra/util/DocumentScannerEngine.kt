@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.RectF
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
@@ -20,6 +21,7 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 data class Point2D(
     val x: Float,
@@ -57,6 +59,13 @@ data class DocumentQuad(
         )
     }
 }
+
+data class EdgeInkProfile(
+    val top: Float,
+    val left: Float,
+    val right: Float,
+    val bottom: Float
+)
 
 enum class DocumentQualityIssue {
     NONE,
@@ -268,7 +277,7 @@ object DocumentGeometry {
             )
         )
         val clipFlags = inspectQuadClipFlags(quad, frameW, frameH)
-        val hardClipped = clipFlags.sideOrTopClipped || (clipFlags.bottomClipped && visibleAspect < 0.55f)
+        val hardClipped = clipFlags.sideOrTopClipped || (clipFlags.bottomClipped && visibleAspect < 0.50f)
 
         return when {
             light == LightStatus.TOO_DARK -> LiveSheetGuidance(
@@ -432,11 +441,13 @@ object DocumentGeometry {
         if (fullHull.size < 4) return null
         val reducedHull = subsampleHull(fullHull, maxVertices = 28)
         val rawQuad = findMaxAreaQuad(reducedHull) ?: return null
-        val ordered = orderQuadCorners(rawQuad)
+        var ordered = orderQuadCorners(rawQuad)
 
         val quadArea = polygonArea(ordered)
         val solidity = bestArea.toFloat() / max(1f, quadArea)
         if (solidity < 0.72f) return null
+
+        ordered = extrapolateClippedBottomCorners(ordered, mask, width, height)
 
         val avgW = (dist(ordered.topLeft, ordered.topRight) + dist(ordered.bottomLeft, ordered.bottomRight)) * 0.5f
         val avgH = (dist(ordered.topLeft, ordered.bottomLeft) + dist(ordered.topRight, ordered.bottomRight)) * 0.5f
@@ -513,7 +524,8 @@ object DocumentGeometry {
         quad: DocumentQuad?,
         fullWidth: Int,
         fullHeight: Int,
-        bottomEdgeInkRatio: Float? = null
+        bottomEdgeInkRatio: Float? = null,
+        edgeInkProfile: EdgeInkProfile? = null
     ): DocumentGeometryReport {
         if (quad == null || fullWidth <= 0 || fullHeight <= 0) {
             return DocumentGeometryReport(
@@ -552,11 +564,12 @@ object DocumentGeometry {
         val aspect = max(avgW, avgH) / max(1f, min(avgW, avgH))
 
         val clipFlags = inspectQuadClipFlags(quad, fullWidth, fullHeight)
+        val effectiveBottomInk = edgeInkProfile?.bottom ?: bottomEdgeInkRatio
         val bottomOnlyClipped = clipFlags.bottomClipped && !clipFlags.sideOrTopClipped
-        val bottomIsBlank = bottomEdgeInkRatio == null || bottomEdgeInkRatio < 0.015f
+        val bottomIsBlank = effectiveBottomInk == null || effectiveBottomInk < 0.018f
         val canCompleteBottom = bottomOnlyClipped &&
             bottomIsBlank &&
-            visibleAspect in 0.55f..1.65f &&
+            visibleAspect in 0.50f..1.65f &&
             areaRatio >= MIN_FLATTENABLE_AREA_RATIO
         val hardClipped = clipFlags.sideOrTopClipped || (bottomOnlyClipped && !canCompleteBottom)
         val aspectValid = if (canCompleteBottom) true else aspect in 1.02f..2.15f
@@ -916,6 +929,282 @@ object DocumentGeometry {
         val deg = Math.toDegrees(acos(cosTheta.toDouble())).toFloat()
         return abs(90f - deg)
     }
+
+    /**
+     * When the top corners are cleanly inside the frame but a tilted sheet's lower left or right
+     * edge exits the side border before reaching the bottom Y, fit linear dx/dy along the visible
+     * upper side rows so perspective flattening restores the full side straight without clipping.
+     */
+    private fun extrapolateClippedBottomCorners(
+        quad: DocumentQuad,
+        mask: BooleanArray,
+        width: Int,
+        height: Int
+    ): DocumentQuad {
+        val marginX = max(2f, width * 0.02f)
+        val approxWidth = max(20f, dist(quad.topLeft, quad.topRight))
+        val targetBottomY = max(quad.bottomLeft.y, quad.bottomRight.y)
+        var newBl = quad.bottomLeft
+        var newBr = quad.bottomRight
+
+        val rightNeedsFix = quad.topRight.x < width - marginX &&
+            (quad.bottomRight.x >= width - marginX || hasLowerMaskHitOnBorder(mask, width, height, quad.topRight.y, checkRight = true))
+        if (rightNeedsFix) {
+            fitSideEdgeXAtBottom(
+                mask = mask,
+                width = width,
+                height = height,
+                topY = quad.topRight.y,
+                targetBottomY = targetBottomY,
+                minScanX = quad.topLeft.x.toInt().coerceAtLeast(0),
+                isRightSide = true
+            )?.let { virtBrX ->
+                if (virtBrX >= quad.bottomRight.x - 1f &&
+                    virtBrX <= width * 1.18f &&
+                    virtBrX > newBl.x + approxWidth * 0.45f
+                ) {
+                    newBr = Point2D(virtBrX, targetBottomY)
+                }
+            }
+        }
+
+        val leftNeedsFix = quad.topLeft.x > marginX &&
+            (quad.bottomLeft.x <= marginX || hasLowerMaskHitOnBorder(mask, width, height, quad.topLeft.y, checkRight = false))
+        if (leftNeedsFix) {
+            fitSideEdgeXAtBottom(
+                mask = mask,
+                width = width,
+                height = height,
+                topY = quad.topLeft.y,
+                targetBottomY = targetBottomY,
+                minScanX = 0,
+                maxScanX = quad.topRight.x.toInt().coerceAtMost(width - 1),
+                isRightSide = false
+            )?.let { virtBlX ->
+                if (virtBlX <= quad.bottomLeft.x + 1f &&
+                    virtBlX >= -width * 0.18f &&
+                    virtBlX < newBr.x - approxWidth * 0.45f
+                ) {
+                    newBl = Point2D(virtBlX, targetBottomY)
+                }
+            }
+        }
+
+        return quad.copy(bottomLeft = newBl, bottomRight = newBr)
+    }
+
+    private fun hasLowerMaskHitOnBorder(
+        mask: BooleanArray,
+        width: Int,
+        height: Int,
+        topY: Float,
+        checkRight: Boolean
+    ): Boolean {
+        val yStart = ((topY + height) * 0.5f).roundToInt().coerceIn(0, height - 1)
+        val xCheckA = if (checkRight) width - 1 else 0
+        val xCheckB = if (checkRight) (width - 2).coerceAtLeast(0) else 1.coerceAtMost(width - 1)
+        for (y in yStart until height) {
+            val row = y * width
+            if (mask[row + xCheckA] || mask[row + xCheckB]) return true
+        }
+        return false
+    }
+
+    private fun fitSideEdgeXAtBottom(
+        mask: BooleanArray,
+        width: Int,
+        height: Int,
+        topY: Float,
+        targetBottomY: Float,
+        minScanX: Int = 0,
+        maxScanX: Int = width - 1,
+        isRightSide: Boolean
+    ): Float? {
+        val yStart = (topY + max(5f, (height - topY) * 0.08f)).roundToInt().coerceIn(0, height - 1)
+        val ys = ArrayList<Float>(height)
+        val xs = ArrayList<Float>(height)
+        for (y in yStart until (height - 1)) {
+            val row = y * width
+            var foundX = -1
+            if (isRightSide) {
+                for (x in (width - 1) downTo minScanX.coerceIn(0, width - 1)) {
+                    if (mask[row + x]) {
+                        foundX = x
+                        break
+                    }
+                }
+                if (foundX < 0) continue
+                if (foundX >= width - 2) break
+            } else {
+                for (x in 0..maxScanX.coerceIn(0, width - 1)) {
+                    if (mask[row + x]) {
+                        foundX = x
+                        break
+                    }
+                }
+                if (foundX < 0) continue
+                if (foundX <= 1) break
+            }
+            ys += y.toFloat()
+            xs += foundX.toFloat()
+        }
+
+        val usable = if (ys.size > 14) ys.size - 2 else ys.size
+        if (usable < 10) return null
+        val ySpan = ys[usable - 1] - ys[0]
+        if (ySpan < max(14f, height * 0.07f)) return null
+
+        var sumY = 0.0
+        var sumX = 0.0
+        for (i in 0 until usable) {
+            sumY += ys[i]
+            sumX += xs[i]
+        }
+        val meanY = sumY / usable
+        val meanX = sumX / usable
+        var num = 0.0
+        var den = 0.0
+        for (i in 0 until usable) {
+            val dy = ys[i] - meanY
+            val dx = xs[i] - meanX
+            num += dy * dx
+            den += dy * dy
+        }
+        if (den < 1e-3) return null
+        val slope = (num / den).toFloat()
+        if (abs(slope) > 0.45f) return null
+        val intercept = (meanX - slope * meanY).toFloat()
+
+        var sqErr = 0.0
+        for (i in 0 until usable) {
+            val err = xs[i] - (slope * ys[i] + intercept)
+            sqErr += err * err
+        }
+        val rms = sqrt(sqErr / usable).toFloat()
+        if (rms > max(4f, width * 0.02f)) return null
+
+        return slope * targetBottomY + intercept
+    }
+
+    /**
+     * Local-strip edge ink profile: compares each border strip against its own local median
+     * luminance so uneven desk-lamp illumination or bottom shading never flags blank paper as text.
+     */
+    fun computeEdgeInkProfileFromArgb(
+        pixels: IntArray,
+        width: Int,
+        height: Int,
+        quad: DocumentQuad
+    ): EdgeInkProfile {
+        if (width < 8 || height < 8 || pixels.size < width * height) {
+            return EdgeInkProfile(0f, 0f, 0f, 0f)
+        }
+        val luma = IntArray(width * height) { i ->
+            val c = pixels[i]
+            val r = (c ushr 16) and 0xFF
+            val g = (c ushr 8) and 0xFF
+            val b = c and 0xFF
+            (77 * r + 150 * g + 29 * b) ushr 8
+        }
+        return computeEdgeInkProfileFromLuma(luma, width, height, quad)
+    }
+
+    fun computeEdgeInkProfileFromLuma(
+        luma: IntArray,
+        width: Int,
+        height: Int,
+        quad: DocumentQuad
+    ): EdgeInkProfile {
+        if (width < 8 || height < 8 || luma.size < width * height) {
+            return EdgeInkProfile(0f, 0f, 0f, 0f)
+        }
+
+        fun sampleQuadLuma(u: Float, v: Float): Int? {
+            val lx = quad.topLeft.x + (quad.bottomLeft.x - quad.topLeft.x) * v
+            val ly = quad.topLeft.y + (quad.bottomLeft.y - quad.topLeft.y) * v
+            val rx = quad.topRight.x + (quad.bottomRight.x - quad.topRight.x) * v
+            val ry = quad.topRight.y + (quad.bottomRight.y - quad.topRight.y) * v
+            val fx = lx + (rx - lx) * u
+            val fy = ly + (ry - ly) * u
+            if (fx < 0f || fx >= width.toFloat() || fy < 0f || fy >= height.toFloat()) {
+                return null
+            }
+            val px = fx.toInt().coerceIn(0, width - 1)
+            val py = fy.toInt().coerceIn(0, height - 1)
+            return luma[py * width + px]
+        }
+
+        fun stripInkRatio(
+            uStart: Float,
+            uEnd: Float,
+            vStart: Float,
+            vEnd: Float,
+            uSteps: Int,
+            vSteps: Int
+        ): Float {
+            val samples = ArrayList<Int>(uSteps * vSteps)
+            for (vi in 0 until vSteps) {
+                val tv = if (vSteps > 1) vi.toFloat() / (vSteps - 1).toFloat() else 0.5f
+                val v = vStart + (vEnd - vStart) * tv
+                for (ui in 0 until uSteps) {
+                    val tu = if (uSteps > 1) ui.toFloat() / (uSteps - 1).toFloat() else 0.5f
+                    val u = uStart + (uEnd - uStart) * tu
+                    val lum = sampleQuadLuma(u, v) ?: continue
+                    samples += lum
+                }
+            }
+            if (samples.size < 10) return 0f
+            val sorted = samples.sorted()
+            val stripMedian = sorted[sorted.size / 2]
+            if (stripMedian < 65) return 0f
+            val threshold = stripMedian - 32
+            var dark = 0
+            for (lum in samples) {
+                if (lum < threshold) dark++
+            }
+            return dark.toFloat() / samples.size.toFloat()
+        }
+
+        return EdgeInkProfile(
+            top = stripInkRatio(0.05f, 0.95f, 0.01f, 0.06f, uSteps = 24, vSteps = 5),
+            left = stripInkRatio(0.01f, 0.06f, 0.05f, 0.95f, uSteps = 5, vSteps = 24),
+            right = stripInkRatio(0.94f, 0.99f, 0.05f, 0.95f, uSteps = 5, vSteps = 24),
+            bottom = stripInkRatio(0.05f, 0.95f, 0.92f, 0.99f, uSteps = 24, vSteps = 5)
+        )
+    }
+
+    /**
+     * Computes a small counter-rotation (in degrees, matching Matrix.postRotate convention)
+     * to straighten residual 0.7..12.0 deg text tilt into razor-horizontal upright lines.
+     */
+    fun computeFineDeskewAngleDeg(lines: List<TextLineOrientation>): Float {
+        val horizontal = lines.mapNotNull { line ->
+            val w = max(1, line.boxWidth)
+            val h = max(1, line.boxHeight)
+            if (line.alnumCount < 4 || w < h * 1.4f) return@mapNotNull null
+            var a = line.angleDeg % 360f
+            if (a > 180f) a -= 360f
+            if (a <= -180f) a += 360f
+            if (abs(a) > 15f) return@mapNotNull null
+            a to line.alnumCount
+        }.sortedBy { it.first }
+
+        val totalWeight = horizontal.sumOf { it.second }
+        if (totalWeight < 8 || horizontal.isEmpty()) return 0f
+
+        val halfWeight = totalWeight / 2.0
+        var acc = 0
+        var medianAngle = horizontal.first().first
+        for ((angle, weight) in horizontal) {
+            acc += weight
+            if (acc >= halfWeight) {
+                medianAngle = angle
+                break
+            }
+        }
+        val correction = -medianAngle
+        return if (abs(correction) in 0.7f..12.0f) correction else 0f
+    }
 }
 
 /**
@@ -946,14 +1235,19 @@ object DocumentScannerEngine {
         if (small !== orientedSource) small.recycle()
 
         val smallQuad = DocumentGeometry.detectPaperQuadFromArgb(smallPixels, smallW, smallH)
-        val bottomEdgeInkRatio = smallQuad?.let {
-            computeBottomEdgeInkRatio(smallPixels, smallW, smallH, it)
+        val edgeInkProfile = smallQuad?.let {
+            DocumentGeometry.computeEdgeInkProfileFromArgb(smallPixels, smallW, smallH, it)
         }
         val fullQuad = smallQuad?.scaled(
             scaleX = srcW.toFloat() / smallW.toFloat(),
             scaleY = srcH.toFloat() / smallH.toFloat()
         )
-        val geomReport = DocumentGeometry.evaluateQuadGeometry(fullQuad, srcW, srcH, bottomEdgeInkRatio)
+        val geomReport = DocumentGeometry.evaluateQuadGeometry(
+            quad = fullQuad,
+            fullWidth = srcW,
+            fullHeight = srcH,
+            edgeInkProfile = edgeInkProfile
+        )
 
         // 2. Perspective flatten if valid quad detected (seamlessly completing blank bottom to A4 when needed)
         var workingBitmap = orientedSource
@@ -966,6 +1260,8 @@ object DocumentScannerEngine {
             val dstW = layout.canvasWidth
             val dstH = layout.canvasHeight
             val visH = layout.visibleHeight
+            val minExtraX = -srcW * 0.22f
+            val maxExtraX = srcW * 1.22f
             val cropQuad = if (layout.completedBottomToA4) {
                 DocumentQuad(
                     topLeft = Point2D(
@@ -977,18 +1273,35 @@ object DocumentScannerEngine {
                         fullQuad.topRight.y.coerceIn(0f, (srcH - 12).toFloat())
                     ),
                     bottomRight = Point2D(
-                        fullQuad.bottomRight.x.coerceIn(1f, (srcW - 2).toFloat()),
-                        min(fullQuad.bottomRight.y, (srcH - 3).toFloat())
+                        fullQuad.bottomRight.x.coerceIn(minExtraX, maxExtraX),
+                        min(fullQuad.bottomRight.y, (srcH - 2).toFloat())
                             .coerceAtLeast(fullQuad.topRight.y + 8f)
                     ),
                     bottomLeft = Point2D(
-                        fullQuad.bottomLeft.x.coerceIn(1f, (srcW - 2).toFloat()),
-                        min(fullQuad.bottomLeft.y, (srcH - 3).toFloat())
+                        fullQuad.bottomLeft.x.coerceIn(minExtraX, maxExtraX),
+                        min(fullQuad.bottomLeft.y, (srcH - 2).toFloat())
                             .coerceAtLeast(fullQuad.topLeft.y + 8f)
                     )
                 )
             } else {
-                fullQuad.expandedOutward(0.004f, srcW.toFloat(), srcH.toFloat())
+                DocumentQuad(
+                    topLeft = Point2D(
+                        fullQuad.topLeft.x.coerceIn(0f, (srcW - 1).toFloat()),
+                        fullQuad.topLeft.y.coerceIn(0f, (srcH - 1).toFloat())
+                    ),
+                    topRight = Point2D(
+                        fullQuad.topRight.x.coerceIn(0f, (srcW - 1).toFloat()),
+                        fullQuad.topRight.y.coerceIn(0f, (srcH - 1).toFloat())
+                    ),
+                    bottomRight = Point2D(
+                        fullQuad.bottomRight.x.coerceIn(minExtraX, maxExtraX),
+                        fullQuad.bottomRight.y.coerceIn(0f, srcH.toFloat())
+                    ),
+                    bottomLeft = Point2D(
+                        fullQuad.bottomLeft.x.coerceIn(minExtraX, maxExtraX),
+                        fullQuad.bottomLeft.y.coerceIn(0f, srcH.toFloat())
+                    )
+                )
             }
             val srcPts = floatArrayOf(
                 cropQuad.topLeft.x, cropQuad.topLeft.y,
@@ -1004,9 +1317,10 @@ object DocumentScannerEngine {
             )
             val matrix = Matrix()
             if (matrix.setPolyToPoly(srcPts, 0, dstPts, 0, 4)) {
+                val paperBgColor = samplePaperBackgroundColor(orientedSource, fullQuad)
                 val warped = Bitmap.createBitmap(dstW, dstH, Bitmap.Config.ARGB_8888)
                 val canvas = Canvas(warped)
-                canvas.drawColor(android.graphics.Color.WHITE)
+                canvas.drawColor(paperBgColor)
                 val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
                 canvas.drawBitmap(orientedSource, matrix, paint)
                 if (layout.completedBottomToA4 && visH < dstH) {
@@ -1058,6 +1372,18 @@ object DocumentScannerEngine {
             finalText = recognizeTextOnScaled(workingBitmap, OCR_PROBE_MAX_DIM)
         } else {
             finalText = initialText
+        }
+
+        // 3b. Fine-angle text deskew (0.7..12.0 deg) onto paper-colored canvas so lines stay razor-horizontal
+        val fineDeskewDeg = DocumentGeometry.computeFineDeskewAngleDeg(extractWeightedLines(finalText))
+        if (abs(fineDeskewDeg) in 0.7f..12.0f) {
+            val paperBg = samplePaperBackgroundColor(workingBitmap, null)
+            val fineLeveled = rotateFineOnPaperCanvas(workingBitmap, fineDeskewDeg, paperBg)
+            if (workingBitmap !== orientedSource) {
+                workingBitmap.recycle()
+            }
+            workingBitmap = fineLeveled
+            wasDeskewed = true
         }
 
         // 4. Honest legibility & sharpness audit on the flattened document
@@ -1125,55 +1451,75 @@ object DocumentScannerEngine {
         }
     }
 
-    private fun computeBottomEdgeInkRatio(
-        pixels: IntArray,
-        width: Int,
-        height: Int,
-        quad: DocumentQuad
-    ): Float {
-        if (width < 8 || height < 8 || pixels.size < width * height) return 0f
-        fun argbY(c: Int): Int {
-            val r = (c ushr 16) and 0xFF
-            val g = (c ushr 8) and 0xFF
-            val b = c and 0xFF
-            return (77 * r + 150 * g + 29 * b) ushr 8
-        }
-        fun sampleQuadPoint(u: Float, v: Float): Int {
-            val lx = quad.topLeft.x + (quad.bottomLeft.x - quad.topLeft.x) * v
-            val ly = quad.topLeft.y + (quad.bottomLeft.y - quad.topLeft.y) * v
-            val rx = quad.topRight.x + (quad.bottomRight.x - quad.topRight.x) * v
-            val ry = quad.topRight.y + (quad.bottomRight.y - quad.topRight.y) * v
-            val px = (lx + (rx - lx) * u).roundToInt().coerceIn(0, width - 1)
-            val py = (ly + (ry - ly) * u).roundToInt().coerceIn(0, height - 1)
-            return argbY(pixels[py * width + px])
-        }
+    private fun samplePaperBackgroundColor(
+        bitmap: Bitmap,
+        quad: DocumentQuad?
+    ): Int {
+        val w = bitmap.width
+        val h = bitmap.height
+        if (w < 8 || h < 8) return android.graphics.Color.rgb(236, 236, 236)
 
-        val interiorSamples = ArrayList<Int>(140)
-        for (vi in 1..10) {
-            val v = 0.08f + vi * 0.08f
-            for (ui in 1..12) {
-                val u = 0.06f + ui * 0.073f
-                interiorSamples += sampleQuadPoint(u, v)
-            }
-        }
-        if (interiorSamples.isEmpty()) return 0f
-        interiorSamples.sort()
-        val paperMedian = interiorSamples[interiorSamples.size / 2]
-
-        var darkCount = 0
-        var total = 0
-        for (vi in 0..4) {
-            val v = 0.92f + vi * 0.0175f
-            for (ui in 0..24) {
-                val u = 0.04f + ui * 0.038f
-                val yVal = sampleQuadPoint(u, v)
-                if (yVal < paperMedian - 36) {
-                    darkCount++
+        val rVals = ArrayList<Int>(100)
+        val gVals = ArrayList<Int>(100)
+        val bVals = ArrayList<Int>(100)
+        for (vi in 0..9) {
+            val v = 0.14f + vi * 0.08f
+            for (ui in 0..9) {
+                val u = 0.14f + ui * 0.08f
+                val px: Int
+                val py: Int
+                if (quad != null) {
+                    val lx = quad.topLeft.x + (quad.bottomLeft.x - quad.topLeft.x) * v
+                    val ly = quad.topLeft.y + (quad.bottomLeft.y - quad.topLeft.y) * v
+                    val rx = quad.topRight.x + (quad.bottomRight.x - quad.topRight.x) * v
+                    val ry = quad.topRight.y + (quad.bottomRight.y - quad.topRight.y) * v
+                    val fx = lx + (rx - lx) * u
+                    val fy = ly + (ry - ly) * u
+                    if (fx < 0f || fx >= w.toFloat() || fy < 0f || fy >= h.toFloat()) continue
+                    px = fx.toInt().coerceIn(0, w - 1)
+                    py = fy.toInt().coerceIn(0, h - 1)
+                } else {
+                    px = (u * (w - 1)).roundToInt().coerceIn(0, w - 1)
+                    py = (v * (h - 1)).roundToInt().coerceIn(0, h - 1)
                 }
-                total++
+                val c = bitmap.getPixel(px, py)
+                val r = (c ushr 16) and 0xFF
+                val g = (c ushr 8) and 0xFF
+                val b = c and 0xFF
+                val luma = (77 * r + 150 * g + 29 * b) ushr 8
+                if (luma >= 90) {
+                    rVals += r
+                    gVals += g
+                    bVals += b
+                }
             }
         }
-        return if (total > 0) darkCount.toFloat() / total.toFloat() else 0f
+        if (rVals.isEmpty()) return android.graphics.Color.rgb(236, 236, 236)
+        rVals.sort(); gVals.sort(); bVals.sort()
+        val mid = rVals.size / 2
+        return android.graphics.Color.rgb(rVals[mid], gVals[mid], bVals[mid])
+    }
+
+    private fun rotateFineOnPaperCanvas(
+        src: Bitmap,
+        degrees: Float,
+        paperBgColor: Int
+    ): Bitmap {
+        val w = src.width.toFloat()
+        val h = src.height.toFloat()
+        val matrix = Matrix().apply { postRotate(degrees) }
+        val bounds = RectF(0f, 0f, w, h)
+        matrix.mapRect(bounds)
+        val outW = bounds.width().roundToInt().coerceAtLeast(1)
+        val outH = bounds.height().roundToInt().coerceAtLeast(1)
+        matrix.postTranslate(-bounds.left, -bounds.top)
+
+        val out = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        canvas.drawColor(paperBgColor)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        canvas.drawBitmap(src, matrix, paint)
+        return out
     }
 
     private fun fillSeamlessPaperExtension(
